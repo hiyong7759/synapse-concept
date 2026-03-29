@@ -23,8 +23,23 @@ _PARTICLES = re.compile(
 )
 
 # 너무 짧거나 흔한 단어는 검색에서 제외
-_STOP_WORDS = {'안', '못', '좀', '잘', '더', '왜', '뭐', '어떤', '이', '그', '저', '다', '를', '을',
-               '수', '때', '뭘', '걸', '건', '거', '게', '데', '줘', '해', '돼', '싶', '좋'}
+_STOP_WORDS = {
+    # 대명사/관형사
+    '이', '그', '저', '뭐', '뭘', '어떤', '어디', '언제', '누구', '무슨', '어떻게',
+    # 동사/형용사 어간
+    '해', '돼', '했어', '했는데', '할까', '할지', '하는', '하고', '싶', '좋', '있', '없',
+    '알려', '알아', '보여', '봐', '써', '쓸', '쓰는', '됐', '되는', '된',
+    '줘', '줄', '주는', '가르쳐', '찾아',
+    # 보조용언/부사
+    '안', '못', '좀', '잘', '더', '왜', '다', '또', '꼭', '너무', '많이', '조금',
+    # 조사 잔여 (normalize에서 못 잡는 것)
+    '를', '을', '수', '때', '걸', '건', '거', '게', '데',
+    # 범용 서술어 (노드명이 될 수 없는 것)
+    '관리', '시스템', '서비스', '프로그램', '작성', '만들기', '사용', '활용',
+    '경험', '추천', '정리', '설명', '비교', '차이', '방법', '설정', '구축',
+    '뭐야', '뭐지', '있어', '없어', '했지', '했나', '할래', '할게',
+    '살아', '사는', '갈까', '올까', '보자', '하자',
+}
 
 
 def normalize_keywords(raw_keywords: list[str]) -> list[str]:
@@ -44,7 +59,7 @@ def normalize_keywords(raw_keywords: list[str]) -> list[str]:
     return result
 
 
-def match_start_nodes(conn, keywords: list[str], identity_id: int | None = None) -> tuple[list[dict], set[str]]:
+def match_start_nodes(conn, keywords: list[str], identity_id: int | None = None) -> tuple[list[dict], set[str], list[str]]:
     """키워드로 시작 노드 매칭 + 도메인 필터 추출.
 
     검색 대상:
@@ -53,15 +68,22 @@ def match_start_nodes(conn, keywords: list[str], identity_id: int | None = None)
     - 도메인 (domain) → 도메인 필터 (시작 노드가 아님)
 
     Returns:
-        (시작 노드 목록, 도메인 필터 set)
+        (시작 노드 목록, 도메인 필터 set, 매칭 실패 콘텐츠 키워드)
     """
     if not keywords:
-        return [], set()
+        return [], set(), []
 
-    # 도메인 매칭 키워드 분리 → 필터로 사용
-    all_domains = {r["domain"] for r in conn.execute(
+    # 알려진 도메인 목록 (DB에 노드가 없어도 인식)
+    KNOWN_DOMAINS = {
+        '프로필', '회사', '학력', '프로젝트', '자격', '기술', '고객사',
+        '역할', '조직', '직급', '업무', '위치', '경력', '병역',
+        '음식', '건강', '운동', '장비', '용도', '판단', '취미',
+    }
+    # DB에 있는 도메인 + 알려진 도메인
+    db_domains = {r["domain"] for r in conn.execute(
         "SELECT DISTINCT domain FROM nodes WHERE status = 'active' AND domain != ''"
     ).fetchall()}
+    all_domains = KNOWN_DOMAINS | db_domains
 
     domain_filters = set()
     content_keywords = []
@@ -74,9 +96,20 @@ def match_start_nodes(conn, keywords: list[str], identity_id: int | None = None)
         if not matched_domain:
             content_keywords.append(kw)
 
-    # 노드명 매칭 (도메인 필터 키워드 제외)
+    # 별칭(aliases) 매칭 → 노드명 매칭 순서로 검색
     name_rows = []
     if content_keywords:
+        # 1) aliases 테이블에서 먼저 매칭
+        alias_conditions = " OR ".join(["LOWER(a.alias) = LOWER(?)" for _ in content_keywords])
+        alias_rows = conn.execute(
+            f"""SELECT DISTINCT n.* FROM aliases a
+                JOIN nodes n ON a.node_id = n.id
+                WHERE n.status = 'active' AND ({alias_conditions})
+                ORDER BY n.weight DESC""",
+            content_keywords
+        ).fetchall()
+
+        # 2) 노드명 substring 매칭 (기존 로직)
         name_conditions = " OR ".join([
             "(LOWER(name) LIKE LOWER(?) OR LOWER(?) LIKE '%' || LOWER(name) || '%')"
             for _ in content_keywords
@@ -86,12 +119,20 @@ def match_start_nodes(conn, keywords: list[str], identity_id: int | None = None)
             name_params.append(f"%{kw}%")
             name_params.append(kw)
 
-        name_rows = conn.execute(
+        name_only_rows = conn.execute(
             f"""SELECT * FROM nodes
                 WHERE status = 'active' AND ({name_conditions})
                 ORDER BY weight DESC""",
             name_params
         ).fetchall()
+
+        # aliases 결과 우선, 중복 제거
+        seen_ids = set()
+        for row in list(alias_rows) + list(name_only_rows):
+            d = dict(row)
+            if d["id"] not in seen_ids:
+                seen_ids.add(d["id"])
+                name_rows.append(row)
 
     # 엣지 type 매칭 (본인 노드 제외)
     label_rows = []
@@ -124,7 +165,12 @@ def match_start_nodes(conn, keywords: list[str], identity_id: int | None = None)
             seen.add(d["id"])
             results.append(d)
 
-    # 도메인 필터만 있고 시작 노드가 없으면, 해당 도메인 전체를 시작 노드로
+    # 매칭 실패한 콘텐츠 키워드 추적
+    matched_names = {r["name"].lower() for r in results}
+    unmatched = [kw for kw in content_keywords
+                 if not any(kw.lower() in name for name in matched_names)]
+
+    # 시작 노드가 없고 도메인 매칭이 있으면 도메인 전체 반환
     if not results and domain_filters:
         placeholders = ",".join(["?" for _ in domain_filters])
         rows = conn.execute(
@@ -133,7 +179,7 @@ def match_start_nodes(conn, keywords: list[str], identity_id: int | None = None)
         ).fetchall()
         results = [dict(r) for r in rows]
 
-    return results, domain_filters
+    return results, domain_filters, unmatched
 
 
 def get_neighbors(conn, node_ids: list[int], forward_only: bool = False) -> list[dict]:
@@ -214,69 +260,33 @@ def find_identity_node(conn) -> int | None:
     return row["node_id"] if row else None
 
 
-# 도메인 → 클러스터 매핑
-DOMAIN_CLUSTERS = {
-    '프로필': '인물', '역할': '인물', '직급': '인물', '경력': '인물', '병역': '인물',
-    '회사': '조직', '고객사': '조직', '조직': '조직', '업무': '조직',
-    '학력': '교육기술', '기술': '교육기술', '자격': '교육기술',
-    '프로젝트': '프로젝트',
-    '장비': '환경', '용도': '환경', '위치': '환경',
-    '음식': '생활', '건강': '생활', '운동': '생활', '판단': '생활',
-}
-
-
 def build_subgraph(conn, keywords: list[str]) -> dict:
-    """키워드 → 서브그래프 추출 (도메인 클러스터 기반 BFS).
+    """키워드 → 서브그래프 추출.
 
     1. 키워드로 시작 노드 매칭
-    2. 시작 노드가 속한 도메인 클러스터 확인
-    3. 해당 클러스터 안에서만 BFS (클러스터 경계를 넘지 않음)
-    4. 본인 노드는 경유 차단 (시작 노드인 경우 제외)
+    2. 정방향 BFS
+    3. 본인 노드 경유 차단 (무한 확산 방지)
+    4. 도메인 키워드가 있으면 해당 도메인 결과만 유지
     safety 노드는 별도로 전달하여 LLM이 관련성을 판단하게 한다.
     """
-    # 본인 노드 찾기 (1회만 조회하여 재사용)
     identity_id = find_identity_node(conn)
 
-    # 1. 시작 노드 매칭 + 도메인 필터
-    start_nodes, domain_filters = match_start_nodes(conn, keywords, identity_id=identity_id)
+    start_nodes, domain_filters, unmatched = match_start_nodes(conn, keywords, identity_id=identity_id)
     start_nodes = [n for n in start_nodes if not n.get("safety")]
     start_ids = set(n["id"] for n in start_nodes)
 
-    # 2. 시작 노드들의 클러스터 + 도메인 필터 클러스터 수집
-    active_clusters = set()
-    for n in start_nodes:
-        cluster = DOMAIN_CLUSTERS.get(n.get("domain", ""))
-        if cluster:
-            active_clusters.add(cluster)
-    for d in domain_filters:
-        cluster = DOMAIN_CLUSTERS.get(d)
-        if cluster:
-            active_clusters.add(cluster)
-
-    # 클러스터를 못 찾으면 전체 탐색
-    has_clusters = bool(active_clusters)
-
-    # 3. BFS — 시작 노드는 양방향, 이후는 정방향만
-    #    본인 노드 경유 차단 + 클러스터 경계 제한
+    # BFS — 정방향만. 본인 노드 경유 차단.
     visited = set(start_ids)
     queue = list(start_ids)
-    is_first_hop = True
     all_nodes_map = {n["id"]: n for n in start_nodes}
 
     while queue:
-        # 시작 노드에서 첫 홉은 양방향, 이후는 정방향만
-        neighbors = get_neighbors(conn, queue, forward_only=not is_first_hop)
-        is_first_hop = False
+        neighbors = get_neighbors(conn, queue, forward_only=True)
         next_queue = []
         for n in neighbors:
             if n["id"] not in visited:
                 if n.get("safety"):
                     continue
-                # 클러스터 경계 체크
-                if has_clusters:
-                    n_cluster = DOMAIN_CLUSTERS.get(n.get("domain", ""))
-                    if n_cluster and n_cluster not in active_clusters:
-                        continue
                 visited.add(n["id"])
                 all_nodes_map[n["id"]] = n
                 # 본인 노드는 도달만, 경유 차단
@@ -288,25 +298,36 @@ def build_subgraph(conn, keywords: list[str]) -> dict:
     all_ids = list(visited)
     all_nodes = [all_nodes_map[nid] for nid in all_ids if nid in all_nodes_map]
 
-    # 도메인 필터 적용: 필터가 있으면 해당 도메인의 클러스터 + 시작 노드만 유지
-    if domain_filters:
-        filter_clusters = {DOMAIN_CLUSTERS.get(d, d) for d in domain_filters}
-        all_nodes = [n for n in all_nodes
-                     if DOMAIN_CLUSTERS.get(n.get("domain", "")) in filter_clusters
-                     or n["id"] in start_ids]
-        all_ids = [n["id"] for n in all_nodes]
+    # 도메인 필터: 도메인 키워드가 있으면 해당 도메인 결과만 유지
+    # "건강 관리" → "관리"로 프로젝트가 매칭되더라도, "건강" 도메인 결과만 남김
+    if domain_filters and all_nodes:
+        filtered = [n for n in all_nodes if n.get("domain") in domain_filters]
+        # 도메인 필터 결과가 있으면 그것만, 없으면 원본 유지
+        if filtered:
+            all_nodes = filtered
+            all_ids = [n["id"] for n in all_nodes]
 
-    # 3. safety 노드는 별도 수집 (LLM이 관련성 판단)
     safety_nodes = get_safety_nodes(conn)
-
-    # 4. 내부 엣지 추출 (safety 노드 제외한 서브그래프)
     edges = get_edges_for_nodes(conn, all_ids)
+
+    # 매칭 실패 정보
+    missing = []
+    for kw in unmatched:
+        missing.append(f"\"{kw}\" 노드가 없습니다. 추가하시겠어요?")
+    if not all_nodes and domain_filters:
+        for d in domain_filters:
+            count = conn.execute(
+                "SELECT COUNT(*) FROM nodes WHERE status = 'active' AND domain = ?", (d,)
+            ).fetchone()[0]
+            if count == 0:
+                missing.append(f"\"{d}\" 관련 노드가 없습니다. 추가하시겠어요?")
 
     return {
         "start_nodes": [n["name"] for n in start_nodes],
         "nodes": all_nodes,
         "edges": edges,
         "safety_nodes": safety_nodes,
+        "missing": missing,
     }
 
 
@@ -343,22 +364,6 @@ def format_prompt(subgraph: dict) -> str:
     return "\n".join(lines) if lines else ""
 
 
-EXPOSURE_LOG_RETENTION_DAYS = 90
-
-
-def log_exposure(conn, node_ids: list[int], target: str = "lens",
-                 provider: str = "anthropic"):
-    """노출 원장 기록 + 오래된 로그 정리."""
-    conn.executemany(
-        "INSERT INTO exposure_log (node_id, direction, target, provider) VALUES (?, 'out', ?, ?)",
-        [(nid, target, provider) for nid in node_ids]
-    )
-    conn.execute(
-        "DELETE FROM exposure_log WHERE created_at < datetime('now', ?)",
-        (f"-{EXPOSURE_LOG_RETENTION_DAYS} days",)
-    )
-
-
 def increment_weights(conn, node_ids: list[int]):
     """프롬프트에 포함된 노드의 weight 증가."""
     if not node_ids:
@@ -367,6 +372,19 @@ def increment_weights(conn, node_ids: list[int]):
     conn.execute(
         f"UPDATE nodes SET weight = weight + 1, updated_at = datetime('now') WHERE id IN ({placeholders})",
         node_ids
+    )
+
+
+def update_edges_last_used(conn, node_ids: list[int]):
+    """탐색에 사용된 엣지의 last_used 갱신."""
+    if not node_ids:
+        return
+    placeholders = ",".join(["?" for _ in node_ids])
+    conn.execute(
+        f"""UPDATE edges SET last_used = datetime('now')
+            WHERE source_node_id IN ({placeholders})
+              AND target_node_id IN ({placeholders})""",
+        node_ids + node_ids
     )
 
 
@@ -385,14 +403,14 @@ def get_context(query: str, db_path: str = DB_PATH) -> dict:
         # 프롬프트 조립
         prompt = format_prompt(subgraph)
 
-        # weight 증가 + 노출 기록 (단일 트랜잭션)
+        # weight 증가 + 엣지 last_used 갱신 (단일 트랜잭션)
         node_ids = [n["id"] for n in subgraph["nodes"]]
         if node_ids:
             increment_weights(conn, node_ids)
-            log_exposure(conn, node_ids)
+            update_edges_last_used(conn, node_ids)
             conn.commit()
 
-        return {
+        result = {
             "status": "ok",
             "prompt": prompt,
             "nodes_used": [n["name"] for n in subgraph["nodes"]],
@@ -400,6 +418,9 @@ def get_context(query: str, db_path: str = DB_PATH) -> dict:
             "node_count": len(subgraph["nodes"]),
             "edge_count": len(subgraph["edges"]),
         }
+        if subgraph.get("missing"):
+            result["missing"] = subgraph["missing"]
+        return result
     finally:
         conn.close()
 

@@ -105,10 +105,17 @@ def show_node(name: str, db_path: str = DB_PATH) -> dict:
     """특정 노드의 상세 정보 + 연결."""
     conn = get_connection(db_path)
 
+    # 정확 매칭 우선 → 없으면 substring 매칭
     node = conn.execute(
-        "SELECT * FROM nodes WHERE LOWER(name) = LOWER(?) AND status != 'deleted'",
+        "SELECT * FROM nodes WHERE LOWER(name) = LOWER(?)",
         (name,)
     ).fetchone()
+
+    if not node:
+        node = conn.execute(
+            "SELECT * FROM nodes WHERE LOWER(name) LIKE LOWER(?) ORDER BY weight DESC LIMIT 1",
+            (f"%{name}%",)
+        ).fetchone()
 
     if not node:
         conn.close()
@@ -126,20 +133,12 @@ def show_node(name: str, db_path: str = DB_PATH) -> dict:
         (node["id"], node["id"])
     ).fetchall()
 
-    # 노출 이력
-    exposures = conn.execute(
-        "SELECT COUNT(*) as count, MAX(created_at) as last FROM exposure_log WHERE node_id = ?",
-        (node["id"],)
-    ).fetchone()
-
     conn.close()
 
     return {
         "status": "ok",
         "node": node_dict,
         "edges": [dict(e) for e in edges],
-        "exposure_count": exposures["count"],
-        "last_exposed": exposures["last"],
     }
 
 

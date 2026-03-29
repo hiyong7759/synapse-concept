@@ -10,36 +10,23 @@ from init_db import get_connection, DB_PATH
 
 
 def find_node(conn, name: str):
-    """이름으로 기존 노드 검색 (대소문자 무시)."""
-    return conn.execute(
-        "SELECT * FROM nodes WHERE LOWER(name) = LOWER(?) AND status != 'deleted'",
+    """이름으로 기존 노드 검색 (정확 매칭 우선 → substring 폴백)."""
+    # 정확 매칭
+    row = conn.execute(
+        "SELECT * FROM nodes WHERE LOWER(name) = LOWER(?)",
         (name,)
     ).fetchone()
-
-
-SID_PREFIX = {
-    '프로필': 'PRF', '회사': 'COM', '학력': 'EDU', '프로젝트': 'PRJ',
-    '자격': 'CRT', '기술': 'TEC', '고객사': 'CLI', '역할': 'ROL',
-    '조직': 'ORG', '직급': 'RNK', '업무': 'BIZ', '위치': 'LOC',
-    '경력': 'CAR', '병역': 'MIL', '음식': 'FOD', '건강': 'HLT',
-    '운동': 'SPT', '장비': 'DEV', '용도': 'USE', '판단': 'JDG',
-}
-
-
-def generate_sid(conn, domain: str) -> str:
-    """도메인 기반 sid 자동 생성."""
-    prefix = SID_PREFIX.get(domain, 'ETC')
-    row = conn.execute(
-        "SELECT MAX(CAST(SUBSTR(sid, ?) AS INTEGER)) FROM nodes WHERE sid LIKE ?",
-        (len(prefix) + 2, f"{prefix}_%")
+    if row:
+        return row
+    # substring 매칭
+    return conn.execute(
+        "SELECT * FROM nodes WHERE LOWER(name) LIKE LOWER(?) ORDER BY weight DESC LIMIT 1",
+        (f"%{name}%",)
     ).fetchone()
-    seq = (row[0] or 0) + 1
-    return f"{prefix}_{seq:03d}"
 
 
 def add_node(conn, name: str, domain: str = "", source: str = "user",
-             safety: bool = False, safety_rule: str = None,
-             confidence: float = None) -> tuple[int, bool]:
+             safety: bool = False, safety_rule: str = None) -> tuple[int, bool]:
     """노드 추가. 이미 존재하면 기존 ID 반환.
 
     Returns:
@@ -49,11 +36,10 @@ def add_node(conn, name: str, domain: str = "", source: str = "user",
     if existing:
         return existing["id"], False
 
-    sid = generate_sid(conn, domain)
     cursor = conn.execute(
-        """INSERT INTO nodes (sid, name, domain, source, safety, safety_rule, confidence)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (sid, name, domain, source, 1 if safety else 0, safety_rule, confidence)
+        """INSERT INTO nodes (name, domain, source, safety, safety_rule)
+           VALUES (?, ?, ?, ?, ?)""",
+        (name, domain, source, 1 if safety else 0, safety_rule)
     )
     return cursor.lastrowid, True
 
@@ -99,7 +85,6 @@ def add_from_json(data: dict, db_path: str = DB_PATH) -> dict:
                 source=node_data.get("source", "user"),
                 safety=node_data.get("safety", False),
                 safety_rule=node_data.get("safety_rule"),
-                confidence=node_data.get("confidence"),
             )
             name_to_id[name] = node_id
             added_nodes.append({

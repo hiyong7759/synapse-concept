@@ -19,7 +19,7 @@ def update_node(name: str, updates: dict, db_path: str = DB_PATH) -> dict:
         conn.close()
         return {"status": "error", "message": f"노드 '{name}'을 찾을 수 없습니다."}
 
-    allowed = {"name", "domain", "status", "safety", "safety_rule", "confidence"}
+    allowed = {"name", "domain", "status", "safety", "safety_rule"}
     sets = []
     params = []
 
@@ -109,31 +109,12 @@ def deactivate_node(name: str, db_path: str = DB_PATH) -> dict:
     return result
 
 
-def delete_node(name: str, db_path: str = DB_PATH) -> dict:
-    """노드 소프트 삭제 (status → deleted)."""
-    conn = get_connection(db_path)
-    node = find_node_by_name(conn, name)
-
-    if not node:
-        conn.close()
-        return {"status": "error", "message": f"노드 '{name}'을 찾을 수 없습니다."}
-
-    conn.execute(
-        "UPDATE nodes SET status = 'deleted', updated_at = datetime('now') WHERE id = ?",
-        (node["id"],)
-    )
-    conn.commit()
-    conn.close()
-
-    return {"status": "ok", "node": name, "new_status": "deleted"}
-
-
 def restore_node(name: str, db_path: str = DB_PATH) -> dict:
-    """비활성/삭제된 노드 복원."""
+    """비활성화된 노드 복원 (inactive → active)."""
     conn = get_connection(db_path)
 
     node = conn.execute(
-        "SELECT * FROM nodes WHERE LOWER(name) = LOWER(?) AND status != 'active'",
+        "SELECT * FROM nodes WHERE LOWER(name) = LOWER(?) AND status = 'inactive'",
         (name,)
     ).fetchone()
 
@@ -237,10 +218,8 @@ if __name__ == "__main__":
             sys.exit(1)
         updates = json.loads(sys.argv[3])
         result = update_node(name, updates)
-    elif cmd == "deactivate":
+    elif cmd in ("deactivate", "delete"):
         result = deactivate_node(name)
-    elif cmd == "delete":
-        result = delete_node(name)
     elif cmd == "restore":
         result = restore_node(name)
     elif cmd == "delete-edge":

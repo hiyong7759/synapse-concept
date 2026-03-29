@@ -13,21 +13,18 @@ SCHEMA = """
 -- 노드: 수평한 단어/개념
 CREATE TABLE IF NOT EXISTS nodes (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    sid         TEXT UNIQUE,
     name        TEXT NOT NULL,
     domain      TEXT NOT NULL DEFAULT '',
-    status      TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'deleted')),
+    status      TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive')),
     source      TEXT NOT NULL DEFAULT 'user' CHECK(source IN ('user', 'ai')),
     weight      INTEGER NOT NULL DEFAULT 0,
     safety      INTEGER NOT NULL DEFAULT 0,
     safety_rule TEXT,
-    confidence  REAL,
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- 엣지: 노드 사이의 연결 (개인 데이터)
--- type은 영어 관계명 (belong_to, role, skill, same, similar 등)
 CREATE TABLE IF NOT EXISTS edges (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     source_node_id  INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
@@ -35,17 +32,30 @@ CREATE TABLE IF NOT EXISTS edges (
     type            TEXT NOT NULL,
     label           TEXT,
     created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    last_used       TEXT,
     UNIQUE(source_node_id, target_node_id, type)
 );
 
--- 노출 원장: LLM에 전달된 이력
-CREATE TABLE IF NOT EXISTS exposure_log (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    node_id     INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-    direction   TEXT NOT NULL CHECK(direction IN ('out', 'in')),
-    target      TEXT NOT NULL CHECK(target IN ('structuring', 'lens', 'intake')),
-    provider    TEXT NOT NULL DEFAULT 'anthropic',
-    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+-- 별칭: 키워드 매칭 강화 (다국어, 약어 등)
+CREATE TABLE IF NOT EXISTS aliases (
+    alias   TEXT NOT NULL,
+    node_id INTEGER NOT NULL,
+    PRIMARY KEY (alias, node_id),
+    FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE
+);
+
+-- 필터: 맥락에서 제외할 도메인/노드 프리셋
+CREATE TABLE IF NOT EXISTS filters (
+    id   TEXT PRIMARY KEY,
+    name TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS filter_rules (
+    filter_id TEXT NOT NULL,
+    domain    TEXT,
+    node_id   INTEGER,
+    action    TEXT NOT NULL DEFAULT 'exclude',
+    FOREIGN KEY (filter_id) REFERENCES filters(id) ON DELETE CASCADE
 );
 
 -- 인덱스
@@ -54,7 +64,7 @@ CREATE INDEX IF NOT EXISTS idx_nodes_domain ON nodes(domain);
 CREATE INDEX IF NOT EXISTS idx_nodes_status ON nodes(status);
 CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_node_id);
 CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_node_id);
-CREATE INDEX IF NOT EXISTS idx_exposure_node ON exposure_log(node_id);
+CREATE INDEX IF NOT EXISTS idx_aliases ON aliases(alias);
 """
 
 
