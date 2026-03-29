@@ -11,10 +11,12 @@
   },
   "license": "MIT",
   "dependencies": {
-    "better-sqlite3": "^12.8.0"
+    "better-sqlite3": "^12.8.0",
+    "sql.js": "^1.14.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
+    "@types/sql.js": "^1.4.11",
     "typescript": "^6.0.2"
   }
 }

@@ -25,5 +25,7 @@ export function createSynapse(dbPath: string): Synapse {
 export { GraphStore } from './graph-store.js';
 export { GraphSearch } from './graph-search.js';
 export { BetterSqliteAdapter } from './db-adapter.js';
+export { SqlJsAdapter } from './sql-js-adapter.js';
+export type { SqlJsAdapterOptions } from './sql-js-adapter.js';
 export { formatPrompt } from './prompt-builder.js';
 export type * from './types.js';
