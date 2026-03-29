@@ -1,0 +1,19 @@
+.env
+__pycache__/
+node_modules/
+dist/
+.venv/
+*.pyc
+.DS_Store
+synapse.db
+
+# 생성물
+graph.html
+graph_export.json
+
+# 개인정보
+*.pdf
+resume_*
+
+# Claude 설정
+.claude/

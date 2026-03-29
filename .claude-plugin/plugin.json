@@ -1,0 +1,11 @@
+{
+  "name": "synapse",
+  "description": "Personal knowledge graph — shared concepts, private connections. Context-aware prompts for any LLM.",
+  "version": "0.1.0",
+  "author": {
+    "name": "hiyong"
+  },
+  "repository": "https://github.com/hiyong/synapse",
+  "license": "MIT",
+  "keywords": ["knowledge-graph", "context", "memory", "llm"]
+}
