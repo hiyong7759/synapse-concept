@@ -15,5 +15,11 @@ graph_export.json
 *.pdf
 resume_*
 
-# Claude 설정
-.claude/
+# Claude 설정 (스킬/플러그인 제외)
+.claude/*
+!.claude/skills/
+!.claude-plugin/
+
+# 개발용 스크립트
+scripts/find_threshold.py
+scripts/simulate_threshold.py

@@ -717,8 +717,9 @@ def generate_html(db_path: str = DB_PATH) -> str:
 
 
 def main():
-    out_path = os.path.join(os.path.dirname(__file__), '..', 'graph.html')
-    out_path = os.path.abspath(out_path)
+    data_dir = os.environ.get('SYNAPSE_DATA_DIR', os.path.join(os.path.expanduser('~'), '.synapse'))
+    os.makedirs(data_dir, exist_ok=True)
+    out_path = os.path.join(data_dir, 'graph.html')
 
     html = generate_html()
     with open(out_path, 'w', encoding='utf-8') as f:

@@ -6,7 +6,8 @@ import os
 import sys
 import json
 
-DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'synapse.db')
+_DATA_DIR = os.environ.get('SYNAPSE_DATA_DIR', os.path.join(os.path.expanduser('~'), '.synapse'))
+DB_PATH = os.path.join(_DATA_DIR, 'synapse.db')
 
 SCHEMA = """
 -- 노드: 수평한 단어/개념
@@ -60,6 +61,7 @@ CREATE INDEX IF NOT EXISTS idx_exposure_node ON exposure_log(node_id);
 def init_db(db_path: str = DB_PATH) -> str:
     """DB 초기화. 이미 존재하면 스키마만 보장."""
     db_path = os.path.abspath(db_path)
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
     is_new = not os.path.exists(db_path)
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA journal_mode = WAL")
