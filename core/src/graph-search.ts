@@ -285,7 +285,11 @@ export class GraphSearch {
         let intersected = perNodeSets.get(groupIds[0])!;
         for (let i = 1; i < groupIds.length; i++) {
           const other = perNodeSets.get(groupIds[i])!;
-          intersected = new Set([...intersected].filter(id => other.has(id)));
+          const next = new Set<number>();
+          for (const id of intersected) {
+            if (other.has(id)) next.add(id);
+          }
+          intersected = next;
         }
         for (const id of intersected) allReached.add(id);
       }

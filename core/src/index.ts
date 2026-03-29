@@ -28,4 +28,5 @@ export { BetterSqliteAdapter } from './db-adapter.js';
 export { SqlJsAdapter } from './sql-js-adapter.js';
 export type { SqlJsAdapterOptions } from './sql-js-adapter.js';
 export { formatPrompt } from './prompt-builder.js';
+export { SCHEMA } from './schema.js';
 export type * from './types.js';

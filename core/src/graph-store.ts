@@ -119,30 +119,27 @@ export class GraphStore {
       node.id,
     );
 
-    // find orphans
-    const connected = this.db.all<{ id: number; name: string }>(
-      `SELECT DISTINCT n.id, n.name FROM edges e
-       JOIN nodes n ON (
-           (e.target_node_id = n.id AND e.source_node_id = ?)
-           OR (e.source_node_id = n.id AND e.target_node_id = ?)
-       )
-       WHERE n.status = 'active'`,
-      node.id, node.id,
+    // find orphans — single query instead of N+1
+    const orphanRows = this.db.all<{ name: string }>(
+      `SELECT cn.name FROM (
+           SELECT DISTINCT n.id, n.name FROM edges e
+           JOIN nodes n ON (
+               (e.target_node_id = n.id AND e.source_node_id = ?)
+               OR (e.source_node_id = n.id AND e.target_node_id = ?)
+           )
+           WHERE n.status = 'active'
+       ) cn
+       WHERE NOT EXISTS (
+           SELECT 1 FROM edges e2
+           JOIN nodes n1 ON e2.source_node_id = n1.id
+           JOIN nodes n2 ON e2.target_node_id = n2.id
+           WHERE (e2.source_node_id = cn.id OR e2.target_node_id = cn.id)
+             AND e2.source_node_id != ? AND e2.target_node_id != ?
+             AND n1.status = 'active' AND n2.status = 'active'
+       )`,
+      node.id, node.id, node.id, node.id,
     );
-
-    const orphans: string[] = [];
-    for (const cn of connected) {
-      const other = this.db.get<{ cnt: number }>(
-        `SELECT COUNT(*) as cnt FROM edges e
-         JOIN nodes n1 ON e.source_node_id = n1.id
-         JOIN nodes n2 ON e.target_node_id = n2.id
-         WHERE (e.source_node_id = ? OR e.target_node_id = ?)
-           AND e.source_node_id != ? AND e.target_node_id != ?
-           AND n1.status = 'active' AND n2.status = 'active'`,
-        cn.id, cn.id, node.id, node.id,
-      );
-      if ((other?.cnt ?? 0) === 0) orphans.push(cn.name);
-    }
+    const orphans = orphanRows.map(r => r.name);
 
     const result: DeactivateResult = { status: 'ok', node: name, new_status: 'inactive' };
     if (orphans.length > 0) {
@@ -234,27 +231,17 @@ export class GraphStore {
   }
 
   listEdges(nodeName?: string, limit = 100): { status: string; count: number; edges: EdgeWithNames[] } {
-    let edges: EdgeWithNames[];
-    if (nodeName) {
-      edges = this.db.all<EdgeWithNames>(
-        `SELECT e.*, src.name as source_name, tgt.name as target_name
-         FROM edges e
-         JOIN nodes src ON e.source_node_id = src.id
-         JOIN nodes tgt ON e.target_node_id = tgt.id
-         WHERE LOWER(src.name) = LOWER(?) OR LOWER(tgt.name) = LOWER(?)
-         ORDER BY e.created_at DESC LIMIT ?`,
-        nodeName, nodeName, limit,
-      );
-    } else {
-      edges = this.db.all<EdgeWithNames>(
-        `SELECT e.*, src.name as source_name, tgt.name as target_name
-         FROM edges e
-         JOIN nodes src ON e.source_node_id = src.id
-         JOIN nodes tgt ON e.target_node_id = tgt.id
-         ORDER BY e.created_at DESC LIMIT ?`,
-        limit,
-      );
-    }
+    const where = nodeName ? 'WHERE LOWER(src.name) = LOWER(?) OR LOWER(tgt.name) = LOWER(?)' : '';
+    const params: unknown[] = nodeName ? [nodeName, nodeName, limit] : [limit];
+    const edges = this.db.all<EdgeWithNames>(
+      `SELECT e.*, src.name as source_name, tgt.name as target_name
+       FROM edges e
+       JOIN nodes src ON e.source_node_id = src.id
+       JOIN nodes tgt ON e.target_node_id = tgt.id
+       ${where}
+       ORDER BY e.created_at DESC LIMIT ?`,
+      ...params,
+    );
     return { status: 'ok', count: edges.length, edges };
   }
 
