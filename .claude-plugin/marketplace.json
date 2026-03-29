@@ -6,7 +6,7 @@
   "plugins": [
     {
       "name": "synapse",
-      "source": ".",
+      "source": "./",
       "description": "Personal knowledge graph — shared concepts, private connections. Context-aware prompts for any LLM.",
       "version": "0.1.0"
     }
