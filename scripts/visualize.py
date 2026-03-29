@@ -542,6 +542,7 @@ function getThemeVars() {
         edgeText: s.getPropertyValue('--edge-text').trim(),
         edgeDim: s.getPropertyValue('--edge-dim').trim(),
         shadow: s.getPropertyValue('--shadow').trim(),
+        bg: s.getPropertyValue('--bg').trim(),
     };
 }
 function applyThemeToGraph() {
@@ -682,9 +683,9 @@ network.on('hoverNode', params => {
     allEdges.forEach(e => {
         if (!edges.get(e.id)) return;
         if (e.from === nodeId || e.to === nodeId) {
-            edgeUp.push({ id: e.id, color: { color: t.nodeFont, highlight: t.nodeFont }, width: 2 });
+            edgeUp.push({ id: e.id, color: { color: t.nodeFont, highlight: t.nodeFont }, width: 2, font: { color: t.nodeFont, strokeWidth: 0, background: t.bg } });
         } else {
-            edgeUp.push({ id: e.id, color: { color: t.edgeDim, highlight: t.nodeFont }, width: 0.5 });
+            edgeUp.push({ id: e.id, color: { color: t.edgeDim, highlight: t.nodeFont }, width: 0.5, font: { color: 'transparent', strokeWidth: 0 } });
         }
     });
     edges.update(edgeUp);
@@ -698,7 +699,7 @@ network.on('blurNode', () => {
         _dimmedNodeIds = [];
     }
     if (_dimmedEdgeIds.length) {
-        edges.update(_dimmedEdgeIds.map(id => ({ id, color: { color: t.edgeColor, highlight: t.nodeFont }, width: S.edgeWidth })));
+        edges.update(_dimmedEdgeIds.map(id => ({ id, color: { color: t.edgeColor, highlight: t.nodeFont }, width: S.edgeWidth, font: { color: t.edgeText, strokeWidth: 0, background: 'none' } })));
         _dimmedEdgeIds = [];
     }
 });
