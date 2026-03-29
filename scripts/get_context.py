@@ -275,28 +275,82 @@ def build_subgraph(conn, keywords: list[str]) -> dict:
     start_nodes = [n for n in start_nodes if not n.get("safety")]
     start_ids = set(n["id"] for n in start_nodes)
 
-    # BFS — 정방향만. 본인 노드 경유 차단.
-    visited = set(start_ids)
-    queue = list(start_ids)
-    all_nodes_map = {n["id"]: n for n in start_nodes}
+    def _bfs_from(start_id: int) -> set[int]:
+        """단일 시작 노드에서 정방향 BFS."""
+        visited = {start_id}
+        queue = [start_id]
+        while queue:
+            neighbors = get_neighbors(conn, queue, forward_only=True)
+            next_queue = []
+            for n in neighbors:
+                if n["id"] not in visited:
+                    if n.get("safety"):
+                        continue
+                    visited.add(n["id"])
+                    if n["id"] == identity_id:
+                        continue
+                    next_queue.append(n["id"])
+            queue = next_queue
+        return visited
 
-    while queue:
-        neighbors = get_neighbors(conn, queue, forward_only=True)
-        next_queue = []
-        for n in neighbors:
-            if n["id"] not in visited:
-                if n.get("safety"):
-                    continue
-                visited.add(n["id"])
-                all_nodes_map[n["id"]] = n
-                # 본인 노드는 도달만, 경유 차단
-                if n["id"] == identity_id:
-                    continue
-                next_queue.append(n["id"])
-        queue = next_queue
+    def _are_connected(id_a: int, id_b: int) -> bool:
+        """두 노드가 직접 연결되어 있는지 확인."""
+        row = conn.execute(
+            """SELECT 1 FROM edges
+               WHERE (source_node_id = ? AND target_node_id = ?)
+                  OR (source_node_id = ? AND target_node_id = ?)
+               LIMIT 1""",
+            (id_a, id_b, id_b, id_a)
+        ).fetchone()
+        return row is not None
 
-    all_ids = list(visited)
-    all_nodes = [all_nodes_map[nid] for nid in all_ids if nid in all_nodes_map]
+    # 시작 노드별 BFS 수행
+    if len(start_ids) <= 1:
+        # 단일 노드: 그냥 BFS
+        all_reached = _bfs_from(next(iter(start_ids))) if start_ids else set()
+    else:
+        # 시작 노드끼리 연결 여부 확인 → 연결: 교집합, 비연결: 합집합
+        start_list = list(start_ids)
+        per_node_sets = {sid: _bfs_from(sid) for sid in start_list}
+
+        # 연결된 그룹 찾기
+        connected_groups: list[set[int]] = []
+        ungrouped = set(start_list)
+        for sid in start_list:
+            if sid not in ungrouped:
+                continue
+            group = {sid}
+            ungrouped.discard(sid)
+            for other in list(ungrouped):
+                if _are_connected(sid, other):
+                    group.add(other)
+                    ungrouped.discard(other)
+            connected_groups.append(group)
+
+        # 연결 그룹 내 교집합, 그룹 간 합집합
+        all_reached: set[int] = set()
+        for group in connected_groups:
+            group_list = list(group)
+            intersected = per_node_sets[group_list[0]]
+            for sid in group_list[1:]:
+                intersected = intersected & per_node_sets[sid]
+            all_reached |= intersected
+
+    # 노드 상세 조회
+    all_nodes_map = {n["id"]: n for n in start_nodes if n["id"] in all_reached}
+    if all_reached - set(all_nodes_map.keys()):
+        remaining_ids = list(all_reached - set(all_nodes_map.keys()))
+        placeholders = ",".join(["?" for _ in remaining_ids])
+        rows = conn.execute(
+            f"SELECT * FROM nodes WHERE id IN ({placeholders}) AND status = 'active'",
+            remaining_ids
+        ).fetchall()
+        for r in rows:
+            d = dict(r)
+            all_nodes_map[d["id"]] = d
+
+    all_nodes = [all_nodes_map[nid] for nid in sorted(all_reached) if nid in all_nodes_map]
+    all_ids = [n["id"] for n in all_nodes]
 
     # 도메인 필터: 도메인 키워드가 있으면 해당 도메인 결과만 유지
     # "건강 관리" → "관리"로 프로젝트가 매칭되더라도, "건강" 도메인 결과만 남김

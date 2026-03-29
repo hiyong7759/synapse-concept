@@ -1,0 +1,20 @@
+{
+  "name": "@synapse/core",
+  "version": "0.1.0",
+  "description": "Personal knowledge graph engine — shared concepts, private connections",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "verify": "node dist/verify.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^12.8.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "typescript": "^6.0.2"
+  }
+}
