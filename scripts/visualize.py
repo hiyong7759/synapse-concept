@@ -707,6 +707,59 @@ network.on('blurNode', () => {
 </html>"""
 
 
+def demo_graph() -> dict:
+    """Demo data for screenshots — realistic developer profile."""
+    nodes_data = [
+        (1, "React Native", "기술"), (2, "TypeScript", "기술"), (3, "Docker", "기술"),
+        (4, "Python", "기술"), (5, "PostgreSQL", "기술"), (6, "Expo", "기술"),
+        (7, "맥북 프로 16", "장비"), (8, "M3 Max", "장비"), (9, "RTX4080", "장비"),
+        (10, "우분투 서버", "장비"), (11, "커밋매니저", "프로젝트"), (12, "푸드로그", "프로젝트"),
+        (13, "사내 ERP", "프로젝트"), (14, "허리디스크", "건강"), (15, "L4-L5", "건강"),
+        (16, "데드리프트", "운동"), (17, "트랩바", "운동"), (18, "수영", "운동"),
+        (19, "카페인 알레르기", "음식"), (20, "집", "위치"), (21, "회사", "위치"),
+        (22, "프론트엔드 개발자", "역할"), (23, "3년차", "경력"),
+        (24, "Git", "기술"), (25, "Figma", "기술"),
+        (26, "김시냅스", "프로필"), (27, "서울", "위치"), (28, "스타트업A", "회사"),
+    ]
+
+    edges_data = [
+        (1, 6, "link", "빌드도구"), (1, 2, "link", "주 언어"), (1, 11, "link", "프레임워크"),
+        (1, 12, "link", "프레임워크"), (3, 10, "link", "실행환경"), (4, 13, "link", "백엔드"),
+        (5, 13, "link", "DB"), (7, 8, "link", "스펙"), (7, 20, "link", "위치"),
+        (9, 21, "link", "위치"), (14, 15, "link", "부위"), (14, 16, "link", "주의"),
+        (16, 17, "link", "대체"), (17, 14, "link", "허리부담적음"),
+        (18, 14, "link", "안전"), (22, 1, "link", "주력"), (22, 23, "link", "경력"),
+        (3, 4, "link", "함께사용"), (24, 11, "link", "핵심도구"), (25, 12, "link", "디자인"),
+        (26, 22, "link", "직업"), (26, 28, "link", "소속"), (28, 27, "link", "위치"),
+        (26, 14, "link", "지병"), (26, 19, "link", "알레르기"),
+        (26, 1, "link", "주력기술"), (26, 2, "link", "사용언어"), (26, 3, "link", "사용기술"),
+        (26, 4, "link", "사용언어"), (26, 7, "link", "장비"), (26, 9, "link", "장비"),
+        (26, 11, "link", "프로젝트"), (26, 12, "link", "프로젝트"), (26, 13, "link", "프로젝트"),
+        (26, 16, "link", "운동"), (26, 18, "link", "운동"), (26, 20, "link", "거주지"),
+    ]
+
+    nodes = []
+    for nid, name, domain in nodes_data:
+        color = DOMAIN_COLORS.get(domain, DEFAULT_COLOR)
+        nodes.append({
+            "id": nid, "label": name, "group": domain,
+            "color": {"background": color, "border": color,
+                      "highlight": {"background": "#fff", "border": color}},
+            "font": {"color": "#dfe6e9"},
+        })
+
+    edges = []
+    for src, tgt, etype, label in edges_data:
+        edge_label = label if label else etype
+        edges.append({
+            "from": src, "to": tgt, "label": edge_label, "arrows": "to",
+            "font": {"color": "#b2bec3", "strokeWidth": 0},
+            "color": {"color": "#636e72", "highlight": "#dfe6e9"},
+        })
+
+    return {"nodes": nodes, "edges": edges}
+
+
 def generate_html(db_path: str = DB_PATH) -> str:
     """DB에서 그래프 데이터를 읽어 HTML 문자열 생성."""
     data = export_graph(db_path)
@@ -721,7 +774,14 @@ def main():
     os.makedirs(data_dir, exist_ok=True)
     out_path = os.path.join(data_dir, 'graph.html')
 
-    html = generate_html()
+    if "--demo" in sys.argv:
+        data = demo_graph()
+        html = HTML_TEMPLATE.replace("__DATA__", json.dumps(data, ensure_ascii=False))
+        html = html.replace("__COLORS__", json.dumps(DOMAIN_COLORS, ensure_ascii=False))
+        html = html.replace("__TEXT_COLORS__", json.dumps(DOMAIN_TEXT_COLORS, ensure_ascii=False))
+    else:
+        html = generate_html()
+
     with open(out_path, 'w', encoding='utf-8') as f:
         f.write(html)
 
