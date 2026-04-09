@@ -87,9 +87,7 @@
       "nodes": [
         {"name": "병원", "category": "BOD.medical"}
       ],
-      "edges": [
-        {"source": "나", "target": "병원", "label": null}
-      ],
+      "edges": [],
       "deactivate": []
     }
   },
@@ -101,9 +99,7 @@
       "nodes": [
         {"name": "두통약", "category": "BOD.medical"}
       ],
-      "edges": [
-        {"source": "나", "target": "두통약", "label": null}
-      ],
+      "edges": [],
       "deactivate": []
     }
   },
@@ -115,9 +111,7 @@
       "nodes": [
         {"name": "산책", "category": "BOD.exercise"}
       ],
-      "edges": [
-        {"source": "나", "target": "산책", "label": null}
-      ],
+      "edges": [],
       "deactivate": []
     }
   },
@@ -129,9 +123,7 @@
       "nodes": [
         {"name": "엄마", "category": "PER.family"}
       ],
-      "edges": [
-        {"source": "나", "target": "엄마", "label": "한테"}
-      ],
+      "edges": [],
       "deactivate": []
     }
   },
@@ -153,9 +145,7 @@
       "nodes": [
         {"name": "아빠", "category": "PER.family"}
       ],
-      "edges": [
-        {"source": "나", "target": "아빠", "label": "랑"}
-      ],
+      "edges": [],
       "deactivate": []
     }
   },
@@ -167,9 +157,7 @@
       "nodes": [
         {"name": "헬스장", "category": "BOD.exercise"}
       ],
-      "edges": [
-        {"source": "나", "target": "헬스장", "label": null}
-      ],
+      "edges": [],
       "deactivate": []
     }
   },
@@ -182,10 +170,7 @@
         {"name": "약국", "category": "BOD.medical"},
         {"name": "감기약", "category": "BOD.medical"}
       ],
-      "edges": [
-        {"source": "나", "target": "약국", "label": "에서"},
-        {"source": "나", "target": "감기약", "label": null}
-      ],
+      "edges": [],
       "deactivate": []
     }
   },
@@ -197,9 +182,7 @@
       "nodes": [
         {"name": "동생", "category": "PER.family"}
       ],
-      "edges": [
-        {"source": "나", "target": "동생", "label": "이랑"}
-      ],
+      "edges": [],
       "deactivate": []
     }
   },
@@ -211,9 +194,7 @@
       "nodes": [
         {"name": "스트레칭", "category": "BOD.exercise"}
       ],
-      "edges": [
-        {"source": "나", "target": "스트레칭", "label": null}
-      ],
+      "edges": [],
       "deactivate": []
     }
   },
