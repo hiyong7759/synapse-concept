@@ -1,0 +1,463 @@
+/* ─── 마크다운 ─── */
+.mdP { margin: 0 0 8px; }
+.mdP:last-child { margin-bottom: 0; }
+
+.mdH1 { font-size: 16px; font-weight: 600; color: var(--accent); margin: 10px 0 6px; }
+.mdH2 { font-size: 14px; font-weight: 600; color: var(--text-primary); margin: 10px 0 5px; }
+.mdH3 { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin: 8px 0 4px; }
+
+.mdUl, .mdOl { padding-left: 18px; margin: 4px 0 8px; display: flex; flex-direction: column; gap: 2px; }
+.mdLi { font-size: 13px; line-height: 1.65; color: var(--text-primary); }
+
+.mdBlockquote {
+  border-left: 2px solid var(--accent);
+  padding: 4px 12px;
+  margin: 6px 0;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.mdHr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+
+.mdLink { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.mdLink:hover { opacity: 0.8; }
+
+.mdStrong { font-weight: 600; color: var(--text-primary); }
+.mdEm { font-style: italic; color: var(--text-secondary); }
+
+/* 표 */
+.mdTableWrap { overflow-x: auto; margin: 8px 0; }
+.mdTable { border-collapse: collapse; font-size: 12px; width: 100%; }
+.mdTh {
+  background: var(--surface-2);
+  color: var(--accent);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+.mdTd {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  vertical-align: top;
+}
+
+/* 인라인 코드 */
+.inlineCode {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  background: rgba(200, 169, 110, 0.1);
+  color: var(--accent);
+  border: 1px solid var(--accent-border);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+/* 코드 블록 */
+.codeBlock {
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin: 6px 0;
+  font-size: 12px;
+}
+.codeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface-2);
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.codeLang {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-transform: lowercase;
+  letter-spacing: 0.05em;
+}
+.codeActions { display: flex; gap: 6px; }
+.codeBtn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-tertiary);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 10px;
+  cursor: pointer;
+  font-family: 'JetBrains Mono', monospace;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.codeBtn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ─── 상단 바 ─── */
+.topbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 20px 12px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.topbarLogo {
+  font-family: 'Playfair Display', serif;
+  font-size: 18px;
+  color: var(--accent);
+  letter-spacing: 0.05em;
+}
+.topbarActions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.topbarBtn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  font-family: 'Noto Sans KR', sans-serif;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+.topbarBtn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ─── 채팅 영역 ─── */
+.chatArea {
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+  overflow-y: auto;
+  background: var(--bg);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.chatArea::-webkit-scrollbar { width: 3px; }
+.chatArea::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.ts {
+  font-size: 9px;
+  color: var(--text-tertiary);
+  font-family: 'JetBrains Mono', monospace;
+  margin-top: 2px;
+}
+
+/* 비서 말풍선 */
+.msgAi {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: 85%;
+}
+.bubbleAi {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px 16px 16px 16px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+}
+
+/* 사용자 말풍선 */
+.msgUser {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  max-width: 85%;
+  align-self: flex-end;
+}
+.bubbleUser {
+  background: var(--surface-3);
+  border: 1px solid #2A2D40;
+  border-radius: 16px 4px 16px 16px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text-primary);
+}
+.msgUser .ts { text-align: right; }
+
+/* 사용자 이미지 첨부 */
+.bubbleImages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+.bubbleImage {
+  max-width: 180px;
+  max-height: 180px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+
+/* 변경 알림 (단순) */
+.changeNotice {
+  border-top: 1px dashed var(--border-2);
+  border-bottom: 1px dashed var(--border-2);
+  padding: 8px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 변경 알림 (상태 변경 — 강조) */
+.changeNoticeStrong {
+  border: 1px solid var(--accent-border);
+  background: var(--accent-dim);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.changeLabel {
+  font-size: 10px;
+  color: var(--accent);
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.08em;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.changeTriple {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: rgba(200, 169, 110, 0.7);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.changeTriple::before { content: '▸'; color: var(--accent); }
+.node { color: var(--accent); }
+.edge { color: var(--text-tertiary); }
+.inactiveBadge {
+  background: var(--danger);
+  color: white;
+  font-size: 8px;
+  padding: 1px 4px;
+  border-radius: 2px;
+  opacity: 0.8;
+}
+.changeActions {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+}
+.changeBtn {
+  background: none;
+  border: none;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-family: 'Noto Sans KR', sans-serif;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color 0.15s;
+}
+.changeBtn:hover { color: var(--accent); }
+
+/* BFS 탐색 중 */
+.bfsBubble {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px 16px 16px 16px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 88%;
+}
+.bfsStatus {
+  font-size: 11px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.bfsDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.bfsDot:nth-child(2) { animation-delay: 0.2s; }
+.bfsDot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes pulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+.miniGraph {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: rgba(0,0,0,0.3);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+.miniGraphRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+}
+.graphNode { color: var(--accent); font-weight: 500; }
+.graphNode.dim { color: var(--text-tertiary); }
+.dim { color: var(--text-tertiary); }
+.graphEdgeLine { color: #5A607A; font-size: 9px; letter-spacing: 0.02em; }
+
+/* 결과물 카드 */
+.resultCard {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 10px 10px 0;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 88%;
+  animation: scaleIn 0.2s ease-out;
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.96) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.resultCardTitle {
+  font-size: 12px;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+.resultCardDivider { height: 1px; background: var(--border); }
+.resultCardPreview {
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+/* ─── 입력창 ─── */
+.inputAreaWrap {
+  flex-shrink: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+/* 이미지 미리보기 */
+.imagePreviews {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px 0;
+  flex-wrap: wrap;
+}
+.imageThumb {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.imageThumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.imageRemove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  background: rgba(0,0,0,0.65);
+  border: none;
+  border-radius: 50%;
+  color: white;
+  font-size: 9px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* 첨부 버튼 */
+.attachBtn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+  flex-shrink: 0;
+  transition: color 0.15s;
+  display: flex;
+  align-items: center;
+}
+.attachBtn:hover { color: var(--accent); }
+.attachBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.inputArea {
+  padding: 10px 16px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.inputBox {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 8px 14px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: 'Noto Sans KR', sans-serif;
+  outline: none;
+  resize: none;
+  min-height: 38px;
+  max-height: 120px;
+}
+.inputBox::placeholder { color: var(--text-tertiary); }
+.inputBox:focus { border-color: var(--border-2); }
+.inputSend {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+}
+.inputSend:hover { opacity: 0.85; }
+.inputSend:disabled { opacity: 0.4; cursor: not-allowed; }
+.inputSend svg { width: 14px; height: 14px; fill: var(--bg); }

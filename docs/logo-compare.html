@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Synapse 로고 비교</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+:root {
+  --bg:            #0A0B0E;
+  --surface:       #141519;
+  --surface-2:     #1C1E24;
+  --border:        #252730;
+  --border-2:      #3A3D4A;
+  --text-primary:  #E8E4D9;
+  --text-secondary:#9A9BA2;
+  --text-tertiary: #8A8B92;
+  --accent:        #C8A96E;
+  --accent-dim:    rgba(200,169,110,0.12);
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: 'Noto Sans KR', sans-serif;
+  min-height: 100vh;
+  padding: 40px 24px 80px;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+h1 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  margin-bottom: 40px;
+}
+
+/* ── 비교 레이아웃 ── */
+.compare-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 48px;
+}
+
+.compare-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.col-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.section-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin: 24px 0 12px;
+}
+
+/* ── 폰 목업 ── */
+.phone {
+  width: 100%;
+  max-width: 300px;
+  margin: 0 auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 28px;
+  overflow: hidden;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+}
+
+/* ── topbar ── */
+.topbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 20px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.topbar-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+}
+.topbar-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: 'Noto Sans KR', sans-serif;
+}
+
+/* ── 환영 화면 ── */
+.welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 30px;
+  gap: 20px;
+  background: var(--bg);
+  min-height: 420px;
+  text-align: center;
+}
+.welcome-tagline {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+  max-width: 200px;
+}
+.welcome-btn {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: 10px;
+  padding: 11px 36px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: 'Noto Sans KR', sans-serif;
+}
+.welcome-divider { width: 36px; height: 1px; background: var(--border); }
+
+/* ── 채팅 화면 (서브) ── */
+.chat-area {
+  padding: 20px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: var(--bg);
+  min-height: 240px;
+}
+.msg-ai { display: flex; flex-direction: column; gap: 4px; max-width: 85%; }
+.bubble-ai {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px 14px 14px 14px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.msg-user { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 85%; align-self: flex-end; }
+.bubble-user {
+  background: var(--surface-2);
+  border: 1px solid #2A2D40;
+  border-radius: 14px 4px 14px 14px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.ts { font-size: 9px; color: var(--text-tertiary); font-family: 'JetBrains Mono', monospace; }
+.msg-user .ts { text-align: right; }
+.input-area {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.input-box {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 8px 14px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-family: 'Noto Sans KR', sans-serif;
+}
+.input-send {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.input-send svg { width: 12px; height: 12px; fill: var(--bg); }
+
+/* ── PC 목업 ── */
+.desktop-frame {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+}
+.desktop-titlebar {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.dot { width: 9px; height: 9px; border-radius: 50%; }
+.dot.r { background: #C85D5D; }
+.dot.y { background: #C8A96E; }
+.dot.g { background: #5DAB8A; }
+.url-bar {
+  flex: 1; max-width: 240px; margin: 0 auto;
+  background: rgba(0,0,0,0.25);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+.desktop-app {
+  display: flex;
+  height: 340px;
+}
+.desktop-sidebar {
+  width: 200px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-logo {
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.desktop-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border-left: 2px solid transparent;
+}
+.desktop-nav-item.active { color: var(--accent); border-left-color: var(--accent); background: var(--accent-dim); }
+.sidebar-footer {
+  margin-top: auto;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.avatar {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; color: var(--accent); flex-shrink: 0;
+}
+.user-name { font-size: 12px; color: var(--text-primary); font-weight: 500; }
+.user-meta { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--text-tertiary); }
+.desktop-welcome {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+.desktop-welcome-inner {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 16px;
+  text-align: center;
+}
+.desktop-welcome-tagline { font-size: 13px; color: var(--text-secondary); line-height: 1.8; }
+.desktop-welcome-btn {
+  background: var(--accent); color: var(--bg);
+  border: none; border-radius: 10px;
+  padding: 11px 40px; font-size: 13px; font-weight: 500;
+  font-family: 'Noto Sans KR', sans-serif;
+}
+</style>
+</head>
+<body>
+
+<h1>Synapse — 로고 비교 · A vs B</h1>
+
+<!-- ── 헤더 레이블 ── -->
+<div class="compare-row" style="margin-bottom:8px;">
+  <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--accent);letter-spacing:0.1em;">A — S lettermark</div>
+  <div style="font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--accent);letter-spacing:0.1em;">B — 두 노드 아크</div>
+</div>
+<div class="compare-row" style="margin-bottom:40px;">
+  <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-tertiary);">synapse-logo.png</div>
+  <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-tertiary);">synapse-icon-1024.png</div>
+</div>
+
+<!-- ══════════════════════════════════
+     모바일 — 메인 (환영)
+══════════════════════════════════ -->
+<div class="section-title">모바일 · 메인 (환영)</div>
+<div class="compare-row">
+
+  <!-- A -->
+  <div class="compare-col">
+    <div class="phone">
+      <div class="welcome">
+        <div class="welcome-divider"></div>
+        <img src="logo/synapse-logo.png" alt="A" style="height:96px;width:auto;"/>
+        <div class="welcome-tagline">나의 맥락을 매번 설명하지 않아도 되는 세상</div>
+        <button class="welcome-btn">시작하기</button>
+        <div style="font-size:11px;color:var(--text-tertiary);display:flex;align-items:center;gap:4px;">🔒 이 기기에만 저장됩니다</div>
+        <div class="welcome-divider"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="compare-col">
+    <div class="phone">
+      <div class="welcome">
+        <div class="welcome-divider"></div>
+        <img src="logo/synapse-icon-1024.png" alt="B" style="height:96px;width:auto;"/>
+        <div class="welcome-tagline">나의 맥락을 매번 설명하지 않아도 되는 세상</div>
+        <button class="welcome-btn">시작하기</button>
+        <div style="font-size:11px;color:var(--text-tertiary);display:flex;align-items:center;gap:4px;">🔒 이 기기에만 저장됩니다</div>
+        <div class="welcome-divider"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════
+     모바일 — 서브 (채팅 topbar)
+══════════════════════════════════ -->
+<div class="section-title">모바일 · 서브 (채팅)</div>
+<div class="compare-row">
+
+  <!-- A -->
+  <div class="compare-col">
+    <div class="phone">
+      <div class="topbar">
+        <img src="logo/synapse-logo.png" style="height:32px;width:auto;" alt="A"/>
+        <div class="topbar-actions">
+          <button class="topbar-btn">⊡ 그래프</button>
+        </div>
+      </div>
+      <div class="chat-area">
+        <div class="msg-ai">
+          <div class="bubble-ai">안녕하세요! 오늘도 도와드릴게요.</div>
+          <div class="ts">09:12</div>
+        </div>
+        <div class="msg-user">
+          <div class="bubble-user">이력서 써줘</div>
+          <div class="ts">09:14</div>
+        </div>
+        <div class="msg-ai">
+          <div class="bubble-ai">그래프에서 관련 정보 꺼내올게요.</div>
+          <div class="ts">09:14</div>
+        </div>
+      </div>
+      <div class="input-area">
+        <div class="input-box">메시지 입력...</div>
+        <button class="input-send"><svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="compare-col">
+    <div class="phone">
+      <div class="topbar">
+        <img src="logo/synapse-icon-1024.png" style="height:32px;width:auto;" alt="B"/>
+        <div class="topbar-actions">
+          <button class="topbar-btn">⊡ 그래프</button>
+        </div>
+      </div>
+      <div class="chat-area">
+        <div class="msg-ai">
+          <div class="bubble-ai">안녕하세요! 오늘도 도와드릴게요.</div>
+          <div class="ts">09:12</div>
+        </div>
+        <div class="msg-user">
+          <div class="bubble-user">이력서 써줘</div>
+          <div class="ts">09:14</div>
+        </div>
+        <div class="msg-ai">
+          <div class="bubble-ai">그래프에서 관련 정보 꺼내올게요.</div>
+          <div class="ts">09:14</div>
+        </div>
+      </div>
+      <div class="input-area">
+        <div class="input-box">메시지 입력...</div>
+        <button class="input-send"><svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg></button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════
+     PC — 메인 (환영)
+══════════════════════════════════ -->
+<div class="section-title">PC · 메인 (환영)</div>
+<div class="compare-row">
+
+  <!-- A -->
+  <div class="compare-col">
+    <div class="desktop-frame">
+      <div class="desktop-titlebar">
+        <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+        <div class="url-bar">synapse.app</div>
+      </div>
+      <div class="desktop-app">
+        <div class="desktop-sidebar">
+          <div class="sidebar-logo">
+            <img src="logo/synapse-logo.png" alt="A" style="height:28px;width:auto;"/>
+          </div>
+          <div class="desktop-nav-item active"><span>💬</span> 채팅</div>
+          <div class="desktop-nav-item"><span>◉</span> 그래프</div>
+          <div class="desktop-nav-item"><span>⚙</span> 설정</div>
+          <div class="sidebar-footer">
+            <div class="avatar">K</div>
+            <div><div class="user-name">김시냅스</div><div class="user-meta">node 248</div></div>
+          </div>
+        </div>
+        <div class="desktop-welcome">
+          <div class="desktop-welcome-inner">
+            <img src="logo/synapse-logo.png" alt="A" style="height:96px;width:auto;"/>
+            <div class="desktop-welcome-tagline">나의 맥락을 매번 설명하지<br>않아도 되는 세상</div>
+            <button class="desktop-welcome-btn">시작하기</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="compare-col">
+    <div class="desktop-frame">
+      <div class="desktop-titlebar">
+        <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+        <div class="url-bar">synapse.app</div>
+      </div>
+      <div class="desktop-app">
+        <div class="desktop-sidebar">
+          <div class="sidebar-logo">
+            <img src="logo/synapse-icon-1024.png" alt="B" style="height:28px;width:auto;"/>
+          </div>
+          <div class="desktop-nav-item active"><span>💬</span> 채팅</div>
+          <div class="desktop-nav-item"><span>◉</span> 그래프</div>
+          <div class="desktop-nav-item"><span>⚙</span> 설정</div>
+          <div class="sidebar-footer">
+            <div class="avatar">K</div>
+            <div><div class="user-name">김시냅스</div><div class="user-meta">node 248</div></div>
+          </div>
+        </div>
+        <div class="desktop-welcome">
+          <div class="desktop-welcome-inner">
+            <img src="logo/synapse-icon-1024.png" alt="B" style="height:96px;width:auto;"/>
+            <div class="desktop-welcome-tagline">나의 맥락을 매번 설명하지<br>않아도 되는 세상</div>
+            <button class="desktop-welcome-btn">시작하기</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══════════════════════════════════
+     PC — 서브 (채팅)
+══════════════════════════════════ -->
+<div class="section-title">PC · 서브 (채팅)</div>
+<div class="compare-row">
+
+  <!-- A -->
+  <div class="compare-col">
+    <div class="desktop-frame">
+      <div class="desktop-titlebar">
+        <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+        <div class="url-bar">synapse.app/chat</div>
+      </div>
+      <div class="desktop-app">
+        <div class="desktop-sidebar">
+          <div class="sidebar-logo">
+            <img src="logo/synapse-logo.png" alt="A" style="height:28px;width:auto;"/>
+          </div>
+          <div class="desktop-nav-item active"><span>💬</span> 채팅</div>
+          <div class="desktop-nav-item"><span>◉</span> 그래프</div>
+          <div class="desktop-nav-item"><span>⚙</span> 설정</div>
+          <div class="sidebar-footer">
+            <div class="avatar">K</div>
+            <div><div class="user-name">김시냅스</div><div class="user-meta">node 248</div></div>
+          </div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;background:var(--bg);">
+          <div style="background:var(--surface);border-bottom:1px solid var(--border);padding:10px 24px;display:flex;align-items:center;gap:8px;">
+            <span style="font-size:13px;font-weight:500;">비서</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-tertiary);">응답 ~1.2s</span>
+          </div>
+          <div style="flex:1;padding:20px 28px;display:flex;flex-direction:column;gap:14px;">
+            <div class="msg-ai"><div class="bubble-ai">안녕하세요! 오늘도 도와드릴게요.</div></div>
+            <div class="msg-user"><div class="bubble-user">이력서 써줘</div></div>
+            <div class="msg-ai"><div class="bubble-ai">그래프에서 관련 정보 꺼내올게요.</div></div>
+          </div>
+          <div style="border-top:1px solid var(--border);background:var(--surface);padding:12px 28px;display:flex;gap:10px;align-items:center;">
+            <div class="input-box">메시지를 입력하세요...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="compare-col">
+    <div class="desktop-frame">
+      <div class="desktop-titlebar">
+        <div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+        <div class="url-bar">synapse.app/chat</div>
+      </div>
+      <div class="desktop-app">
+        <div class="desktop-sidebar">
+          <div class="sidebar-logo">
+            <img src="logo/synapse-icon-1024.png" alt="B" style="height:28px;width:auto;"/>
+          </div>
+          <div class="desktop-nav-item active"><span>💬</span> 채팅</div>
+          <div class="desktop-nav-item"><span>◉</span> 그래프</div>
+          <div class="desktop-nav-item"><span>⚙</span> 설정</div>
+          <div class="sidebar-footer">
+            <div class="avatar">K</div>
+            <div><div class="user-name">김시냅스</div><div class="user-meta">node 248</div></div>
+          </div>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;background:var(--bg);">
+          <div style="background:var(--surface);border-bottom:1px solid var(--border);padding:10px 24px;display:flex;align-items:center;gap:8px;">
+            <span style="font-size:13px;font-weight:500;">비서</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-tertiary);">응답 ~1.2s</span>
+          </div>
+          <div style="flex:1;padding:20px 28px;display:flex;flex-direction:column;gap:14px;">
+            <div class="msg-ai"><div class="bubble-ai">안녕하세요! 오늘도 도와드릴게요.</div></div>
+            <div class="msg-user"><div class="bubble-user">이력서 써줘</div></div>
+            <div class="msg-ai"><div class="bubble-ai">그래프에서 관련 정보 꺼내올게요.</div></div>
+          </div>
+          <div style="border-top:1px solid var(--border);background:var(--surface);padding:12px 28px;display:flex;gap:10px;align-items:center;">
+            <div class="input-box">메시지를 입력하세요...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

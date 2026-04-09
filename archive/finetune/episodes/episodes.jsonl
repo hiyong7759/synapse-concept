@@ -1,0 +1,800 @@
+{"id": "ep_0001", "text": "요즘 TypeScript로 갈아탔는데 타입 추론이 진짜 편해.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0002", "text": "백엔드는 주로 Spring Boot 써.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0003", "text": "IDE는 IntelliJ 쓴 지 5년 됐어.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0004", "text": "Git 브랜치 전략은 팀에서 GitFlow 쓰고 있어.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0005", "text": "쿼리 튜닝할 때 PostgreSQL 실행 계획 꼭 확인해.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0006", "text": "컨테이너 올릴 때 Docker Compose로 로컬 환경 맞춰.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0007", "text": "프론트는 Next.js 13 앱 라우터 기준으로 개발 중이야.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0008", "text": "CI/CD는 GitHub Actions으로 자동화해뒀어.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0009", "text": "테스트 코드는 Jest로 짜고 있어.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0010", "text": "상태 관리는 Zustand 쓰는 게 제일 편하더라.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0011", "text": "클라우드 인프라는 AWS 위주로 써.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0012", "text": "Android 앱 개발할 때 Kotlin 쓰고 있어.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0013", "text": "API 명세는 Swagger로 팀이랑 공유해.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0014", "text": "빌드 도구는 Gradle 쓰고 있어.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0015", "text": "데이터 분석할 때 pandas 제일 많이 써.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0016", "text": "모바일 앱은 React Native로 iOS랑 Android 같이 대응해.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0017", "text": "쿼리는 MyBatis 쓰는 레거시 프로젝트야.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0018", "text": "GraphQL 도입하려고 Apollo Server 공부 중이야.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0019", "text": "메시지 브로커는 Kafka 연동해서 쓰고 있어.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0020", "text": "ORM은 JPA 위주로 써, 복잡한 건 JPQL로 해결해.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0021", "text": "스크립트 자동화는 Python으로 짜고 있어.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0022", "text": "Vim 플러그인 세팅하는 데 반나절 넘게 썼어.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0023", "text": "로컬 개발환경은 WSL2에 Ubuntu 올려서 써.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0024", "text": "CSS는 Tailwind CSS 도입하고 나서 훨씬 빠르게 짜.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0025", "text": "Redis 캐시 레이어 붙이고 나서 응답 속도 확 줄었어.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0026", "text": "코드 리뷰 도구로 팀에서 GitHub PR 프로세스 정착시켰어.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0027", "text": "배포 환경 관리는 Terraform으로 IaC 적용 중이야.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0028", "text": "Rust 공부 시작했는데 소유권 개념이 아직 낯설어.", "domain": "기술", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0029", "text": "나는 React로 프론트엔드 개발을 주로 하고 있어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0030", "text": "TypeScript 쓴 지 3년 됐는데 이제 JavaScript로는 못 돌아가겠더라.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0031", "text": "요즘 Next.js로 사내 어드민 페이지 만들고 있어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0032", "text": "FastAPI 쓰면서 Django는 거의 손 놨어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0033", "text": "Kotlin으로 안드로이드 앱 개발하고 있고, Java는 레거시 유지보수할 때만 써.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0034", "text": "Spring Boot로 백엔드 짜다 보니 Node.js는 이제 낯설어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0035", "text": "Redis 캐싱 붙이면서 응답속도가 확 줄었어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0036", "text": "PostgreSQL 메인으로 쓰고 분석 쿼리는 BigQuery로 따로 돌려.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0037", "text": "회사에서 AWS 쓰는데 나는 Lambda 위주로 담당하고 있어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0038", "text": "Docker 컨테이너로 배포하고 Kubernetes는 팀 선임이 관리해.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0039", "text": "Git 브랜치 전략은 GitFlow 쓰고 있어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0040", "text": "Terraform으로 인프라 코드 관리하기 시작했어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0041", "text": "GraphQL 도입해봤는데 팀에서 러닝커브 때문에 다시 REST로 갔어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0042", "text": "Pandas랑 NumPy로 데이터 전처리 작업을 주로 해.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0043", "text": "Airflow로 배치 파이프라인 스케줄링하고 있어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0044", "text": "Vue 3 쓰다가 이번 프로젝트는 React로 넘어왔어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0045", "text": "Flutter로 iOS랑 안드로이드 동시에 개발하고 있어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0046", "text": "Go 언어로 마이크로서비스 하나 새로 만들었어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0047", "text": "Elasticsearch로 검색 기능 붙이는 게 지금 내 메인 업무야.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0048", "text": "Jenkins 대신 GitHub Actions으로 CI/CD 갈아탔어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0049", "text": "MySQL에서 Aurora MySQL로 마이그레이션하는 작업 중이야.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0050", "text": "Tailwind CSS 쓰면서 CSS 직접 짜는 일이 확 줄었어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0051", "text": "Celery로 비동기 태스크 처리하고 있어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0052", "text": "Rust 공부 중인데 아직 실무에선 못 써봤어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0053", "text": "Swift로 iOS 앱 개발하고 있고 SwiftUI로 넘어가는 중이야.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0054", "text": "Prometheus랑 Grafana로 서버 모니터링 세팅했어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0055", "text": "Apache Spark로 로그 데이터 분석 파이프라인 짜고 있어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0056", "text": "Nginx 리버스 프록시 설정은 내가 주로 담당해.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0057", "text": "Selenium으로 E2E 테스트 자동화하는 스크립트 만들었어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0058", "text": "PyTorch로 추천 모델 실험하고 있어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0059", "text": "gRPC 써서 서비스 간 통신 레이턴시 많이 줄였어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0060", "text": "Supabase 백엔드로 쓰면서 서버리스로 빠르게 프로토타입 만들었어.", "domain": "기술", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0061", "text": "React랑 Next.js 주로 쓰는데, 요즘 사이드 프로젝트에서 Rust 찍먹 중이야.", "domain": "기술", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0062", "text": "현재 핀테크 스타트업에서 백엔드 개발자로 일하고 있는데, 주 스택이 Kotlin + Spring Boot라서 Java 코드 보면 아직 어색해.", "domain": "기술", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0063", "text": "삼성SDS 협력사 소속으로 금융결제원 프로젝트 투입된 지 8개월째야, DBA 역할이라 PostgreSQL 튜닝이 주 업무야.", "domain": "기술", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0064", "text": "작년에 AWS Solutions Architect Professional 땄고, 지금 회사에서 인프라 이전 프로젝트 리드하고 있어.", "domain": "기술", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0065", "text": "카카오페이 외주로 Flutter 앱 개발 중인데, iOS 배포 경험이 없어서 인증서 설정이 제일 귀찮아.", "domain": "기술", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0066", "text": "NHN 클라우드 팀에 있다가 올해 초에 쿠팡으로 이직했는데, 코드 퀄리티 기준이 확실히 달라서 적응 중이야.", "domain": "기술", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0067", "text": "CI/CD 파이프라인을 Jenkins에서 GitHub Actions로 다 갈아엎는 중이고, ArgoCD 붙여서 GitOps로 가려는 거야.", "domain": "기술", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0068", "text": "스타트업 세 군데 경험하고 지금은 대기업 SI 와서 일하는데, 문서화 문화 차이가 제일 충격적이었어.", "domain": "기술", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0069", "text": "파이썬으로 데이터 전처리만 5년 넘게 했더니 요즘 LLM 파인튜닝 쪽으로 넘어가고 싶은데 GPU 비용이 발목 잡아.", "domain": "기술", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0070", "text": "네이버 지도 API 붙이는 프로젝트 하다가 국내 지도 API가 해외랑 얼마나 다른지 뼈저리게 느꼈어.", "domain": "기술", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0071", "text": "티맥스소프트에서 미들웨어 유지보수 3년 하다가 퇴사했는데, 그때 레거시 코드가 지금도 악몽에 나와.", "domain": "기술", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0072", "text": "Vue 2에서 Vue 3 마이그레이션 혼자 다 맡았는데, Composition API 적응하는 게 생각보다 시간 먹었어.", "domain": "기술", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0073", "text": "공공기관 SI 나가 있는데 망분리 환경이라 npm 설치 하나 하려면 내부 승인 절차가 3단계야.", "domain": "기술", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0074", "text": "현재 팀에서 TypeScript 도입 주도했는데, 팀원들한테 any 쓰지 말라고 설득하는 게 제일 힘든 싸움이었어.", "domain": "기술", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0075", "text": "쿠버네티스 온콜 담당이라 주말에도 폰 붙들고 있어야 해서, 요즘 Datadog 알림 튜닝하는 게 삶의 질 프로젝트야.", "domain": "기술", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0076", "text": "라인 파이낸셜에 소속이지만 실제로는 미즈호 은행 시스템 쪽에 상주하면서 Java 배치 개발하고 있어.", "domain": "기술", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0077", "text": "게임 서버 개발 7년 하다가 지금은 B2B SaaS 스타트업으로 왔는데, TCP 소켓 대신 REST API 짜는 게 처음엔 너무 심심했어.", "domain": "기술", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0078", "text": "Redis 클러스터 설계 맡아서 했다가 센티널 모드랑 클러스터 모드 차이 제대로 몰랐던 게 장애로 터져서 진짜 뼈 맞았어.", "domain": "기술", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0079", "text": "LG CNS 파견으로 한전KDN 스마트그리드 프로젝트 투입 중인데, 도메인이 생소하다 보니 업무 용어 배우는 데만 두 달 걸렸어.", "domain": "기술", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0080", "text": "오라클 DB 쓰는 레거시 시스템에 GraphQL 얹으려고 하는데, N+1 문제 해결하다가 DataLoader 패턴 공부하게 됐어.", "domain": "기술", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0081", "text": "지금 사내 인사 시스템 고도화 프로젝트에 투입돼 있어.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0082", "text": "이번 달부터 배달 앱 리뉴얼 작업을 맡았는데 React Native로 짜고 있어.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0083", "text": "공공기관 민원 처리 시스템 프로젝트를 6개월째 하고 있어.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0084", "text": "스마트팩토리 MES 구축 프로젝트에서 백엔드 파트 담당하고 있어.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0085", "text": "올해 초부터 보험사 챗봇 고도화 프로젝트 하나 붙어 있어.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0086", "text": "지금 하는 프로젝트가 물류 SCM 시스템인데 레거시 걷어내는 게 일이야.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0087", "text": "카드사 앱 리팩터링 프로젝트 진행 중이고 Flutter로 전환하는 작업이야.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0088", "text": "지자체 스마트시티 플랫폼 프로젝트에 SI로 들어가 있어.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0089", "text": "병원 EMR 연동 프로젝트를 이번 분기 안에 끝내야 해.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0090", "text": "현재 전자정부 민원 포털 개편 프로젝트 참여 중이야.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0091", "text": "내가 맡은 프로젝트가 제조사 품질 관리 시스템 구축이야.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0092", "text": "쇼핑몰 정산 자동화 프로젝트를 스프링 부트로 만들고 있어.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0093", "text": "지금 은행 앱 고도화 프로젝트에서 API 개발 쪽 하고 있어.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0094", "text": "사내 ERP 마이그레이션 프로젝트 투입된 지 두 달 됐어.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0095", "text": "군 행정 시스템 현대화 프로젝트인데 보안 요구사항이 엄청 많아.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0096", "text": "헬스케어 스타트업 MVP 프로젝트를 Next.js로 뽑아내는 중이야.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0097", "text": "증권사 HTS 개편 프로젝트에서 실시간 데이터 파이프라인 담당이야.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0098", "text": "현재 대학교 포털 시스템 재구축 프로젝트 진행하고 있어.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0099", "text": "교통카드 정산 시스템 프로젝트인데 트랜잭션 처리량이 장난 아니야.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0100", "text": "사내 챗봇 개발 프로젝트 맡아서 LangChain 써서 구현하고 있어.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0101", "text": "유통사 재고 관리 시스템 구축 프로젝트에 풀스택으로 들어가 있어.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0102", "text": "이커머스 검색 고도화 프로젝트라 Elasticsearch 공부하면서 하고 있어.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0103", "text": "공항 면세점 POS 시스템 리뉴얼 프로젝트를 지금 하고 있어.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0104", "text": "HR 테크 스타트업 프로젝트인데 채용 플랫폼 처음부터 만드는 거야.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0105", "text": "편의점 발주 시스템 개선 프로젝트 맡아서 파이썬으로 배치 짜고 있어.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0106", "text": "통신사 청구서 발행 시스템 마이그레이션 프로젝트에 투입돼 있어.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0107", "text": "온라인 교육 플랫폼 라이브 강의 기능 개발 프로젝트 하는 중이야.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0108", "text": "사내 문서 관리 시스템 구축 프로젝트인데 OCR 붙이는 작업이야.", "domain": "프로젝트", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0109", "text": "지금 사내 ERP 고도화 프로젝트에서 Spring Boot랑 Vue.js 조합으로 백엔드 API 붙이고 있어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0110", "text": "작년에 롯데ON 쇼핑몰 리뉴얼 프로젝트 투입됐는데, 내가 장바구니 모듈 전체 담당했어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0111", "text": "현재 진행 중인 프로젝트가 삼성SDS 발주 물류 시스템이라 React랑 Node.js로 구성했어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0112", "text": "포스코 스마트팩토리 PoC 프로젝트에서 Python으로 이상 감지 모델 붙이는 작업 하고 있어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0113", "text": "우리 팀이 카카오페이 정산 자동화 프로젝트 수주해서 나는 DB 설계 맡았어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0114", "text": "지금 하는 프로젝트가 공공기관 민원 포털인데 전자정부 프레임워크 써야 해서 좀 불편해.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0115", "text": "CJ올리브영 앱 리팩터링 건에 투입됐고, Flutter로 iOS/Android 통합 개발 중이야.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0116", "text": "KB국민은행 차세대 시스템 프로젝트에 아키텍처 설계 파트로 참여하고 있어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0117", "text": "작년 말에 끝난 네이버 쇼핑 검색 개선 프로젝트에서 Elasticsearch 튜닝 담당했었어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0118", "text": "현대자동차 커넥티드카 플랫폼 프로젝트에서 Kafka 이벤트 파이프라인 구축하고 있어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0119", "text": "지금 맡은 게 GS리테일 재고관리 시스템인데, 레거시 Oracle 프로시저를 Java로 전환하는 작업이야.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0120", "text": "세종시 공공 Wi-Fi 관제 시스템 프로젝트에서 Grafana 대시보드 구성 담당하고 있어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0121", "text": "LG CNS에서 발주한 HR 솔루션 프로젝트에 투입돼서 TypeScript로 전체 프론트 짜고 있어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0122", "text": "이번에 새로 시작한 프로젝트가 핀테크 스타트업 대출 심사 엔진인데, 내가 모델 서빙 API 만들어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0123", "text": "KT 클라우드 마이그레이션 프로젝트에서 온프레미스 서버를 AWS로 옮기는 작업 하고 있어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0124", "text": "국토교통부 드론 등록 시스템 구축 프로젝트에서 FastAPI 백엔드 개발 맡았어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0125", "text": "지금 프로젝트가 쿠팡 셀러 어드민 개선 건인데, Next.js로 SSR 적용하는 게 핵심이야.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0126", "text": "한화시스템 방산 프로젝트라 보안 이슈 많아서, 내부망에서 GitLab으로 형상관리 하고 있어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0127", "text": "우리 회사가 신한은행 모바일 앱 유지보수 맡고 있어서, 나는 주로 iOS 파트 담당해.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0128", "text": "SK하이닉스 MES 시스템 고도화 프로젝트에 투입돼서 C# WinForms 레거시 분석 중이야.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0129", "text": "지금 진행 중인 게 서울시 버스 도착 정보 API 고도화인데, Redis 캐싱 구조 새로 잡았어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0130", "text": "배민 가게 관리 툴 개발 프로젝트에서 내가 설계부터 맡았고, Django REST Framework 쓰고 있어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0131", "text": "이마트 SCM 시스템 프로젝트에서 Oracle → PostgreSQL 마이그레이션 스크립트 짜고 있어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0132", "text": "직방 매물 추천 알고리즘 개선 프로젝트에서 협업 필터링 모델 붙이는 작업 담당했어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0133", "text": "카카오모빌리티 드라이버 앱 개편 프로젝트에 투입돼서 React Native로 리빌드하고 있어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0134", "text": "지금 하는 프로젝트가 중소기업 급여 자동화 SaaS인데, 나 혼자 풀스택으로 다 짜고 있어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0135", "text": "우리가 수주한 게 교육부 학습관리 시스템이라, Moodle 커스터마이징이 메인 작업이야.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0136", "text": "넥슨 게임 운영툴 개발 프로젝트에서 내가 어드민 권한 관리 모듈 설계 맡았어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0137", "text": "지금 사내 프로젝트가 AI 기반 고객 상담 챗봇인데, LangChain이랑 OpenAI API 연동하고 있어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0138", "text": "GKL 카지노 내부 시스템 유지보수 프로젝트인데, JSP 레거시 코드 보는 게 제일 힘들어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0139", "text": "농협은행 비대면 계좌 개설 프로젝트에서 전자서명 연동 파트 담당하고 있어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0140", "text": "지금 하는 사이드 프로젝트가 부동산 경매 정보 크롤러인데, Scrapy랑 FastAPI로 구성했어.", "domain": "프로젝트", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0141", "text": "지금 삼성SDS에서 발주한 물류 플랫폼 고도화 프로젝트를 맡고 있는데, 백엔드는 Spring Boot로 짜고 있고 프론트는 동료가 Vue 3으로 붙이는 중이야.", "domain": "프로젝트", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0142", "text": "카카오뱅크 앱 리뉴얼 외주를 작년부터 진행 중인데, 내가 PM이고 실제 구현은 React Native 쓰는 외부 팀이 하고 있어서 요구사항 정리하는 게 일의 반이야.", "domain": "프로젝트", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0143", "text": "현대오토에버 쪽 OBD 연동 프로젝트에서 임베디드 파트 담당하고 있고, C++ 17이랑 MQTT 브로커 붙이는 작업을 올 상반기 안에 마무리해야 해.", "domain": "프로젝트", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0144", "text": "공공 SI 프로젝트라 보안 요건이 빡센데, 행안부 발주 민원 시스템에 전자정부 프레임워크 쓰면서 Oracle 쿼리 튜닝하는 게 요즘 내 주 업무야.", "domain": "프로젝트", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0145", "text": "LG CNS에서 DX 컨설팅 받으면서 내부 ERP 교체 프로젝트 진행 중인데, SAP에서 자체 솔루션으로 넘어가는 거라 데이터 마이그레이션만 3개월째야.", "domain": "프로젝트", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0146", "text": "스타트업 사이드 프로젝트로 부동산 알림 서비스 만들고 있는데, FastAPI 백엔드에 Redis 캐싱 붙이고 텔레그램 봇으로 푸시 보내는 구조로 짰어.", "domain": "프로젝트", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0147", "text": "NHN 클라우드 인프라 이관 프로젝트 투입됐는데, Terraform으로 IaC 구성하면서 기존 온프레미스 MySQL을 Cloud SQL로 옮기는 작업 중이야.", "domain": "프로젝트", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0148", "text": "핀테크 스타트업에서 신용평가 모델 서빙하는 파이프라인 만들고 있고, MLflow랑 FastAPI 조합으로 A/B 테스트 환경까지 구축하는 게 이번 분기 목표야.", "domain": "프로젝트", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0149", "text": "쿠팡 파트너스 데이터 분석 외주 받아서 BigQuery에 로그 쌓고 Looker Studio로 대시보드 만들어주는 작업인데, 생각보다 데이터 정합성 이슈가 많아.", "domain": "프로젝트", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0150", "text": "게임 회사 넷마블 쪽 CS 자동화 프로젝트인데, 챗봇 인텐트 분류기를 KoELECTRA로 파인튜닝해서 Zendesk API에 붙이는 구조야.", "domain": "프로젝트", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0151", "text": "교육부 차세대 NEIS 전환 사업에 투입돼서, 레거시 ASP 코드를 Spring MVC로 재작성하면서 단위 테스트 커버리지 70% 이상 맞추는 조건이 붙어있어.", "domain": "프로젝트", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0152", "text": "KB국민은행 앱 성능 개선 TF에 참여 중인데, iOS 쪽 Instruments 프로파일링 해보니까 메모리 누수 원인이 Realm 객체 캐싱 방식 문제였어.", "domain": "프로젝트", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0153", "text": "롯데ON 추천 시스템 개선 프로젝트에서 협업 필터링 모델을 Spark MLlib에서 PyTorch로 교체하는 작업 하고 있고, A/B 테스트 결과가 나오면 배포 여부 결정해.", "domain": "프로젝트", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0154", "text": "의료 스타트업 외주인데 PACS 뷰어 웹 버전 만드는 거라, Cornerstone.js로 DICOM 렌더링 붙이면서 백엔드는 Django REST로 짜고 있어.", "domain": "프로젝트", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0155", "text": "KT 기업 솔루션 사업부 통신 장비 모니터링 시스템 프로젝트인데, SNMP 트랩 수집기 Golang으로 만들고 InfluxDB에 시계열 데이터 넣은 다음 Grafana로 시각화했어.", "domain": "프로젝트", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0156", "text": "우리은행 영업점 태블릿 앱 리뉴얼인데 내가 BA 역할이라 현업 인터뷰 돌면서 요구사항 뽑고, 실제 구현은 Flutter 쓰는 개발자들이 해.", "domain": "프로젝트", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0157", "text": "두나무 업비트 내부 어드민 툴 개선 작업 맡았는데, Next.js App Router로 마이그레이션하면서 기존 REST API를 tRPC로 교체하는 중이야.", "domain": "프로젝트", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0158", "text": "국방부 군수 시스템 유지보수 프로젝트라 외부망 차단 환경인데, 내부 GitLab에 Jenkins 붙여서 CI/CD 구성하고 Nexus로 패키지 관리하는 구조야.", "domain": "프로젝트", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0159", "text": "카카오모빌리티 데이터 엔지니어링 팀과 협업 중인데, Kafka 스트리밍 파이프라인 병목 구간 분석해서 Flink 잡 파티셔닝 전략 바꾸는 작업 하고 있어.", "domain": "프로젝트", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0160", "text": "야놀자 글로벌 확장 대비해서 다국어 처리 레이어 설계 맡았는데, i18n 라이브러리 선정부터 번역 키 구조, CDN 캐싱 전략까지 혼자 다 정리해야 해.", "domain": "프로젝트", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0161", "text": "맥북 프로 M3 맥스 쓴 지 6개월 됐는데 팬 소리 한 번도 못 들었어.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0162", "text": "집 데스크탑은 RTX 4090 달아놨고, 회사 노트북은 그냥 델 래티튜드야.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0163", "text": "키보드는 해피해킹 프로 2 쓰고 있어.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0164", "text": "모니터를 LG 울트라파인 5K로 바꿨더니 눈이 엄청 편해졌어.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0165", "text": "나는 집에서 NAS로 시놀로지 DS923+ 돌리고 있어.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0166", "text": "회사에서 아이맥 27인치 주는데 개발하기 딱 좋아.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0167", "text": "듀얼 모니터 쓰는데 왼쪽은 세로로 세워서 코드 보고 오른쪽은 가로로 써.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0168", "text": "맥미니 M2 Pro 사고 나서 구형 윈도우 타워는 그냥 서버로 쓰고 있어.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0169", "text": "지금 노트북 LG 그램 14인치야, 출장이 많아서 무게 때문에 골랐어.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0170", "text": "키보드 직접 조립했어, 스위치는 게이트론 옐로우.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0171", "text": "집에 울트라와이드 34인치 하나 놓고 쓰는데 창 나눠쓰기 편해.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0172", "text": "써피스 프로 11 태블릿 모드로 회의 때 필기용으로만 쓰고 있어.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0173", "text": "마우스는 MX 마스터 3S로 바꾸고 나서 손목이 훨씬 나아졌어.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0174", "text": "회사 지급 장비가 맥북 에어 M2라서 개인 장비 안 가져와도 충분해.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0175", "text": "외장 SSD는 삼성 T7 Shield 쓰는데 현장 나갈 때 항상 들고 다녀.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0176", "text": "스탠딩 데스크 플렉시스팟 E7 사고 나서 허리가 덜 아픈 것 같아.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0177", "text": "라즈베리파이 4B 두 대 돌리고 있어, 하나는 홈어시스턴트, 하나는 파이홀.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0178", "text": "킵 얼라이브 때문에 구형 맥북 미니서버로 쓰고 있어, 24시간 켜놔.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0179", "text": "빌트인 웹캠 화질이 너무 구려서 소니 ZV-E10 외장 카메라로 쓰고 있어.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0180", "text": "씽크패드 X1 카본 10세대 회사 비용으로 샀어, 키감이 레노버 특유의 그 느낌.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0181", "text": "디스플레이 암 두 개 연결해서 모니터 떠 있게 만들었더니 책상이 훨씬 넓어졌어.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0182", "text": "야근할 때 눈 덜 피로하려고 필립스 암비라이트 TV 모니터로 쓰고 있어.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0183", "text": "기계식 키보드 소리 때문에 재택 때 폼팩터 65% 쓰고 사무실에선 멤브레인 써.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0184", "text": "서버 장비 IDC에 코로케이션으로 맡기고 집에선 그냥 맥북만 써.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0185", "text": "USB-C 허브 앤커 꺼 쓰는데 맥북에 연결 하나로 모니터 충전 유선랜 다 돼.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0186", "text": "회사 개발 PC가 i9-14900K에 램 64GB야, 빌드 돌릴 때 거의 안 기다려.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0187", "text": "아이패드 프로 M4 노트 필기용으로만 샀는데 이제 원격 접속 클라이언트로도 쓰고 있어.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0188", "text": "집에 에르고트론 LX 암 달고 모니터 높이 맞추니까 목 결림이 거의 없어졌어.", "domain": "장비", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0189", "text": "집에서 개발할 때는 맥미니 M2 쓰고, 회사에서는 델 노트북 지급받아서 쓰고 있어.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0190", "text": "키보드는 리얼포스 R3 텐키리스 쓴 지 3년 됐는데 아직도 너무 만족스러워.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0191", "text": "듀얼 모니터 세팅인데 메인이 LG 27인치 4K고 서브가 삼성 FHD야.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0192", "text": "맥북 프로 14인치 M3 Pro 사고 나서 회사 윈도우 노트북이 손에 안 잡히더라고.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0193", "text": "자리에 HHKB 프로 2 놔두고 집에는 키크론 Q3 써, 타건감이 완전 달라서 둘 다 필요해.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0194", "text": "게이밍 의자 DXRacer 쓰다가 허리 나빠져서 지금은 에르고휴먼 엘리트로 바꿨어.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0195", "text": "모니터는 울트라와이드 LG 34인치 하나로 통일했어, 듀얼보다 이게 더 편하더라고.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0196", "text": "맥북 에어 M2랑 아이패드 프로 연결해서 사이드카로 세컨 모니터 쓰고 있어.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0197", "text": "회사 지급 장비가 구형 씽크패드라서 개인 맥북 들고 다니면서 개발해.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0198", "text": "NAS는 시놀로지 DS923+ 쓰고 있는데 코드 백업이랑 사진 아카이빙 용도야.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0199", "text": "기계식 키보드는 게이트론 황축 직구해서 납땜해 쓰는데, 소음 때문에 사무실에선 못 써.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0200", "text": "모니터 암은 에르고트론 LX 달았는데 이거 한 번 쓰면 일반 스탠드로 못 돌아가.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0201", "text": "집 데스크탑이 RTX 4070 Ti 들어있어서 사이드 프로젝트로 로컬 LLM 돌리기도 해.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0202", "text": "마우스는 로지텍 MX Master 3S인데 맥이랑 윈도우 넘나들 때 멀티 기기 연결이 진짜 편해.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0203", "text": "스탠딩 데스크 Flexispot E7 사고 나서 허리 통증이 확 줄었어.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0204", "text": "개발용 PC 직접 조립했는데 라이젠 9 7900X에 DDR5 64GB 박았어.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0205", "text": "웹캠은 로지텍 C920 쓰다가 소니 ZV-E10 연결해서 쓰고 있어, 화질이 완전 달라.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0206", "text": "노트북 거치대는 레인디자인 mTower 쓰는데 맥북이랑 궁합이 진짜 잘 맞아.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0207", "text": "사무실 자리에 기계식 키보드 들고 오기 부담스러워서 애플 매직 키보드 따로 사뒀어.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0208", "text": "헤드셋은 소니 WH-1000XM5인데 재택 미팅 할 때 노이즈캔슬링이 없으면 못 살 것 같아.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0209", "text": "태블릿은 갤럭시 탭 S9 FE 쓰고 있는데 주로 디자인 레퍼런스 띄워두는 용도야.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0210", "text": "외장 SSD 삼성 T7 Shield 2TB 들고 다니면서 프로젝트 파일 들고 다녀.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0211", "text": "집에 맥 스튜디오 M2 Ultra 있는데 렌더링이랑 영상 편집 전용으로 써.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0212", "text": "코딩할 때 마이크 품질 신경 쓰는 편이라 야마하 AG03 믹서에 AT2020 연결해서 씀.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0213", "text": "라즈베리파이 5 사서 홈서버로 쓰고 있어, 깃 미러링이랑 모니터링 용도야.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0214", "text": "키보드 팜레스트 Grovemade 우드 제품 쓰는데 장시간 타이핑할 때 손목이 덜 피로해.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0215", "text": "회사 지급 맥북 프로 16인치인데 M3 Max라 개인 장비보다 좋아서 좀 민망해.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0216", "text": "아이맥 27인치 구형 모델 집에 놔두고 가끔 세컨드 화면으로 쓰고 있어.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0217", "text": "트랙볼 마우스 켄싱턴 슬림블레이드 Pro 써봤는데 어깨 통증 있으면 진짜 추천해.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0218", "text": "킨시스 어드밴티지 360 쓰는데 처음엔 적응이 힘들었지만 손목 통증이 없어졌어.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0219", "text": "노트북 두 대 쓰다 보니 KVM 스위치 HDMI 4K짜리 들였는데 화면이랑 키보드 공유가 돼.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0220", "text": "집에 Hades Canyon NUC 있는데 작은 데 성능이 꽤 나와서 개발 서버로 굴리고 있어.", "domain": "장비", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0221", "text": "맥북 프로 M3 맥스 쓴 지 6개월 됐는데, 듀얼 모니터로 LG 울트라파인 27인치 두 대 연결해서 쓰고 있어. 코딩할 때는 왼쪽은 에디터, 오른쪽은 브라우저 디버깅 창 고정해놓고 쓰거든.", "domain": "장비", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0222", "text": "집에서 재택할 때는 조립 PC 쓰는데 CPU가 라이젠 9 7950X라 빌드 속도가 회사 맥북이랑 비교도 안 될 정도야. 그래서 CI/CD 돌리기 전에 로컬에서 먼저 한 번 풀 빌드 돌려보는 습관이 생겼어.", "domain": "장비", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0223", "text": "키보드는 리얼포스 R3 텐키리스 모델 쓰는데, 회사에서 한 대, 집에 한 대 두 개 사뒀어. 정전용량 무접점 특성상 소음이 거의 없어서 야근할 때 옆자리 눈치 안 봐도 되더라.", "domain": "장비", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0224", "text": "메인 개발 머신은 맥 스튜디오인데, 모니터는 애플 스튜디오 디스플레이 말고 LG 4K UHD 32인치 골랐어. 가격이 세 배 차이 나는데 실제로 써보면 색감이나 패널 퀄리티 차이가 생각보다 크지 않더라고.", "domain": "장비", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0225", "text": "사이드 프로젝트용으로 라즈베리파이 5 두 대 운용하고 있는데, 하나는 홈 서버로 Jellyfin 돌리고 다른 하나는 n8n 자동화 워크플로우 실행 전용으로 써. 전기세가 제일 싸거든, 이게.", "domain": "장비", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0226", "text": "회사 지급 노트북이 델 XPS 15인데, GPU가 RTX 4060이라 실무에서 모델 추론 테스트 돌릴 때 꽤 유용하게 써. 근데 배터리가 너무 빨리 닳아서 외근 갈 때는 항상 65W PD 충전기 들고 다녀야 해.", "domain": "장비", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0227", "text": "마우스를 MX Master 3S로 바꾼 뒤로 손목 통증이 좀 나아졌어. 예전에 버티컬 마우스도 써봤는데 나한테는 그립감이 안 맞더라고, 결국 로지텍으로 다시 왔어.", "domain": "장비", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0228", "text": "NAS를 시놀로지 DS923+ 모델로 직접 세팅해서 쓰는데, WD Red Pro 4TB 네 개 RAID 5 구성으로 묶어놨어. 사진 백업이랑 코드 아카이빙 겸용으로 쓰고 있고, 외부에서 Tailscale로 접속해서 파일 꺼내쓰는 거 진짜 편하더라.", "domain": "장비", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0229", "text": "서서 일하고 싶어서 플렉시스팟 E7 스탠딩 데스크 샀는데, 높이 메모리 기능이 있어서 앉을 때 높이, 설 때 높이 버튼 하나로 전환돼. 허리 때문에 정형외과에서 권유받고 산 건데, 확실히 오후에 집중력 차이가 나.", "domain": "장비", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0230", "text": "게이밍 PC는 RTX 4090에 i9-14900K 조합인데, 사실 개발용으로 쓰고 싶어서 이렇게 맞춘 거야. LLM 로컬 추론 돌리고 AI 이미지 생성 실험하는 데 GPU가 빵빵하니까 확실히 다르더라고.", "domain": "장비", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0231", "text": "아이패드 프로 M4 13인치를 세컨드 스크린으로 연결해서 쓰는데, Sidecar 기능으로 맥이랑 붙여서 쓰면 진짜 세 번째 모니터처럼 활용돼. 회의 중에 슬랙이나 노션 띄워두는 용도로 딱이야.", "domain": "장비", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0232", "text": "헤드셋은 소니 WH-1000XM5인데, 재택 때 집중 코딩할 때 노이즈 캔슬링 켜놓으면 진짜 아무것도 안 들려. 화상 회의할 때는 에코 현상 때문에 붐 마이크 달린 유선 헤드셋으로 바꿔 끼거든.", "domain": "장비", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0233", "text": "팀장이 맥북에어 M2 지급해줬는데, 나는 도커 빌드가 자꾸 느린 것 같아서 개인 맥 프로를 들고 와서 쓰고 있어. IT 자산 관리팀한테 얘기해도 예산이 없대서 그냥 개인 장비로 돌리는 중이야.", "domain": "장비", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0234", "text": "키보드를 직접 빌드했는데, 케이스는 폴리카보네이트 60% 폼팩터에 스위치는 게이트론 흰 축 루브해서 끼웠어. 타건 소리가 워낙 조용해서 같은 팀원이 진짜 치고 있는 건지 물어볼 정도야.", "domain": "장비", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0235", "text": "모니터 암을 에르고트론 LX로 바꾼 뒤에 책상 공간이 엄청 넓어졌어. 예전엔 스탠드 때문에 외장 SSD 놓을 자리도 없었는데, 이제 키보드 아래에 허브 하나 두고 깔끔하게 정리됐어.", "domain": "장비", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0236", "text": "회사 개발 서버가 워크스테이션 급이라 원격으로 붙어서 작업하는 편이야. 로컬은 M2 맥북에어 기본형인데, 무거운 연산은 전부 서버에서 돌리고 결과만 받아보는 방식으로 하니까 발열이고 뭐고 걱정 없어.", "domain": "장비", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0237", "text": "외장 모니터 없이 맥북 한 대로만 작업하는데, 코드는 tmux 멀티 패널로 쪼개서 보거든. 14인치 화면인데도 폰트 사이즈 11pt에 터미널 레이아웃 익히고 나니까 모니터 없어도 크게 불편한 건 없더라.", "domain": "장비", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0238", "text": "회사 지급 PC가 i5에 램 16GB짜리인데, 도커 컨테이너 여러 개 띄우고 인텔리제이 열면 그냥 버벅거려. 결국 내 돈 주고 삼성 DDR5 32GB 추가로 꽂았어, 회사 돈으로 해준다고는 하는데 결재 나는 데 한 달은 걸리거든.", "domain": "장비", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0239", "text": "트리플 모니터 쓰는데, 가운데는 27인치 4K 메인이고 양쪽은 24인치 FHD야. 해상도가 달라서 창 옮길 때 텍스트 크기가 갑자기 바뀌는 게 아직도 적응이 안 됐는데, 그래도 화면 넓은 게 더 이득이야.", "domain": "장비", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0240", "text": "테클라스트 태블릿을 리눅스 부팅해서 포터블 터미널로 쓰고 있어. 출퇴근 지하철에서 SSH로 개발 서버 붙어서 간단한 버그 픽스나 배포 상태 확인하는 용도인데, 가격 대비로는 이게 제일 가성비야.", "domain": "장비", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0241", "text": "네이버 파이낸셜에 작년 초에 입사했어.", "domain": "회사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0242", "text": "지금 카카오페이 다니고 있어.", "domain": "회사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0243", "text": "쿠팡에서 3년째 일하고 있어.", "domain": "회사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0244", "text": "올해 토스로 이직했거든.", "domain": "회사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0245", "text": "라인플러스 다닌 지 이제 딱 2년 됐어.", "domain": "회사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0246", "text": "당근마켓에 재직 중이야.", "domain": "회사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0247", "text": "우아한형제들에서 일해.", "domain": "회사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0248", "text": "크래프톤 들어온 지 6개월 됐어.", "domain": "회사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0249", "text": "하이브IM 다니고 있어.", "domain": "회사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0250", "text": "넥슨코리아 입사한 게 2022년이야.", "domain": "회사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0251", "text": "지금 직방 재직 중이야.", "domain": "회사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0252", "text": "올리브영 IT본부에서 일하고 있어.", "domain": "회사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0253", "text": "신한DS 다니고 있어.", "domain": "회사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0254", "text": "SK C&C에서 일하고 있어.", "domain": "회사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0255", "text": "LG CNS 입사한 지 이제 4년 됐어.", "domain": "회사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0256", "text": "삼성SDS 재직 중이야.", "domain": "회사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0257", "text": "롯데정보통신에서 일하고 있어.", "domain": "회사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0258", "text": "현대오토에버 들어온 지 1년 반 됐어.", "domain": "회사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0259", "text": "나는 지금 카카오엔터프라이즈에 다니고 있고, 입사한 지 올해로 딱 3년 됐어.", "domain": "회사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0260", "text": "씨젠에서 백엔드 개발자로 일하다가 작년에 토스뱅크로 이직했어.", "domain": "회사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0261", "text": "우리 팀은 현대오토에버 소속인데, 나는 거기서 인프라 파트를 담당하고 있어.", "domain": "회사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0262", "text": "나 네이버 클라우드 플랫폼 사업부에서 일하는데, 직급은 책임이야.", "domain": "회사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0263", "text": "삼성SDS에 2019년에 입사했는데 아직까지 같은 팀에 있어.", "domain": "회사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0264", "text": "나는 원래 SK텔레콤 협력사였는데 지금은 원청으로 들어갔어.", "domain": "회사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0265", "text": "LG CNS 금융사업부에서 근무 중이고, 팀장 달고 나서 벌써 2년 지났네.", "domain": "회사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0266", "text": "나 포스코ICT에서 제철소 MES 유지보수 담당하고 있어.", "domain": "회사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0267", "text": "두나무에 입사한 게 2021년 초였으니까 이제 5년 차 접어들었어.", "domain": "회사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0268", "text": "나는 롯데ON 이커머스 파트에 있고, 올해 대리로 진급했어.", "domain": "회사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0269", "text": "쿠팡 물류 IT팀에서 일하는데, 인천 네오 캠퍼스 쪽 담당이야.", "domain": "회사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0270", "text": "나 크래프톤 게임라이브 서비스 팀 소속이고, 지금은 배그 서버 운영 맡고 있어.", "domain": "회사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0271", "text": "우리 회사는 GS리테일 외주 받아서 하는 SI 업체인데, 나는 거기서 PL 역할이야.", "domain": "회사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0272", "text": "한화시스템 방산 SI 파트에서 일한 지 7년 됐어.", "domain": "회사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0273", "text": "나 야놀자에 입사할 때 공채 1기로 들어갔는데 지금도 여기 있어.", "domain": "회사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0274", "text": "국민건강보험공단 IT 운영 대행 업체 소속으로 나가 있는데, 실질적으로 공단 사무실에 상주해.", "domain": "회사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0275", "text": "나는 비바리퍼블리카에서 데이터 플랫폼 팀 소속이고, 파트는 데이터 엔지니어링이야.", "domain": "회사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0276", "text": "CJ올리브네트웍스에서 유통 ERP 쪽 담당하다가 최근에 클라우드 전환 프로젝트로 옮겼어.", "domain": "회사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0277", "text": "나 스타트업에서 대기업으로 옮겼는데, 지금은 KT 클라우드 개발본부 소속이야.", "domain": "회사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0278", "text": "이니텍에서 금융 보안 솔루션 개발 하고 있고, 입사한 지 이제 만 4년 됐어.", "domain": "회사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0279", "text": "나는 지금 ㈜카카오엔터프라이즈 클라우드사업부에서 과장으로 일하고 있는데, 입사한 게 2019년이니까 벌써 7년차네.", "domain": "회사", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0280", "text": "롯데정보통신에서 ERP 유지보수 업무를 맡고 있고, 고객사는 롯데마트라 주로 잠실 쪽으로 출장을 자주 가.", "domain": "회사", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0281", "text": "삼성SDS에 다니다가 작년에 현대오토에버로 이직했는데, 여기서는 차량 OTA 시스템 프로젝트 BA 역할을 맡고 있어.", "domain": "회사", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0282", "text": "우리 팀은 LG CNS 금융사업부 안에 있는데, 고객사가 신한은행이라 여의도 본점에 상주하는 날이 더 많아.", "domain": "회사", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0283", "text": "SK C&C 들어온 지 이제 3년 됐고, 지금은 클라우드인프라팀에서 대리 달고 AWS 마이그레이션 업무 주로 하고 있어.", "domain": "회사", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0284", "text": "네이버 파이낸셜에서 페이 결제 시스템 백엔드 개발자로 일하고 있고, 팀 내에서는 Java 스프링 담당이야.", "domain": "회사", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0285", "text": "KT DS 들어와서 지금 공공사업팀 소속인데, 조달청 차세대 시스템 구축 프로젝트에 투입된 지 8개월 됐어.", "domain": "회사", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0286", "text": "나는 포스코DX에서 스마트팩토리 솔루션팀 차장으로 일하는데, 광양제철소 MES 고도화 프로젝트에서 PM을 맡고 있어.", "domain": "회사", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0287", "text": "두산디지털이노베이션 R&D 센터 소속인데 연구직이라 직급이 별도라 선임연구원이고, 지금은 디지털 트윈 플랫폼 개발하고 있어.", "domain": "회사", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0288", "text": "한화시스템에 다니는데 방산IT 쪽이라 보안상 말 못하는 게 많고, 외부에선 그냥 IT 회사 다닌다고만 해.", "domain": "회사", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0289", "text": "GS리테일 전산팀에서 일하는데 개발자라기보다는 IT 기획 쪽이고, 편의점 물류 시스템 개선 업무를 맡고 있어.", "domain": "회사", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0290", "text": "우리나라 핀테크 스타트업 토스 나와서 지금은 카카오페이 코어뱅킹팀에 있고, 파이썬으로 정산 배치 개발 주로 해.", "domain": "회사", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0291", "text": "한양대학교 컴퓨터공학과 졸업했어.", "domain": "학력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0292", "text": "나 인천대 정보통신공학 나왔거든.", "domain": "학력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0293", "text": "건국대학교 소프트웨어학과 2019년에 졸업했어.", "domain": "학력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0294", "text": "전북대 전자공학과 출신이야.", "domain": "학력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0295", "text": "동국대학교 멀티미디어공학과 졸업했어.", "domain": "학력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0296", "text": "나 세종대 컴퓨터공학부야.", "domain": "학력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0297", "text": "광운대학교 소프트웨어학부 2021년 졸업했어.", "domain": "학력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0298", "text": "서울과기대 컴퓨터공학과 나왔어.", "domain": "학력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0299", "text": "아주대학교 소프트웨어학과 출신이야.", "domain": "학력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0300", "text": "국민대 소프트웨어학부 2020년에 졸업했어.", "domain": "학력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0301", "text": "나 숭실대 컴퓨터학부 나왔거든.", "domain": "학력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0302", "text": "단국대학교 전산학과 졸업했어.", "domain": "학력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0303", "text": "경희대 컴퓨터공학과 2018년 졸업이야.", "domain": "학력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0304", "text": "나 명지대 정보통신공학과 출신이야.", "domain": "학력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0305", "text": "인하대학교 정보통신공학부 나왔어.", "domain": "학력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0306", "text": "가톨릭대 컴퓨터정보공학부 2022년에 졸업했어.", "domain": "학력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0307", "text": "나 상명대 컴퓨터과학과 졸업이야.", "domain": "학력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0308", "text": "부경대학교 소프트웨어학과 나왔어.", "domain": "학력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0309", "text": "한양대 전자공학과를 2015년에 졸업했어.", "domain": "학력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0310", "text": "나 인하대 컴퓨터공학 출신인데, 복수전공으로 통계학도 같이 했어.", "domain": "학력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0311", "text": "세종대 소프트웨어학과 2020년 졸업이고 지금 스타트업 다니는 중이야.", "domain": "학력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0312", "text": "경기대 산업공학과 나왔는데 개발자로 일한 지 벌써 7년 됐다.", "domain": "학력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0313", "text": "동국대 멀티미디어학과 졸업했어, 2018년에.", "domain": "학력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0314", "text": "나는 아주대 정보통신대학원 석사까지 했어, 학부는 경북대 전자공학이고.", "domain": "학력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0315", "text": "숭실대 컴퓨터학부 졸업했고 부전공은 수학이었어.", "domain": "학력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0316", "text": "건국대 소프트웨어학과 2022년 졸업이야, 아직 신입 티가 나지?", "domain": "학력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0317", "text": "나 상명대 디지털미디어학과인데 졸업 프로젝트로 앱 만든 게 계기가 돼서 개발로 전향했어.", "domain": "학력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0318", "text": "성균관대 전자전기공학부 나왔고, 대학원은 카이스트 전산학과로 진학했었어.", "domain": "학력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0319", "text": "광운대 컴퓨터정보공학과인데 2019년 2월 졸업했어.", "domain": "학력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0320", "text": "나는 방통대 컴퓨터과학과로 편입해서 직장 다니면서 졸업했어.", "domain": "학력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0321", "text": "한성대 IT융합공학과 출신이고 전공 학점이 별로 안 좋았는데도 취업은 잘 됐어.", "domain": "학력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0322", "text": "서강대 컴퓨터공학과인데 3.5 학점으로 2017년에 졸업했어.", "domain": "학력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0323", "text": "나 전문대 정보통신과 나왔어, 학벌 콤플렉스 있었는데 현업에서는 별 상관없더라.", "domain": "학력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0324", "text": "중앙대 소프트웨어학부 2021년 졸업이고 복수전공으로 경영학 했어.", "domain": "학력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0325", "text": "단국대 컴퓨터공학과 졸업하고 바로 SI 업체 들어갔어.", "domain": "학력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0326", "text": "이화여대 컴퓨터공학과 나왔는데 대학원 진학 고민하다가 그냥 취업했어.", "domain": "학력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0327", "text": "가천대 소프트웨어학과인데 2016년에 졸업했어, 사실 입학은 게임공학과였는데 전과했거든.", "domain": "학력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0328", "text": "나 국민대 소프트웨어학부 출신이고 부전공으로 AI융합학과 이수했어.", "domain": "학력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0329", "text": "한양대학교 전자공학과 다니다가 3학년 때 자퇴하고 부트캠프 거쳐서 취업했는데, 그게 벌써 6년 됐어.", "domain": "학력", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0330", "text": "경희대 경영정보학과 졸업했는데 사실 복수전공이 컴퓨터공학이라 개발자로 취업하는 데 크게 어렵진 않았어.", "domain": "학력", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0331", "text": "인하대 항공우주공학 나왔는데 취업이 안 돼서 국비 학원에서 Java 배우고 SI 쪽으로 방향 틀었어.", "domain": "학력", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0332", "text": "전문대 컴퓨터정보과 졸업하고 4년제 편입 준비하다 포기하고 그냥 취업했는데, 학벌 때문에 면접에서 자주 걸려.", "domain": "학력", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0333", "text": "건국대 산업공학과 출신인데, 졸업논문 주제가 공정 최적화라서 지금 제조업 ERP 유지보수 하는 데 의외로 도움이 돼.", "domain": "학력", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0334", "text": "고려대 통계학과 다니면서 R 먼저 배웠고, 졸업 후 데이터 분석 팀에 들어와서 Python으로 갈아탔어.", "domain": "학력", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0335", "text": "중앙대 컴퓨터공학과 18학번인데 코로나 때 대부분 비대면이라 실습이 거의 없었어, 그래서 깃헙 포폴 만들면서 혼자 채웠지.", "domain": "학력", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0336", "text": "동국대 멀티미디어공학과 나왔고, 전공 특성상 Unity도 좀 배웠는데 지금은 웹 프론트엔드만 하고 있어.", "domain": "학력", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0337", "text": "세종대 소프트웨어학과 조기졸업하고 바로 스타트업 들어갔는데, 그 회사가 시리즈A 받으면서 나도 덩달아 스톡옵션 생겼어.", "domain": "학력", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0338", "text": "숭실대 IT융합학부 출신인데 딱히 세부 전공이 없어서 취업할 때 뭘 어필해야 할지 몰라서 좀 고생했어.", "domain": "학력", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0339", "text": "아주대 소프트웨어학과 졸업하고 군대 다녀오니까 프레임워크가 다 바뀌어 있어서 거의 처음부터 다시 공부한 느낌이었어.", "domain": "학력", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0340", "text": "POSTECH 컴퓨터공학 석사까지 마치고 대기업 가려다 연구소 오퍼가 더 좋아서 지금 삼성리서치에서 온디바이스 AI 하고 있어.", "domain": "학력", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0341", "text": "저는 지금 SI 프로젝트에서 BA 역할을 맡고 있어요.", "domain": "역할", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0342", "text": "우리 팀에서 제가 유일한 PM이라 회의 진행이랑 일정 관리 다 제가 해요.", "domain": "역할", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0343", "text": "전 개발자 출신 PM이라서 기술 쪽 얘기가 나오면 제가 직접 판단할 수 있어요.", "domain": "역할", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0344", "text": "현장에선 PL이라고 부르는데, 실제론 팀장이랑 개발자 사이 어딘가예요.", "domain": "역할", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0345", "text": "SA 역할 맡은 지 얼마 안 됐는데 아키텍처 결정 내리는 게 아직 어색해요.", "domain": "역할", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0346", "text": "저는 프리랜서로 뛰면서 주로 기술 검토랑 견적 산정 해주는 컨설턴트 포지션이에요.", "domain": "역할", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0347", "text": "우리 팀에서 제가 QA 담당인데, 개발도 같이 하고 있어서 좀 벅차요.", "domain": "역할", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0348", "text": "데이터 엔지니어인데 요즘 회사에서 저를 데이터 분석가처럼 쓰고 있어요.", "domain": "역할", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0349", "text": "저는 솔루션 회사에서 구축 PM이랑 운영 PM 두 역할을 겸하고 있어요.", "domain": "역할", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0350", "text": "풀스택 개발자라고 뽑았는데 들어와 보니 프론트 전담이더라고요.", "domain": "역할", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0351", "text": "저는 고객사 파견 나가 있는 상주 개발자예요.", "domain": "역할", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0352", "text": "SI에서 일하다가 지금은 자사 서비스 회사로 옮겨서 PO 역할 하고 있어요.", "domain": "역할", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0353", "text": "테크리드라는 타이틀인데 코드 리뷰가 제 주업무예요.", "domain": "역할", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0354", "text": "저는 스타트업에서 CTO라고는 하지만 사실상 개발 혼자 다 해요.", "domain": "역할", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0355", "text": "기획자로 입사했는데 어쩌다 보니 지금은 스크럼 마스터 역할을 하고 있어요.", "domain": "역할", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0356", "text": "저는 임베디드 개발자인데 최근에 클라우드 인프라 쪽도 같이 맡게 됐어요.", "domain": "역할", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0357", "text": "운영팀 소속인데 개발 업무도 들어와서 사실상 DevOps처럼 움직이고 있어요.", "domain": "역할", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0358", "text": "저는 외주 인력 관리랑 납기 조율 담당하는 PMO예요.", "domain": "역할", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0359", "text": "나는 현재 핀테크 스타트업에서 프로덕트 오너 역할을 맡고 있어.", "domain": "역할", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0360", "text": "팀장 바로 밑에서 BA로 일하면서 요구사항 분석이랑 문서화를 주로 담당하고 있어.", "domain": "역할", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0361", "text": "개발자 출신이라 PM으로 전환한 지 2년 됐는데, 아직 코드도 가끔 건드려.", "domain": "역할", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0362", "text": "우리 팀에서 내가 유일한 풀스택이라 프론트랑 백엔드 둘 다 챙기고 있어.", "domain": "역할", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0363", "text": "지금은 SI 업체에서 공공 프로젝트 투입돼서 현장 PM 역할을 하고 있어.", "domain": "역할", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0364", "text": "스타트업 초기 멤버라 직함은 개발자인데 실제론 기획이랑 QA까지 다 하고 있어.", "domain": "역할", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0365", "text": "대형 금융사 고객사에서 상주하면서 외주 BA로 뛰고 있어.", "domain": "역할", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0366", "text": "게임 회사에서 클라이언트 개발자로 시작해서 지금은 리드 역할도 겸하고 있어.", "domain": "역할", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0367", "text": "컨설팅 펌 소속이라 프로젝트마다 아키텍트로 파견 나가는 구조야.", "domain": "역할", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0368", "text": "우리 부서에서 내가 DBA 역할을 하고 있는데, 개발도 병행하고 있어.", "domain": "역할", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0369", "text": "애자일 팀이라 스크럼 마스터랑 개발자를 동시에 하고 있어.", "domain": "역할", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0370", "text": "플랫폼 팀 소속으로 내부 개발자들 대상으로 DevOps 지원을 담당하고 있어.", "domain": "역할", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0371", "text": "프리랜서로 전향한 지 1년 됐고 주로 웹 에이전시에 단기 투입 형태로 일해.", "domain": "역할", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0372", "text": "신사업 TF 팀에서 PM 겸 개발자로 프로토타입 개발을 책임지고 있어.", "domain": "역할", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0373", "text": "중견 유통사 IT 부서에 파견 나와서 레거시 시스템 유지보수를 맡고 있어.", "domain": "역할", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0374", "text": "팀 내에서 내가 보안 담당자 역할을 맡아서 취약점 점검도 내 몫이야.", "domain": "역할", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0375", "text": "IT 자회사 소속인데 모회사 현장에서 상주 개발자로 일하고 있어.", "domain": "역할", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0376", "text": "기술 영업직이지만 솔루션 데모나 PoC는 내가 직접 개발해서 보여줘.", "domain": "역할", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0377", "text": "스타트업이 시리즈 B 받고 나서 팀이 커지면서 내가 팀장이 됐어.", "domain": "역할", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0378", "text": "지금 회사에서는 공식 직함이 없고 그냥 코어 개발자로 불려.", "domain": "역할", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0379", "text": "지금은 LG CNS 소속으로 현대카드 현장에 파견 나와 있는데, 명함엔 선임이라고 적혀 있지만 실제로는 프로젝트 전체 일정 관리를 내가 다 하고 있어.", "domain": "역할", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0380", "text": "카카오엔터프라이즈에서 BA로 시작했는데 작년에 팀 개편되면서 PM 역할까지 겸하게 됐고, 지금은 AI 검색 고도화 프로젝트에서 두 포지션을 동시에 뛰고 있어.", "domain": "역할", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0381", "text": "롯데온 CDO 산하 데이터플랫폼팀에서 데이터 엔지니어로 일하고 있는데, 팀장이 공석이라 내가 사실상 팀을 리딩하고 있는 상황이야.", "domain": "역할", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0382", "text": "삼성SDS 금융사업부 소속인데 KB국민은행 차세대 프로젝트에 투입돼서 요건 정의부터 UAT까지 전 구간을 담당하고 있어.", "domain": "역할", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0383", "text": "네이버 쇼핑CIC에서 백엔드 개발자로 있는데, 스쿼드 리더가 육아휴직 들어가면서 임시로 스쿼드 운영까지 맡게 됐어.", "domain": "역할", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0384", "text": "포스코ICT 경영지원팀에서 SI 프리세일즈를 담당하다가 올해부터 아예 PMO팀으로 이동해서 복수 프로젝트 포트폴리오 관리를 하고 있어.", "domain": "역할", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0385", "text": "우리FISI 출신인데 지금은 프리랜서로 나와서 신한라이프 마이데이터 프로젝트에 분석가로 붙어 있고, 계약상 역할은 SA인데 실제론 PL까지 다 커버하고 있어.", "domain": "역할", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0386", "text": "현대오토에버 모빌리티서비스팀 소속인데 제네시스 앱 리뉴얼 프로젝트에서 iOS 개발자 겸 모바일 기술 리드로 뛰고 있어.", "domain": "역할", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0387", "text": "공공기관 SI 쪽에서 7년 굴렀고 지금은 한국도로공사 스마트톨링 사업에서 ISP 컨설턴트 포지션으로 들어와 있는데 발주처 담당자한테는 그냥 PM이라고 불리고 있어.", "domain": "역할", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0388", "text": "티맥스소프트 클라우드사업본부에서 솔루션 아키텍트로 일하고 있는데, 고객사 기술 협의는 내가 직접 나가고 제안서 기술 파트도 내가 써.", "domain": "역할", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0389", "text": "KT DS 전자정부사업팀 소속 과장인데 실제 직급은 과장이지만 프로젝트에선 PL 역할이라 팀원 6명 업무 배분이랑 고객 보고까지 내 몫이야.", "domain": "역할", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0390", "text": "쿠팡 풀필먼트테크 조직에서 시니어 SRE로 있는데, 온콜 로테이션 설계를 내가 맡으면서 사실상 팀 내 운영 체계 전체를 설계하는 역할이 됐어.", "domain": "역할", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0391", "text": "판교 테크노밸리 근처에 살아서 출퇴근이 15분밖에 안 걸려.", "domain": "위치", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0392", "text": "회사는 강남역 2번 출구 바로 앞 건물인데 나는 수원에서 통근하고 있어.", "domain": "위치", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0393", "text": "재택 위주라 지방에 살아도 되는데 분기마다 한 번씩 서울 본사 올라가.", "domain": "위치", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0394", "text": "마포구 망원동에 자취하고 있고 회사는 여의도야.", "domain": "위치", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0395", "text": "성수동 스타트업 밀집 지역에 오피스 있어서 요즘 힙한 동네 다 걸어서 가.", "domain": "위치", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0396", "text": "지방 거점 오피스 다니는 중이야, 부산 센텀시티 쪽에 있어.", "domain": "위치", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0397", "text": "인천 송도 IT 클러스터에 회사가 있어서 서울에서 버스로 한 시간 걸려.", "domain": "위치", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0398", "text": "구로 디지털단지에 근무하고 있고 집은 광명이야.", "domain": "위치", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0399", "text": "원격 근무 허용돼서 아예 제주도로 내려왔어, 3개월째 살고 있는 중이야.", "domain": "위치", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0400", "text": "상암 DMC 쪽에 있는 미디어 회사 다니는데 주변에 방송국이 많아.", "domain": "위치", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0401", "text": "세종시 정부청사 쪽 공공 SI 업체에 있어서 대전에서 KTX 타고 다니고 있어.", "domain": "위치", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0402", "text": "을지로 골목 안에 있는 스타트업이라 오래된 건물이지만 분위기 좋아.", "domain": "위치", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0403", "text": "대구 본사고 서울 오피스에 파견 나와 있는 상황이야, 당분간 여기서 지낼 것 같아.", "domain": "위치", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0404", "text": "강서구 마곡에 있는 대기업 계열사 다니고 있어, 집은 목동이고.", "domain": "위치", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0405", "text": "경기도 용인에 있는 연구소 근무라 차 없으면 진짜 힘든 동네야.", "domain": "위치", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0406", "text": "역삼역 근처 공유오피스에서 일하는데 같은 건물에 다른 스타트업이 엄청 많아.", "domain": "위치", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0407", "text": "분당 정자동에 회사 있는데 집도 분당이라 아주 만족스러운 상황이야.", "domain": "위치", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0408", "text": "광화문 광장 바로 옆 건물에서 일하고 있어서 점심에 산책하기 딱 좋아.", "domain": "위치", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0409", "text": "판교 테크노밸리에서 일하는데 집은 수원이라 매일 광역버스 타고 출퇴근해.", "domain": "위치", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0410", "text": "회사는 을지로 3가 쪽이고 나는 성수동에 살아서 걸어서 20분 거리야.", "domain": "위치", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0411", "text": "재택이 주 3일이라 실제로 강남 사무실 나가는 건 화목만이야.", "domain": "위치", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0412", "text": "분당 정자동에서 자취하고 있는데 네이버 건물까지 자전거로 출근해.", "domain": "위치", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0413", "text": "잠실 송파구에 살면서 강남 쪽 스타트업 다니니까 9호선이 나한테는 생명줄이지.", "domain": "위치", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0414", "text": "우리 팀은 종각 사무실인데 나는 인천 부평에 살아서 편도 1시간 20분 걸려.", "domain": "위치", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0415", "text": "회사가 세종시로 이전했는데 나는 대전에 집 구해서 거기서 통근하고 있어.", "domain": "위치", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0416", "text": "마포구 상암동 DMC에 사무실 있고, 나는 고양 일산에서 버스 타고 와.", "domain": "위치", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0417", "text": "부산 해운대구에서 살면서 센텀시티 IT 회사 다니고 있어.", "domain": "위치", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0418", "text": "제주도로 워케이션 왔다가 아예 서귀포에 내려앉아서 풀리모트로 일하는 중이야.", "domain": "위치", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0419", "text": "광화문 사무실 다니는데 집은 의정부라 1호선으로 40분 걸려.", "domain": "위치", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0420", "text": "우리 회사는 강서구 마곡 쪽인데 나는 김포에 살아서 거의 맞닿아 있어.", "domain": "위치", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0421", "text": "대구 동성로 근처 IT 회사에 다니는데 집은 수성구 범어동에 있어.", "domain": "위치", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0422", "text": "경기도 성남에 살면서 판교 직주근접이라 도보 통근하고 있어.", "domain": "위치", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0423", "text": "여의도 핀테크 회사 다니는데 집은 노량진이라 한강 건너서 5분 만에 가.", "domain": "위치", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0424", "text": "인천 송도 국제업무지구에 사무실 있고, 나는 연수구에 원룸 얻었어.", "domain": "위치", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0425", "text": "구로 디지털단지 회사에 다니는데 안양에 살고 있어서 1호선으로 두 정거장이야.", "domain": "위치", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0426", "text": "우리 스타트업이 홍대 쪽이라 나는 신촌에 집 얻어서 걸어 다니고 있어.", "domain": "위치", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0427", "text": "회사가 수원 광교 테크노밸리에 있어서 나는 광교신도시에 아예 자리 잡았어.", "domain": "위치", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0428", "text": "경기 용인 기흥구 SK하이닉스 근처 회사 다니는데 집은 수지구 상현동이야.", "domain": "위치", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0429", "text": "판교 테크노밸리 쪽에 사무실이 있어서 분당구 정자동에서 월세 살고 있는데, 가끔 클라이언트 미팅 때문에 여의도까지 내려가야 해서 좀 번거로워.", "domain": "위치", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0430", "text": "성수동 스타트업에 다니고 있어서 마포구에서 자취 중인데, 출퇴근은 2호선으로 40분 정도야. 재택이 주 2회라 그나마 버티고 있지.", "domain": "위치", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0431", "text": "경기 광주에서 출퇴근하다가 너무 힘들어서 작년에 잠실로 이사했어. 우리 회사 강남구에 있어서 거리가 딱 맞더라고.", "domain": "위치", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0432", "text": "대전 본사에서 근무하다가 올해 서울 지사로 발령 나서 지금은 종로구에서 살고 있어. 가족은 아직 대전에 있어서 주말마다 KTX 타고 내려가.", "domain": "위치", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0433", "text": "을지로 금융 SI 프로젝트에 투입돼서 지금 여의도 고객사 사무실에 상주 중이야. 본사는 구로디지털단지인데 프로젝트 끝날 때까지 여기서 근무해.", "domain": "위치", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0434", "text": "인천 송도 스마트시티 프로젝트 때문에 6개월째 인천 연수구에 임시 거처 잡고 있어. 원래는 강서구에 살고 있는데 이번 프로젝트 끝나면 돌아갈 거야.", "domain": "위치", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0435", "text": "부산 해운대 쪽에 있는 게임사 재직 중인데, 원격 근무 허용돼서 서울 집에서 계속 일하고 있어. 분기 한 번씩 부산 본사에 내려가서 전체 회의 참석하고 있어.", "domain": "위치", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0436", "text": "일산 킨텍스 전시 기간에는 고양 쪽에서 며칠씩 묵고, 평소엔 마포 본사 출근하는데, 이게 반복되니까 생활 패턴이 좀 불규칙해졌어.", "domain": "위치", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0437", "text": "용인 처인구에서 살다가 회사가 판교로 이전하면서 기흥구로 이사했어. 그래도 수지구 쪽 스타벅스에서 원격으로 일하는 날이 더 많아.", "domain": "위치", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0438", "text": "우리 팀은 광화문에 있는데 나는 클라이언트 요청으로 시청역 근처 고객사에 파견돼 있어. 집이 구리시라서 2호선-5호선 환승이 매일 루틴이 됐어.", "domain": "위치", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0439", "text": "세종시로 공공기관 파견 나온 지 4개월 됐는데, 주거는 세종 도담동 오피스텔이야. 원래 살던 수원이랑 너무 달라서 적응하는 데 한참 걸렸어.", "domain": "위치", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0440", "text": "재택 근무 전환하면서 강북구 집에서만 일하다가 최근에 사무실 복귀하라고 해서 지금은 상암 DMC까지 매일 버스 타고 가고 있어. 집이랑 한 시간 거리야.", "domain": "위치", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0441", "text": "맥북은 개발용으로 쓰고, 윈도우 데스크탑은 게임 전용이야.", "domain": "용도", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0442", "text": "집에 있는 라즈베리파이는 홈서버 돌리는 용도로만 써.", "domain": "용도", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0443", "text": "두 번째 모니터는 슬랙이랑 노션 띄워놓는 용도야.", "domain": "용도", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0444", "text": "아이패드는 출퇴근 중에 기술 문서 읽으려고 샀어.", "domain": "용도", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0445", "text": "회사 맥미니는 CI/CD 빌드 서버로 굴리고 있어.", "domain": "용도", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0446", "text": "외장 SSD는 프로젝트 백업 전용으로 쓰고 있어.", "domain": "용도", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0447", "text": "Notion은 개인 위키 겸 일정 관리용으로 쓰고 있어.", "domain": "용도", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0448", "text": "노트북은 재택근무 전용이고, 회사에서는 데스크탑만 써.", "domain": "용도", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0449", "text": "Obsidian은 기술 블로그 초안 쓰는 용도로 쓰고 있어.", "domain": "용도", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0450", "text": "NAS는 회사 프로젝트 산출물 아카이빙용으로 굴리고 있어.", "domain": "용도", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0451", "text": "두 번째 키보드는 집에서 개인 프로젝트 할 때만 꺼내.", "domain": "용도", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0452", "text": "태블릿은 회의 때 필기용으로만 들고 다녀.", "domain": "용도", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0453", "text": "구형 맥북에어는 접속 테스트 전용 기기로 남겨뒀어.", "domain": "용도", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0454", "text": "GitHub Copilot은 반복 코드 자동완성 용도로만 활용하고 있어.", "domain": "용도", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0455", "text": "포터블 모니터는 외근 나갈 때 듀얼 모니터 세팅용이야.", "domain": "용도", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0456", "text": "Slack은 업무용이고, Discord는 사이드 프로젝트 팀 소통용이야.", "domain": "용도", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0457", "text": "구글 시트는 QA 결함 로그 관리용으로만 쓰고 있어.", "domain": "용도", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0458", "text": "Linux 서버 하나는 개인 VPN 서버 전용으로 올려뒀어.", "domain": "용도", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0459", "text": "맥북 프로는 개발용으로 쓰고, 집에서 유튜브 볼 때는 아이패드 써.", "domain": "용도", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0460", "text": "회사 노트북은 업무용이라 개인 프로젝트는 집에 있는 미니PC로 돌려.", "domain": "용도", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0461", "text": "피그마는 디자이너랑 협업할 때만 열고, 실제 작업은 전부 VS Code에서 해.", "domain": "용도", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0462", "text": "포스트맨은 API 테스트할 때만 쓰고 문서화는 스웨거로 따로 관리해.", "domain": "용도", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0463", "text": "옵시디언은 TIL 정리용이고, 노션은 팀 공유 문서용으로 분리해서 써.", "domain": "용도", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0464", "text": "서브라임 텍스트는 로그 파일 빠르게 열어볼 때만 쓰는 거고 메인 에디터는 아니야.", "domain": "용도", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0465", "text": "터미널은 iTerm2 쓰는데, Oh My Zsh 플러그인 붙여서 단축키 작업용으로 세팅해뒀어.", "domain": "용도", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0466", "text": "깃허브는 오픈소스 관리용이고, 사내 코드는 전부 깃랩 온프레미스에 올려.", "domain": "용도", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0467", "text": "젠킨스는 배포 자동화용으로만 쓰고, 모니터링은 그라파나로 별도로 봐.", "domain": "용도", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0468", "text": "슬랙은 외부 협업용이고, 사내 소통은 잔디로 통일돼 있어서 둘 다 켜놔야 해.", "domain": "용도", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0469", "text": "루나 디스플레이 붙여서 아이패드를 보조 모니터로 쓰고 있어, 코드 레퍼런스 띄워놓는 용도로.", "domain": "용도", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0470", "text": "집에 있는 나스는 개인 백업용이고, 사진이랑 영상 원본 전부 거기 몰아넣어.", "domain": "용도", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0471", "text": "알프레드는 앱 실행이랑 클립보드 관리용으로 쓰고, 워크플로우는 거의 안 써.", "domain": "용도", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0472", "text": "엑셀은 PM이랑 소통할 때 요구사항 정리용으로 어쩔 수 없이 쓰는 거고, 데이터 분석은 파이썬으로 해.", "domain": "용도", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0473", "text": "우분투 서버는 사이드 프로젝트 배포용으로 집 안방에 굴리고 있어.", "domain": "용도", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0474", "text": "트렐로는 개인 할일 관리용으로 쓰고, 팀 프로젝트 일정은 지라로 따로 써.", "domain": "용도", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0475", "text": "파워셸은 윈도우 서버 관리할 때만 열고, 평소 스크립트는 전부 bash로 짜.", "domain": "용도", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0476", "text": "카카오워크는 고객사 대응용으로 켜두고, 내부 개발팀이랑은 슬랙으로만 소통해.", "domain": "용도", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0477", "text": "HHKB는 사무실 자리 전용이고, 재택할 때는 로지텍 MX Keys 써.", "domain": "용도", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0478", "text": "도커 데스크탑은 로컬 개발 환경 띄우는 용도고, 실제 프로덕션은 ECS로 올라가.", "domain": "용도", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0479", "text": "맥북 프로는 회사 업무용이고, 집에서 사이드 프로젝트 할 때는 따로 조립한 AMD 데스크탑 쓰는데 GPU가 RTX 4070이라 로컬 LLM 돌리기 딱 좋아.", "domain": "용도", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0480", "text": "재택할 때랑 카페 갈 때 들고 다니려고 LG 그램 샀는데, 결국 화상회의가 너무 많아서 사무실 출근용으로 굳어져버렸어.", "domain": "용도", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0481", "text": "키보드를 HHKB랑 누피 두 개 쓰는데, HHKB는 집에서 코딩할 때만 쓰고 회사엔 시끄럽다고 민원 들어와서 누피 두고 다녀.", "domain": "용도", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0482", "text": "아이패드는 원래 드로잉용으로 샀는데 지금은 그냥 회의 때 노트 필기 전용으로 쓰고 있어, 애플 펜슬이 아깝긴 한데.", "domain": "용도", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0483", "text": "맥 미니는 M2 Pro 사양으로 CI 빌드 전용 머신으로 쓰고 있고, 모니터 연결도 안 해놓고 SSH로만 붙어서 써.", "domain": "용도", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0484", "text": "회사 지급 노트북이 i5 8세대라 너무 느려서 개인 맥북으로 개발하고 보고서 작성이나 메일은 지급 노트북으로만 해.", "domain": "용도", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0485", "text": "서브 모니터를 세로로 세워놨는데 API 문서랑 슬랙 보는 용도고, 메인 모니터 하나는 코드 에디터 전용으로 고정해두고 있어.", "domain": "용도", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0486", "text": "외장 SSD 두 개를 항상 들고 다니는데, 하나는 프로젝트 백업용이고 나머지 하나는 집 NAS랑 동기화 안 된 개인 자료 임시 보관용이야.", "domain": "용도", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0487", "text": "NAS는 시놀로지 DS923+로 구성했는데, 팀 공유 드라이브 대용이랑 집에서 찍은 영상 장기 보관 두 가지 용도로 같이 쓰고 있어.", "domain": "용도", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0488", "text": "맥스 사양 맥북 프로 사서 영상 편집이랑 Xcode 빌드 속도 때문에 투자했는데, 막상 써보니까 iOS 빌드 시간은 확 줄었는데 영상은 거의 안 만지게 됐어.", "domain": "용도", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0489", "text": "라즈베리파이 4B 두 대 있는데 한 대는 피홀 DNS 서버로 돌리고, 다른 한 대는 집 CCTV 영상 로컬 녹화 서버로 돌리고 있어.", "domain": "용도", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0490", "text": "회사에서 리눅스 서버 개발할 때는 WSL2로 윈도우 데스크탑에서 하고, 개인 포트폴리오 사이트 관리는 맥에서 해서 환경이 두 개로 나뉘어 있어.", "domain": "용도", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0491", "text": "나 올해 서른넷인데, 아직도 개발자라고 하면 다들 어려 보인다고 해.", "domain": "프로필", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0492", "text": "저는 김지훈이에요, 흔한 이름이라 회사에서 항상 뒤에 팀 이름 붙여서 불려요.", "domain": "프로필", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0493", "text": "나 여자야, 백엔드 개발자 중에 여자가 드물어서 항상 신기하게 보더라고.", "domain": "프로필", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0494", "text": "저 이름이 박서연인데 남자 이름 같다고 오해받는 게 일상이에요.", "domain": "프로필", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0495", "text": "나 스물여덟이야, 동기들 중에 제일 어린 편이라 막내 소리 아직도 들어.", "domain": "프로필", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0496", "text": "저는 최민준이고요, 이름이 너무 평범해서 깃허브 닉네임은 완전 다르게 만들었어요.", "domain": "프로필", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0497", "text": "나 서른 살인데 아직 주니어 취급받아서 좀 억울할 때가 있어.", "domain": "프로필", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0498", "text": "저 이름이 한가을이에요, 계절 이름이라 그런지 다들 한 번에 기억해줘요.", "domain": "프로필", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0499", "text": "나 남자야, 디자인 쪽 일 한다고 하면 꼭 여자냐고 물어보는 사람이 있어.", "domain": "프로필", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0500", "text": "저는 정도윤이고 올해 마흔인데, 팀에서 제일 연장자라 무게감이 좀 있죠.", "domain": "프로필", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0501", "text": "나는 올해로 서른네 살이고, 이름은 박지훈이야.", "domain": "프로필", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0502", "text": "경력은 8년차인데 그 중 5년을 SI 업체에서 보냈어.", "domain": "프로필", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0503", "text": "나는 성남시 분당구에 살고 있고, 회사는 판교에 있어서 걸어서 출근해.", "domain": "프로필", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0504", "text": "내 직급은 대리인데, 입사한 지 이제 3년 됐어.", "domain": "프로필", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0505", "text": "나는 군대를 육군으로 2019년부터 2021년까지 복무했어.", "domain": "프로필", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0506", "text": "우리 팀은 플랫폼개발팀인데, 나는 거기서 백엔드 파트 담당이야.", "domain": "프로필", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0507", "text": "나는 2016년에 한양대학교 컴퓨터공학과를 졸업했어.", "domain": "프로필", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0508", "text": "지금 재직 중인 곳은 카카오페이고, 입사는 2022년 3월에 했어.", "domain": "프로필", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0509", "text": "나는 PM이라서 직접 코딩은 잘 안 하고 요구사항 정리랑 일정 관리가 주 업무야.", "domain": "프로필", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0510", "text": "나는 이름이 최수아고, 올해 스물여덟이야.", "domain": "프로필", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0511", "text": "고객사는 현대카드인데, 외주로 들어가서 거기 사무실에서 상주하고 있어.", "domain": "프로필", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0512", "text": "내 경력은 총 11년인데 처음 4년은 게임 회사에서 서버 개발했어.", "domain": "프로필", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0513", "text": "나는 서른셋 남자고, 지금 판교 네이버 계열사에서 백엔드 개발자로 일하고 있는데, 작년에 정보처리기사 따면서 연봉 협상도 같이 했어.", "domain": "프로필", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0514", "text": "한양대 컴퓨터공학과 2019년 졸업하고 바로 SI 업체 들어갔는데, 지금 회사는 세 번째라 경력이 벌써 6년 차야.", "domain": "프로필", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0515", "text": "나는 주로 React랑 TypeScript 쓰는데, 현재 프로젝트가 현대카드 발주 앱 리뉴얼이라 디자인 시스템 구축이 주 업무야.", "domain": "프로필", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0516", "text": "성수동 사무실 다니고 있고 자취는 건대 근처에서 하는데, 출퇴근이 애매해서 재택 비율 협상 중이야.", "domain": "프로필", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0517", "text": "나는 과장 달고 나서 DBA 역할까지 겸하게 됐는데, Oracle 튜닝이랑 PostgreSQL 마이그레이션을 동시에 진행 중이라 요즘 너무 빡세.", "domain": "프로필", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0518", "text": "AWS 자격증은 Solutions Architect Associate랑 Developer Associate 두 개 다 갖고 있고, 지금 DevOps Engineer Professional 준비하고 있어.", "domain": "프로필", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0519", "text": "나는 SI 7년 하다가 작년에 처음으로 자체 서비스 회사로 옮겼는데, 인프라팀 소속이고 쿠버네티스 클러스터 관리가 주 업무야.", "domain": "프로필", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0520", "text": "경기대 산업공학과 출신인데 개발자로 전향한 지 4년 됐고, 지금은 스타트업에서 풀스택으로 Flutter랑 FastAPI 둘 다 하고 있어.", "domain": "프로필", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0521", "text": "작년에 허리 MRI 찍었더니 L4-L5 디스크 초기라고 하더라고.", "domain": "건강", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0522", "text": "매일 아침 공복에 오메가3 챙겨먹고 있어.", "domain": "건강", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0523", "text": "라텍스 알레르기 있어서 병원 갈 때마다 미리 말해야 해.", "domain": "건강", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0524", "text": "야간 당직 서고 나면 편두통이 꼭 오거든, 이미트렉스 항상 들고 다녀.", "domain": "건강", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0525", "text": "작년부터 무릎 연골 문제 있어서 계단은 최대한 안 써.", "domain": "건강", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0526", "text": "혈압이 경계선이라 짜게 먹지 말라는 소리 들은 지 2년째야.", "domain": "건강", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0527", "text": "개발하면서 거북목 심해져서 지금 도수치료 주 2회 받고 있어.", "domain": "건강", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0528", "text": "역류성 식도염이 있어서 야근할 때 야식은 못 먹어.", "domain": "건강", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0529", "text": "운동 시작하면서 체중 9kg 뺐는데 다시 찌는 중이야.", "domain": "건강", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0530", "text": "손목터널증후군 진단받고 나서 마우스를 세로형으로 바꿨어.", "domain": "건강", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0531", "text": "허리 통증이 심해서 올해 초에 L4-L5 디스크 진단받았어.", "domain": "건강", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0532", "text": "평소에 아토피가 있어서 라텍스 장갑은 절대 못 써.", "domain": "건강", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0533", "text": "작년부터 헬스 시작했는데 지금은 주 4회 꾸준히 나가고 있어.", "domain": "건강", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0534", "text": "공황장애가 있어서 지하철 출퇴근이 좀 힘들 때가 있어.", "domain": "건강", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0535", "text": "밀가루 알레르기가 있어서 점심 메뉴 고를 때 항상 신경 써야 해.", "domain": "건강", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0536", "text": "무릎 연골이 닳아서 작년에 PRP 주사 두 번 맞았어.", "domain": "건강", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0537", "text": "고혈압 때문에 매일 아침 노바스크 먹고 있어.", "domain": "건강", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0538", "text": "목 디스크가 있어서 모니터 높이 맞추는 데 엄청 까다로워.", "domain": "건강", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0539", "text": "3년 전에 갑상선 기능 저하증 진단받고 신지로이드 꾸준히 복용 중이야.", "domain": "건강", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0540", "text": "이명이 심해서 이어폰 볼륨을 항상 낮게 맞춰 놓는 편이야.", "domain": "건강", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0541", "text": "번아웃 이후로 수면 장애가 생겨서 요즘 멜라토닌 챙겨 먹고 있어.", "domain": "건강", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0542", "text": "손목 터널 증후군 때문에 키보드를 에르고덱스로 바꿨어.", "domain": "건강", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0543", "text": "허리디스크가 L4-L5 사이에 있어서 재택근무 시작하고 나서 스탠딩 데스크로 바꿨는데, 그래도 하루에 한 번은 꼭 스트레칭 루틴 돌려야 버틸 수 있더라고.", "domain": "건강", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0544", "text": "밀가루 알레르기가 있는데 점심을 주로 삼성SDS 구내식당에서 해결하다 보니 매번 성분 확인하는 게 일이야, 그래서 요즘은 도시락 싸서 다니고 있어.", "domain": "건강", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0545", "text": "작년에 갑상선기능저하증 진단받고 나서 씬지로이드 복용 중인데, 아침에 약 먹고 한 시간은 공복 유지해야 해서 출근 루틴 전체를 바꿔야 했어.", "domain": "건강", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0546", "text": "무릎 반월상연골 파열로 올해 초에 수술했고 아직 재활 중이라 계단 많은 강남 사무실 대신 재택 위주로 근무하고 있어, PT도 주 2회 다니고 있고.", "domain": "건강", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0547", "text": "새벽 코딩 루틴을 3년 넘게 유지했더니 수면위상 지연증후군이 왔다고 하더라, 지금은 멜라토닌 0.5mg 먹으면서 취침 시간 교정하는 중이야.", "domain": "건강", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0548", "text": "역류성 식도염이 있어서 야근하고 편의점 음식으로 때우면 다음날 완전 망하거든, 그래서 네이버 팀에서 저녁 서빙 없애달라고 건의했는데 아직 반영이 안 됐어.", "domain": "건강", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0549", "text": "오른손 손목 TFCC 손상 진단받고 나서 키보드를 HHKB에서 Alice 배열로 바꿨고, 마우스는 버티컬로 교체했는데 그래도 하루 6시간 이상은 무리야.", "domain": "건강", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0550", "text": "20대 때부터 고혈압 가족력 있다는 걸 알고 있어서 30대 들어서면서 소금 섭취 줄이고 유산소 운동 매일 하고 있는데, 회사 건강검진에서 작년 처음으로 정상 범위 들어왔어.", "domain": "건강", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0551", "text": "지금 외주 나가 있는 데서 발주사가 롯데카드야.", "domain": "고객사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0552", "text": "현재 프로젝트 고객사가 국민건강보험공단이라 공공 SI 경험 쌓고 있어.", "domain": "고객사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0553", "text": "삼성SDS 쪽 외주로 파견 나와 있는데 벌써 2년째야.", "domain": "고객사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0554", "text": "우리 팀 발주사가 KB국민은행이라 보안 규정이 진짜 빡세.", "domain": "고객사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0555", "text": "현대오토에버 프로젝트에 외주로 들어온 건데 차량 도메인이 처음이라 낯설어.", "domain": "고객사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0556", "text": "발주사가 LG유플러스라 통신 도메인 용어 공부하느라 힘들어.", "domain": "고객사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0557", "text": "지금 NH농협은행 SI 프로젝트에 투입돼 있어.", "domain": "고객사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0558", "text": "외주사 입장이라 고객사인 쿠팡 시스템에 직접 접근을 못해.", "domain": "고객사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0559", "text": "한국수력원자력이 발주처인데 보안 때문에 개인 노트북도 못 들고 들어가.", "domain": "고객사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0560", "text": "발주사가 공무원연금공단이라 갑자기 요구사항이 바뀌는 경우가 많아.", "domain": "고객사", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0561", "text": "지금 맡고 있는 프로젝트 발주사가 롯데카드라서 을지로 사무실로 출근하고 있어.", "domain": "고객사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0562", "text": "현대모비스 SI 프로젝트에 파견 나가 있는데, 고객사 보안 정책 때문에 개인 노트북 반입이 안 돼.", "domain": "고객사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0563", "text": "우리 팀이 KT 측 요청으로 투입됐고, 나는 거기서 API 연동 담당하고 있어.", "domain": "고객사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0564", "text": "삼성SDS한테 외주 받은 건데, 계약 주체는 우리 회사고 나는 현장 상주 인력이야.", "domain": "고객사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0565", "text": "LG유플러스 고객사 프로젝트라 주간 보고를 LGU+ PM한테 직접 해.", "domain": "고객사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0566", "text": "농협은행 차세대 사업에 들어와 있는데 발주사 담당자가 요구사항을 계속 바꿔서 힘들어.", "domain": "고객사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0567", "text": "고객사가 신한카드라 여의도 본사 상주 중이고, 데이터 분석 파트에 붙어서 일하고 있어.", "domain": "고객사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0568", "text": "포스코ICT 발주 프로젝트에 투입됐는데 포항 현장 출장이 한 달에 한 번은 꼭 있어.", "domain": "고객사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0569", "text": "네이버 쪽 외주 작업이라 판교 그린팩토리에 매주 화목으로 나가고 있어.", "domain": "고객사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0570", "text": "CJ올리브네트웍스한테서 받은 물량인데, 고객사 요청으로 SI 인력이 아니라 SM으로 계약이 바뀌었어.", "domain": "고객사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0571", "text": "교보생명 프로젝트에 BA로 들어와 있고, 고객사 내부 레거시 시스템 분석하는 게 주 업무야.", "domain": "고객사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0572", "text": "현재 우리가 수행 중인 사업은 국민건강보험공단 발주인데, 감리사도 상주하고 있어서 문서화가 엄청 빡세.", "domain": "고객사", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0573", "text": "지금 삼성SDS에서 발주한 물류 시스템 고도화 프로젝트에 투입돼 있는데, 원래 소속은 LG CNS 협력사인 데이터솔루션즈야. 현장 파견 나온 지 벌써 8개월 됐고, 고객사 담당자가 바뀌면서 요구사항이 또 바뀌는 중이야.", "domain": "고객사", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0574", "text": "우리 팀이 현대오토에버 쪽 MES 시스템 유지보수를 맡고 있는데, 나는 그중에서 생산 실적 집계 모듈을 담당하고 있어. 고객사 요청으로 갑자기 Oracle에서 tibero로 마이그레이션 해야 한다고 해서 지금 분석 중이야.", "domain": "고객사", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0575", "text": "롯데정보통신 프로젝트에서 BA로 들어갔다가 지금은 사실상 PL 역할까지 다 하고 있어. 고객사 담당 이사님이 직접 나한테 보고받고 싶다고 해서 원래 PM이 좀 불편해하는 분위기야.", "domain": "고객사", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0576", "text": "KT DS 발주 업무인데 실제로 일하는 곳은 분당 KT 사옥 5층이야. 우리 회사는 경기도 성남 정자동 오피스텔인데 거기 출근한 게 올해 들어 한 번도 없어.", "domain": "고객사", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0577", "text": "신한은행 차세대 프로젝트에 외주로 들어간 건데, 고객사 보안 정책 때문에 개인 노트북은 반입 금지고 지급받은 씬클라이언트로만 작업해야 해. Spring Boot도 못 쓰고 레거시 EJB 환경에서 개발하는 게 제일 힘든 부분이야.", "domain": "고객사", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0578", "text": "공공기관 SI라 발주처가 조달청 계약이고, 실제 업무 지시는 수행사인 SK C&C에서 받는 구조야. 요구사항 변경이 생기면 발주처 담당 공무원한테 공문 올려서 승인받아야 해서 처리 속도가 너무 느려.", "domain": "고객사", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0579", "text": "CJ올리브네트웍스 고객사 프로젝트에서 프론트엔드 담당으로 React 쓰고 있는데, 고객사 내부 디자인 시스템이 따로 있어서 그걸 먼저 파악하는 데만 한 달 걸렸어. 지금은 그 시스템에 없는 컴포넌트를 추가 요청하는 협의를 하는 중이야.", "domain": "고객사", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0580", "text": "포스코ICT에서 파견 나온 형이랑 같이 고객사인 포스코 광양제철소 현장 시스템 붙잡고 있는데, 공장 내부는 망분리가 심해서 외부 인터넷 연결이 아예 안 돼. npm 패키지 하나 추가하려면 반입 신청서 쓰고 보안 검토받아야 해.", "domain": "고객사", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0581", "text": "나 작년에 대리 달았어, 입사 4년 만에.", "domain": "직급", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0582", "text": "팀장님이 과장 달고 나서부터 회의가 두 배로 늘었다고 하던데, 나도 곧 그 신세 될 것 같아.", "domain": "직급", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0583", "text": "아직 사원인데 실력으로는 대리들이랑 동급이라고 자부하거든.", "domain": "직급", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0584", "text": "부장 진급하고 나서 코딩은 거의 못 하고 보고서만 쓰고 있어.", "domain": "직급", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0585", "text": "나 이번 달에 선임 달았는데 연봉 협상은 아직 멀었다고 하더라.", "domain": "직급", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0586", "text": "차장인데 팀원 여섯 명 관리하면서 개발도 병행하고 있어.", "domain": "직급", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0587", "text": "주임 승진한 지 두 달 됐는데 책임감이 갑자기 확 올라간 느낌이야.", "domain": "직급", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0588", "text": "스타트업이라 직급 체계가 없어서 그냥 다들 ~님으로 부르거든.", "domain": "직급", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0589", "text": "수석 달기 전에 이직할지 고민 중이야, 여기서 올라가봤자 한계가 보여서.", "domain": "직급", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0590", "text": "입사할 때 대리로 들어왔는데 원래 회사에서는 과장이었거든.", "domain": "직급", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0591", "text": "저는 입사 8년차에 드디어 과장으로 승진했어요.", "domain": "직급", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0592", "text": "팀장 달기 전에 차장 직급을 한 3년 유지했던 것 같아.", "domain": "직급", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0593", "text": "나 지금 대리인데, 사수가 없어서 혼자 프로젝트 다 맡고 있어.", "domain": "직급", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0594", "text": "저는 작년에 부장으로 진급해서 지금 팀 전체 관리하고 있어요.", "domain": "직급", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0595", "text": "입사하고 4년 만에 선임으로 올라갔는데 생각보다 빨랐어.", "domain": "직급", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0596", "text": "저 사실 직급은 주임인데 하는 일은 팀장이랑 똑같아요.", "domain": "직급", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0597", "text": "나 이번 달에 책임연구원 달았어, 거의 10년 만이야.", "domain": "직급", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0598", "text": "저는 수석 직함 달고 있는데 아직 30대 중반이에요.", "domain": "직급", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0599", "text": "사원 딱지 뗀 지 얼마 됐는데 벌써 대리 승진 얘기가 나오더라고.", "domain": "직급", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0600", "text": "저 직급이 전문위원이라서 관리직이 아니라 기술직 트랙으로 가고 있어요.", "domain": "직급", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0601", "text": "나 아직 연구원인데 우리 회사는 직급 체계가 달라서 연봉이 나쁘진 않아.", "domain": "직급", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0602", "text": "이번에 임원 발령 났는데 이사 직함은 처음이라 적응이 좀 필요할 것 같아요.", "domain": "직급", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0603", "text": "올해 과장 달고 나서 PM 역할까지 겸하게 됐는데, 지금은 카카오뱅크 앱 리뉴얼 프로젝트에서 React Native 쪽 일정 관리를 맡고 있어.", "domain": "직급", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0604", "text": "입사 8년차에 부장 승진했을 때 팀원이 12명이었는데, 지금은 AI 전환 프로젝트 때문에 Python이랑 LangChain 쪽 인력을 새로 붙여서 18명까지 늘었어.", "domain": "직급", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0605", "text": "대리 2년 차인데 선배들이 다 나가고 나서 SI 업체 협의는 내가 다 하고 있어, 삼성SDS랑 주간보고 자료 맞추는 게 제일 힘들어.", "domain": "직급", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0606", "text": "차장인데 사실상 개발팀장 역할이고, 네이버 클라우드 마이그레이션 건은 내가 아키텍처 설계부터 잡았어.", "domain": "직급", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0607", "text": "주임 달린 지 6개월 됐고 아직 SpringBoot 겨우 익히는 중인데, 팀장이 갑자기 MSA 전환 PoC를 나한테 맡겨버렸어.", "domain": "직급", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0608", "text": "중소기업 과장으로 이직했는데 전 직장이 LG CNS였어서 그런지 여기선 형식이 너무 달라서 적응이 좀 걸렸어.", "domain": "직급", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0609", "text": "부장 타이틀이지만 우리 회사는 직급 인플레라 실제로는 팀장도 아니고, 롯데이커머스 외주 QA 업무만 계속 돌리고 있어.", "domain": "직급", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0610", "text": "시니어 개발자에서 팀장으로 넘어가면서 Jira 관리랑 스프린트 리뷰는 내가 다 챙기는데, 코딩은 손 놓은 지 벌써 2년이 넘었어.", "domain": "직급", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0611", "text": "지금은 레거시 시스템 유지보수가 주 업무야.", "domain": "업무", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0612", "text": "우리 팀에서 내가 유일한 BA야.", "domain": "업무", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0613", "text": "요즘 신규 입사자 온보딩 자료 만드는 일도 같이 하고 있어.", "domain": "업무", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0614", "text": "나는 ERP 고도화 프로젝트에 투입돼 있어.", "domain": "업무", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0615", "text": "이번 달부터 운영 업무랑 개발 업무를 병행하고 있어.", "domain": "업무", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0616", "text": "내가 맡은 건 주로 공공기관 발주 프로젝트야.", "domain": "업무", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0617", "text": "우리 팀 QA가 나 혼자라서 테스트 전부 내가 해.", "domain": "업무", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0618", "text": "지금 담당하고 있는 서비스가 B2B 솔루션이야.", "domain": "업무", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0619", "text": "나는 사내 인트라넷 개편 작업을 맡고 있어.", "domain": "업무", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0620", "text": "요즘 API 문서화 작업이 메인이야.", "domain": "업무", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0621", "text": "지금 팀에서 내가 유일한 풀스택이라 프론트엔드 배포랑 백엔드 API 수정을 혼자 다 맡고 있어.", "domain": "업무", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0622", "text": "우리 회사는 KT 쪽 물류 시스템 외주를 받아서, 나는 거기서 화면 개발이랑 인터페이스 작업을 주로 해.", "domain": "업무", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0623", "text": "입사하고 나서 3년 동안 유지보수 업무만 하다가 올해 처음으로 신규 개발 프로젝트에 들어갔어.", "domain": "업무", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0624", "text": "나는 삼성SDS 협력사에서 파견 나가서 현대차 사내 포털 고도화 작업을 담당하고 있어.", "domain": "업무", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0625", "text": "데이터 파이프라인 구축은 내가 하고 있는데, 원래 이게 BE 팀 일이었는데 어쩌다 보니 내 담당이 됐어.", "domain": "업무", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0626", "text": "우리 팀 리드가 갑자기 퇴사하면서 내가 PM 역할까지 임시로 맡게 됐어.", "domain": "업무", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0627", "text": "공공기관 프로젝트라 보안 규정이 빡세서, 외부망 작업은 따로 망 분리된 PC로만 해야 해.", "domain": "업무", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0628", "text": "나는 SI 업체 소속인데 지금 롯데ON 쪽 플랫폼 개선 프로젝트에 6개월째 파견 중이야.", "domain": "업무", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0629", "text": "기획팀이랑 협업하면서 BA 역할도 같이 하고 있어서, 요구사항 정리부터 화면 설계까지 내가 다 챙겨.", "domain": "업무", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0630", "text": "운영 서버 배포는 DevOps 팀이 따로 있는데, QA 환경까지는 내가 직접 Jenkins로 올려.", "domain": "업무", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0631", "text": "카카오페이 API 연동 작업을 내가 맡았는데, 공식 문서가 업데이트가 안 돼서 직접 샘플 앱 뜯어보면서 했어.", "domain": "업무", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0632", "text": "나는 CJ올리브네트웍스 전산팀 소속으로 그룹 계열사 ERP 유지보수 업무를 하고 있어.", "domain": "업무", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0633", "text": "지금 삼성SDS 파견 나가서 대한항공 물류 시스템 유지보수 하고 있는데, 원래 SI 업체 소속이라 고객사 눈치 보면서 일하는 게 좀 피곤해.", "domain": "업무", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0634", "text": "우리 팀 백엔드는 전부 Spring Boot로 짜여 있어서 내가 Node.js 전문인데도 억지로 자바 코드 리뷰를 맡고 있고, 이번 주 금요일까지 결제 모듈 마이그레이션 완료해야 해서 야근 각이야.", "domain": "업무", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0635", "text": "롯데이노베이트 들어온 지 3년 됐는데 아직도 대리고, 같이 입사한 동기는 이미 과장 달았어 — 우리 팀이 고과를 짜게 주기로 유명해서 이직 진지하게 고민 중이야.", "domain": "업무", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0636", "text": "스타트업에서 풀스택 혼자 다 하다가 현대오토에버 협력사로 이직했더니 여기는 프론트랑 백이 완전 분리돼 있어서, 내가 React 건드리면 프론트 팀에서 눈치를 줘.", "domain": "업무", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0637", "text": "KT 엔터프라이즈 쪽에 ERP 납품하는 프로젝트 PM 맡고 있는데, 개발 인력 절반이 인도 외주팀이라 시차 때문에 아침마다 영어로 스탠드업 미팅하는 게 일상이 됐어.", "domain": "업무", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0638", "text": "카카오 계열사 다니다가 올해 초에 핀테크 스타트업으로 옮겼는데, 전 직장에서는 Jira랑 Confluence 쓰다가 여기는 노션 하나로 기획부터 QA까지 다 관리해서 처음엔 좀 혼란스러웠어.", "domain": "업무", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0639", "text": "포스코ICT 소속으로 광양제철소에 상주 근무 중인데, 설비 모니터링 시스템을 Python으로 짜고 있어 — MES랑 연동하는 부분이 문서화가 전혀 안 돼 있어서 레거시 코드 읽는 데 시간을 더 쓰고 있어.", "domain": "업무", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0640", "text": "LG CNS에서 공공 프로젝트 하다 보니 망분리 환경이라 개인 노트북은 아예 못 쓰고, ChatGPT 같은 것도 차단돼 있어서 구글링만으로 문제 해결해야 할 때가 제일 답답해.", "domain": "업무", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0641", "text": "우리 팀은 플랫폼개발1팀인데, 요즘 인원이 많이 빠져서 다섯 명밖에 안 돼.", "domain": "조직", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0642", "text": "나 지금 데이터인프라파트 소속이야.", "domain": "조직", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0643", "text": "작년에 클라우드전환TF로 이동했는데 아직 원래 팀으로 복귀 못 했어.", "domain": "조직", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0644", "text": "우리 부서는 DX추진본부 산하 디지털전환팀이야.", "domain": "조직", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0645", "text": "나는 B2B솔루션사업부에 있어, 엔터프라이즈 쪽 담당하는 데야.", "domain": "조직", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0646", "text": "서비스운영팀 소속인데 개발팀이랑 사무실이 달라서 소통이 좀 불편해.", "domain": "조직", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0647", "text": "우리 파트는 모바일플랫폼개발파트고 앱 빌드 자동화 담당이야.", "domain": "조직", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0648", "text": "나 QA팀 아니야, 같은 층 써서 헷갈리는 거지, 나는 백엔드개발2팀이야.", "domain": "조직", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0649", "text": "그룹웨어개발팀에 있어, 사내 시스템 만드는 내부 개발 조직이야.", "domain": "조직", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0650", "text": "우리 팀은 AI응용개발팀인데 작년 말에 신설된 거라 아직 프로세스가 좀 부족해.", "domain": "조직", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0651", "text": "우리 팀은 클라우드인프라팀이고, 나는 거기서 DevOps 파트를 맡고 있어.", "domain": "조직", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0652", "text": "개발1팀 소속인데, 팀장이 바뀌고 나서 스크럼 방식으로 일하기 시작했어.", "domain": "조직", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0653", "text": "나는 데이터분석팀에 있는데, BI 파트랑 AI 파트 두 개로 나뉘어 있거든.", "domain": "조직", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0654", "text": "우리 부서는 IT기획부고, 나는 거기서 시스템아키텍처 담당이야.", "domain": "조직", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0655", "text": "플랫폼개발팀 소속이고, 우리 팀은 본사 사옥 18층에 몰려 있어.", "domain": "조직", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0656", "text": "나는 QA팀에 있는데, 현재 배포자동화 파트로 이동 신청 넣은 상태야.", "domain": "조직", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0657", "text": "백엔드2팀에서 일하고 있고, 우리 팀은 서비스팀 산하에 들어가 있어.", "domain": "조직", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0658", "text": "모바일개발팀인데, 요즘 웹팀이랑 통합된다는 얘기가 돌고 있어.", "domain": "조직", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0659", "text": "나는 보안팀 소속이고, 그 안에서 취약점분석 파트를 담당하고 있어.", "domain": "조직", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0660", "text": "우리 부서명이 DX혁신본부인데, 솔직히 하는 일은 그냥 SI야.", "domain": "조직", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0661", "text": "풀스택팀에 있는데, 팀 자체가 CTO 직속이라 보고 라인이 좀 특이해.", "domain": "조직", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0662", "text": "나는 사업지원팀에 파견 형태로 붙어 있는데, 원 소속은 개발팀이야.", "domain": "조직", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0663", "text": "우리 팀은 클라우드인프라팀이고 나는 거기서 DevOps 파트 리드를 맡고 있는데, 올해 초에 파트가 신설되면서 팀원 세 명이 나한테 보고하는 구조가 됐어.", "domain": "조직", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0664", "text": "개발본부 산하 플랫폼개발팀에 있다가 작년에 AI사업부로 이동했는데, 이동하고 나서 직급도 선임에서 책임으로 올라갔어.", "domain": "조직", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0665", "text": "나는 SK쉴더스 보안기술팀 소속인데 외부적으로는 고객사인 현대카드 보안관제센터에 상주해서 일하고 있어, 실질적으로 출근지는 여의도야.", "domain": "조직", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0666", "text": "전략기획실에서 3년 있다가 지금은 디지털전환추진단으로 왔는데, 여기는 타 부서 파견 인원들이 섞여 있어서 원래 소속팀이랑 이중으로 보고해야 해서 좀 복잡해.", "domain": "조직", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0667", "text": "우리 회사 연구소가 분당에 있고 본사는 강남인데, 나는 연구소 AI랩 소속이라 분당으로 출근하고 있어, 프로젝트 때는 본사로 올라가야 해서 좀 귀찮긴 해.", "domain": "조직", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0668", "text": "QA팀에 있다가 개발팀으로 전환 배치받은 지 두 달 됐는데 아직 팀 내에서는 QA 업무 위탁도 같이 하고 있어서 어느 팀 사람인지 모르겠다는 말 들어.", "domain": "조직", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0669", "text": "나는 IT서비스팀 팀장인데 내 위에 CTO가 없고 바로 대표이사한테 보고하는 구조야, 스타트업이다 보니 팀장이 아키텍처 결정부터 채용까지 다 관여해.", "domain": "조직", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0670", "text": "데이터분석파트에서 과장으로 일하고 있고 파트장이 따로 있긴 한데, 실질적으로 외부 발표나 임원 보고는 내가 담당하고 있어서 직급이랑 역할이 좀 안 맞는 상황이야.", "domain": "조직", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0671", "text": "정보처리기사는 작년에 겨우 붙었어.", "domain": "자격", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0672", "text": "AWS Solutions Architect Associate 자격증 따놓은 게 이직할 때 꽤 도움됐어.", "domain": "자격", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0673", "text": "SQLD는 있는데 SQLP는 아직 못 땄어.", "domain": "자격", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0674", "text": "리눅스마스터 2급 취득하고 나서 서버 관련 업무 맡게 됐어.", "domain": "자격", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0675", "text": "네트워크관리사 2급은 군대 있을 때 시간 남아서 딴 거야.", "domain": "자격", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0676", "text": "정보처리기사는 2019년에 땄는데, 사실 현업에서 쓸 일은 없더라고.", "domain": "자격", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0677", "text": "SQLD 자격증 준비 중인데 시험이 두 달 후라 요즘 퇴근하고 공부하고 있어.", "domain": "자격", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0678", "text": "리눅스마스터 1급은 작년에 취득했고, 덕분에 인프라 쪽 업무도 맡게 됐어.", "domain": "자격", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0679", "text": "AWS SAA 자격증은 회사 지원으로 딴 거라 응시료 부담은 없었어.", "domain": "자격", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0680", "text": "ADsP 자격증 따놓은 게 이번 데이터 분석 프로젝트 투입에 도움이 됐어.", "domain": "자격", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0681", "text": "네트워크관리사 2급 취득한 게 벌써 5년 전이고, 갱신 같은 건 따로 없는 자격이야.", "domain": "자격", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0682", "text": "정보처리기사는 대학 졸업하고 바로 땄는데, AWS SAA는 현 직장 입사하고 나서 업무 때문에 따로 공부해서 작년에 겨우 붙었어.", "domain": "자격", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0683", "text": "SQLD 취득하고 나서 데이터 쪽 업무도 같이 맡게 됐는데, 지금은 PMP까지 준비 중이라 퇴근하고 매일 두 시간씩 스터디 다니고 있어.", "domain": "자격", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0684", "text": "전산세무 2급이랑 컴활 1급은 경리 부서에 있을 때 취득한 거라 지금 개발팀으로 이직하고 나서는 거의 쓸 일이 없더라고.", "domain": "자격", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0685", "text": "리눅스마스터 1급은 시스템 운영 파트에서 일할 때 회사 지원으로 응시했고, 네트워크관리사 2급은 그보다 2년 전에 개인 공부로 취득한 거야.", "domain": "자격", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0686", "text": "육군 카투사로 복무했어.", "domain": "병역", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0687", "text": "사회복무요원으로 2년 채웠고, 구청 민원실에서 근무했어.", "domain": "병역", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0688", "text": "해군 부사관 출신이라 팀에서 내가 제일 빨리 일어나.", "domain": "병역", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0689", "text": "방위산업체 산업기능요원으로 군 복무 대체했어.", "domain": "병역", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0690", "text": "보충역 판정받아서 공익 근무 했는데, 복무기관이 도서관이었어.", "domain": "병역", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0691", "text": "사회복무요원으로 2년 복무하고 전역했어, 그때 행정 업무 하면서 엑셀이랑 친해졌지.", "domain": "병역", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0692", "text": "육군 병장으로 만기전역했는데 복무 중에 독학으로 파이썬 공부했어.", "domain": "병역", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0693", "text": "공군 정보통신병으로 복무해서 네트워크 장비 다루는 게 낯설지 않아.", "domain": "병역", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0694", "text": "현역 복무 중에 부대 내부 시스템 유지보수 담당했던 게 첫 IT 실무 경험이었어.", "domain": "병역", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0695", "text": "산업기능요원으로 병역 대체했고, 그 회사에서 지금도 계속 일하고 있어.", "domain": "병역", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0696", "text": "해군에서 정보체계 특기로 복무했는데 그게 백엔드 개발 입문 계기가 됐어.", "domain": "병역", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0697", "text": "사회복무요원으로 2년 복무하면서 구청 전산팀에서 일했는데, 그때 Access랑 VBA로 민원 서류 자동화 시스템 만들어본 게 개발자 커리어 시작점이었어.", "domain": "병역", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0698", "text": "육군 통신병 전역하고 바로 한국산업기술대 컴퓨터공학과 복학했는데, 보안 쪽 관심이 생겨서 이번 달에 정보보안기사 시험 접수했어.", "domain": "병역", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0699", "text": "대기업 SI 자회사에 입사하려고 했더니 산업기능요원 편입 조건이 됐고, 덕분에 현역 복무 대신 SDS 협력사에서 3년째 Java 백엔드 개발하고 있어.", "domain": "병역", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0700", "text": "해군 부사관 7년 하다가 전역하고 30대 중반에 부트캠프 수료해서 지금 스타트업에서 DevOps 담당하는데, AWS 자격증이 취업에 진짜 결정적이었어.", "domain": "병역", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0701", "text": "나는 점심에 편의점 삼각김밥으로 때우는 날이 일주일에 세 번은 되는 것 같아.", "domain": "음식", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0702", "text": "회식 메뉴 정할 때 나는 항상 삼겹살 밀어.", "domain": "음식", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0703", "text": "나는 라면 끓일 때 계란이랑 파 꼭 넣어야 직성이 풀려.", "domain": "음식", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0704", "text": "야근하고 나면 나는 항상 곱창집 들러서 소주 한 잔 해.", "domain": "음식", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0705", "text": "나는 아침 거르는 대신 오전에 바나나 하나 챙겨 먹는 게 습관이 됐어.", "domain": "음식", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0706", "text": "점심은 거의 매일 회사 근처 순댓국집에서 때워, 거기 사장님이 국물을 진하게 끓여줘서 좋아.", "domain": "음식", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0707", "text": "나 밀가루 소화가 잘 안 돼서 파스타나 빵류는 최대한 안 먹으려고 해.", "domain": "음식", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0708", "text": "야근하고 나면 꼭 편의점 삼각김밥이랑 컵라면 먹는 게 루틴이 됐어, 이상하게 그때가 제일 맛있더라.", "domain": "음식", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0709", "text": "나는 매운 거 진짜 못 먹어서 팀 회식 때 불닭이나 마라탕 나오면 항상 혼자 다른 거 시켜.", "domain": "음식", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0710", "text": "아침은 거의 안 챙겨 먹고 커피 한 잔으로 버티는데, 대신 점심을 엄청 많이 먹는 편이야.", "domain": "음식", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0711", "text": "나 예전부터 초밥을 너무 좋아해서 월급날이면 꼭 혼자 스시 오마카세 한 번씩 가는 게 낙이야.", "domain": "음식", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0712", "text": "나는 밀가루 음식을 거의 못 먹어서 점심 메뉴 고를 때 팀원들한테 항상 미안한데, 그래도 강남 사무실 근처에 글루텐프리 덮밥집이 생겨서 요즘은 좀 편해졌어.", "domain": "음식", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0713", "text": "회사 다닐 때는 편의점 삼각김밥으로 버텼는데, 재택 전환하고 나서부터는 점심에 직접 된장찌개 끓여 먹는 게 루틴이 됐어 — 냉동 두부랑 애호박만 있으면 10분이라도.", "domain": "음식", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0714", "text": "나는 매운 걸 진짜 못 먹는 편인데 팀 회식 장소가 거의 무조건 불닭이나 마라탕이라 매번 물만 마시다 오는 것 같아, 그냥 혼자 삼겹살집 가서 먹는 게 나은 것 같기도 하고.", "domain": "음식", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0715", "text": "야근이 잦은 편이라 저녁은 대부분 배달로 해결하는데, 국밥 종류는 질릴 것 같아도 안 질리더라고 — 설렁탕이든 해장국이든 한 그릇 비우고 나면 다시 코드 보게 되는 것 같아.", "domain": "음식", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0716", "text": "벌써 개발 경력이 7년 차에 접어들었어.", "domain": "경력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0717", "text": "SI 업계에서 5년 굴렀더니 이제 연차가 쌓였다는 게 실감나.", "domain": "경력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0718", "text": "입사한 지 이제 딱 3년 됐어.", "domain": "경력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0719", "text": "올해로 프리랜서 전향한 지 2년째야.", "domain": "경력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0720", "text": "신입 때부터 지금까지 백엔드만 팠더니 어느새 8년 됐네.", "domain": "경력", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0721", "text": "삼성SDS에서 6년 일하다가 작년에 카카오페이로 이직했어, 연차가 쌓이니까 핀테크 쪽으로 방향을 바꾸고 싶었거든.", "domain": "경력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0722", "text": "SI 업체에서 발주사인 현대자동차 상주로 파견 나가서 3년째 ERP 유지보수를 맡고 있어.", "domain": "경력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0723", "text": "LG CNS 입사한 지 이제 딱 2년 됐는데 아직 대리라서 PM보다는 BA 업무를 주로 하고 있어.", "domain": "경력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0724", "text": "롯데그룹 계열사 돌면서 IT 기획만 8년 했는데 지금은 롯데온 디지털전환팀에서 과장으로 있어.", "domain": "경력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0725", "text": "공공기관 SI 프로젝트만 쭉 해왔는데 이번에 처음으로 민간 금융권 프로젝트에 투입됐어, 규정이 완전 달라서 적응 중이야.", "domain": "경력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0726", "text": "스타트업에서 CTO 직함 달고 혼자 개발하다가 시리즈A 투자 받고 팀을 꾸리면서 이제 직접 코딩보다 아키텍처 리뷰가 더 많아졌어.", "domain": "경력", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0727", "text": "SI 업체 다니다가 작년에 핀테크 스타트업으로 이직했는데, 이제 8년 차 되니까 팀장 달고 백엔드 리드 역할까지 맡게 됐어.", "domain": "경력", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0728", "text": "공채로 들어온 건 아니고 카카오페이 프로젝트 외주 끝나고 거기 담당자가 직접 스카우트 제안해서 합류한 거라, 입사 경위가 좀 특이하지.", "domain": "경력", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0729", "text": "군 복무를 KATUSA로 2년 했더니 영어 커뮤니케이션이 자연스러워져서, 지금 회사에서 해외 고객사 미팅은 거의 내가 맡아서 하고 있어.", "domain": "경력", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0730", "text": "이직하면서 직급이 대리에서 시니어 엔지니어로 바뀌었는데, 연봉은 올랐어도 복지는 오히려 예전 중견기업이 더 나았던 것 같아서 가끔 아쉽더라고.", "domain": "경력", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0731", "text": "램이 16GB라서 도커 여러 개 띄우면 좀 버거워.", "domain": "스펙", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0732", "text": "지금 쓰는 맥북 M3 Pro가 메모리 36GB짜리라 컴파일이 진짜 빠르더라고.", "domain": "스펙", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0733", "text": "회사 지급 PC가 i5-8세대에 SSD도 256GB밖에 안 돼서 답답해 죽겠어.", "domain": "스펙", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0734", "text": "집에서 개인 작업용으로 쓰는 미니PC가 Ryzen 9 7950X 올린 거야.", "domain": "스펙", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0735", "text": "모니터가 FHD 24인치 하나뿐이라 코드 펴놓으면 항상 창이 겹쳐.", "domain": "스펙", "difficulty": "easy", "category": "domain"}
+{"id": "ep_0736", "text": "맥미니 M4 Pro 쓰는데 메모리를 48GB로 올렸더니 도커 여러 개 띄워도 끄떡없어.", "domain": "스펙", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0737", "text": "회사 지급 노트북이 램 8GB짜리라 집에서 작업할 때는 내 개인 씽크패드 X1 Carbon으로 하고 있어.", "domain": "스펙", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0738", "text": "모니터를 LG 울트라와이드 34인치로 바꿨는데 IDE랑 터미널 같이 펼쳐놓으니까 개발 효율이 완전 달라졌어.", "domain": "스펙", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0739", "text": "키보드는 리얼포스 R3 텐키리스 쓰고 있는데, 하루 종일 코딩해도 손목이 별로 안 피로해.", "domain": "스펙", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0740", "text": "SSD를 삼성 990 Pro 2TB로 교체했더니 빌드 속도가 체감상 확 줄었어, 특히 모노레포 프로젝트에서.", "domain": "스펙", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0741", "text": "외장 GPU로 RTX 4070 달아서 로컬에서 LLM 돌리고 있는데, 7B 모델은 실시간으로 응답이 나와.", "domain": "스펙", "difficulty": "medium", "category": "domain"}
+{"id": "ep_0742", "text": "맥미니 M4 Pro 24코어 GPU에 외장 모니터 두 대 물려서 쓰고 있는데, 회사 지급 노트북은 인텔 i5라 집에서 개인 프로젝트 빌드할 때 속도 차이가 너무 심하게 나.", "domain": "스펙", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0743", "text": "집에서 쓰는 메인 머신은 라이젠 9 7950X에 DDR5 64GB 꽂아놨는데, 로컬에서 파인튜닝 돌릴 때 VRAM이 부족해서 결국 3090 Ti 하나 더 달까 고민 중이야.", "domain": "스펙", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0744", "text": "회사 개발 서버는 Xeon 골드 6338에 RAM 512GB짜리인데 나 혼자 쓰는 게 아니라서, 요즘 집에 NUC 13 Extreme 하나 들여서 쿠버네티스 클러스터 테스트 환경 구성해두고 있어.", "domain": "스펙", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0745", "text": "노트북은 씽크패드 X1 카본 12세대 쓰는데 출퇴근 때 들고 다니기엔 가볍고 좋은데, 프런트엔드 빌드 돌리면 팬 소리가 너무 심해서 사무실에서 눈치 보일 때가 있어.", "domain": "스펙", "difficulty": "hard", "category": "domain"}
+{"id": "ep_0746", "text": "야 진짜 오늘 날씨 미쳤다", "domain": "mixed", "difficulty": "hard", "category": "greeting"}
+{"id": "ep_0747", "text": "어 왔어?", "domain": "mixed", "difficulty": "hard", "category": "greeting"}
+{"id": "ep_0748", "text": "ㅋㅋㅋㅋ 살아있네", "domain": "mixed", "difficulty": "hard", "category": "greeting"}
+{"id": "ep_0749", "text": "퇴근했어?", "domain": "mixed", "difficulty": "hard", "category": "greeting"}
+{"id": "ep_0750", "text": "오 오랜만이다", "domain": "mixed", "difficulty": "hard", "category": "greeting"}
+{"id": "ep_0751", "text": "헐 벌써 점심시간이야?", "domain": "mixed", "difficulty": "hard", "category": "greeting"}
+{"id": "ep_0752", "text": "ㅎㅇ", "domain": "mixed", "difficulty": "hard", "category": "greeting"}
+{"id": "ep_0753", "text": "어디야 지금?", "domain": "mixed", "difficulty": "hard", "category": "greeting"}
+{"id": "ep_0754", "text": "아 진짜 졸려 죽겠다", "domain": "mixed", "difficulty": "hard", "category": "greeting"}
+{"id": "ep_0755", "text": "오늘 뭐 먹었어?", "domain": "mixed", "difficulty": "hard", "category": "greeting"}
+{"id": "ep_0756", "text": "안녕~ 나 요즘 사이드 프로젝트로 Flutter 공부하고 있어", "domain": "mixed", "difficulty": "hard", "category": "greeting_with_info"}
+{"id": "ep_0757", "text": "야 오랜만이다! 나 지난달부터 스타트업으로 이직했거든", "domain": "mixed", "difficulty": "hard", "category": "greeting_with_info"}
+{"id": "ep_0758", "text": "안녕하세요! 저 이번에 AWS SAA 자격증 땄어요", "domain": "mixed", "difficulty": "hard", "category": "greeting_with_info"}
+{"id": "ep_0759", "text": "오 왔어? 나 요즘 허리가 너무 안 좋아서 병원 다니고 있어", "domain": "mixed", "difficulty": "hard", "category": "greeting_with_info"}
+{"id": "ep_0760", "text": "반가워요~ 저 요즘 Next.js로 풀스택 개발 배우는 중이에요", "domain": "mixed", "difficulty": "hard", "category": "greeting_with_info"}
+{"id": "ep_0761", "text": "어 안녕! 나 어제부터 맥미니 M4 세팅하느라 정신없었어", "domain": "mixed", "difficulty": "hard", "category": "greeting_with_info"}
+{"id": "ep_0762", "text": "하이~ 나 이번 주에 팀장 됐어, 갑자기", "domain": "mixed", "difficulty": "hard", "category": "greeting_with_info"}
+{"id": "ep_0763", "text": "잘 지냈어요? 저 요즘 사내에서 AI 도입 프로젝트 맡았어요", "domain": "mixed", "difficulty": "hard", "category": "greeting_with_info"}
+{"id": "ep_0764", "text": "오 오랜만이네! 나 이번에 연봉 협상하고 팀 옮겼어", "domain": "mixed", "difficulty": "hard", "category": "greeting_with_info"}
+{"id": "ep_0765", "text": "안녕하세요~ 저 지금 카카오 코딩테스트 준비하고 있거든요", "domain": "mixed", "difficulty": "hard", "category": "greeting_with_info"}
+{"id": "ep_0766", "text": "진천 집에서 맥미니로 재택하다가 허리 터져서 결국 스탠딩 책상 샀어", "domain": "mixed", "difficulty": "hard", "category": "multi_domain"}
+{"id": "ep_0767", "text": "회사 슬랙에서 배포 알림 보고 카페 가서 맥북으로 핫픽스 올렸는데 커피값이 더 비쌌다", "domain": "mixed", "difficulty": "hard", "category": "multi_domain"}
+{"id": "ep_0768", "text": "성수 사무실 출근하는 날엔 지하철에서 PR 리뷰 다 끝내고 들어가", "domain": "mixed", "difficulty": "hard", "category": "multi_domain"}
+{"id": "ep_0769", "text": "판교 팀장이 잡은 미팅 때문에 병원 예약 취소했는데 허리는 점점 나빠지고 있어", "domain": "mixed", "difficulty": "hard", "category": "multi_domain"}
+{"id": "ep_0770", "text": "맥미니 M4 사고 나서 빌드 속도 빨라졌는데 이제 허리가 병목이야", "domain": "mixed", "difficulty": "hard", "category": "multi_domain"}
+{"id": "ep_0771", "text": "집에서 리모트로 일하니까 점심도 혼자 먹고 스탠딩 책상도 혼자 조립했어", "domain": "mixed", "difficulty": "hard", "category": "multi_domain"}
+{"id": "ep_0772", "text": "회사 코드베이스 클론하고 로컬에서 돌리려니까 맥미니 램이 16기가라 스왑 터졌어", "domain": "mixed", "difficulty": "hard", "category": "multi_domain"}
+{"id": "ep_0773", "text": "서울 사무실이랑 진천 집 왔다갔다 하면서 개발하니까 키보드를 두 개 사야 했어", "domain": "mixed", "difficulty": "hard", "category": "multi_domain"}
+{"id": "ep_0774", "text": "재택날 허리 때문에 눕다가 작업하다 반복했더니 스탠딩 책상 의미 없어졌어", "domain": "mixed", "difficulty": "hard", "category": "multi_domain"}
+{"id": "ep_0775", "text": "판교 카페에서 인터뷰 준비하면서 알고리즘 풀다가 목까지 같이 나갔어", "domain": "mixed", "difficulty": "hard", "category": "multi_domain"}
+{"id": "ep_0776", "text": "팀 배포 파이프라인 고치고 퇴근하는데 허리가 아파서 지하철 못 앉겠더라", "domain": "mixed", "difficulty": "hard", "category": "multi_domain"}
+{"id": "ep_0777", "text": "집 맥미니에 도커 띄워두고 카페에서 맥북으로 붙어서 쓰는데 이게 더 빠름", "domain": "mixed", "difficulty": "hard", "category": "multi_domain"}
+{"id": "ep_0778", "text": "주 3회 출근 정착됐는데 재택 때 의자 문제가 어깨까지 번졌어", "domain": "mixed", "difficulty": "hard", "category": "multi_domain"}
+{"id": "ep_0779", "text": "진천 집 인터넷이 불안해서 배포 중에 끊겼고 다음날 출근해서 수습했어", "domain": "mixed", "difficulty": "hard", "category": "multi_domain"}
+{"id": "ep_0780", "text": "부산 본가 내려갔다가 거기서도 맥미니 없으니까 개발 못 하고 이슈만 달았어", "domain": "mixed", "difficulty": "hard", "category": "multi_domain"}
+{"id": "ep_0781", "text": "Jira는 안 써, 우리 팀은 Linear 쓰거든.", "domain": "mixed", "difficulty": "hard", "category": "negation"}
+{"id": "ep_0782", "text": "TypeScript는 안 해, 그냥 JS로 짜는 편이야.", "domain": "mixed", "difficulty": "hard", "category": "negation"}
+{"id": "ep_0783", "text": "Docker는 잘 안 쓰는데, 로컬에서 그냥 돌려.", "domain": "mixed", "difficulty": "hard", "category": "negation"}
+{"id": "ep_0784", "text": "Slack은 안 써, 카카오워크로 다 해결해.", "domain": "mixed", "difficulty": "hard", "category": "negation"}
+{"id": "ep_0785", "text": "코드 리뷰는 딱히 안 해, 혼자 하는 프로젝트라서.", "domain": "mixed", "difficulty": "hard", "category": "negation"}
+{"id": "ep_0786", "text": "GraphQL은 안 씀, REST로도 충분해서.", "domain": "mixed", "difficulty": "hard", "category": "negation"}
+{"id": "ep_0787", "text": "테스트 코드는 잘 안 짜는 편이야, 시간이 없어서.", "domain": "mixed", "difficulty": "hard", "category": "negation"}
+{"id": "ep_0788", "text": "Figma는 안 쓰고 있어, 디자이너랑 작업을 안 하니까.", "domain": "mixed", "difficulty": "hard", "category": "negation"}
+{"id": "ep_0789", "text": "AWS는 안 써, 우리는 NCP 쓰거든.", "domain": "mixed", "difficulty": "hard", "category": "negation"}
+{"id": "ep_0790", "text": "PR은 따로 안 올려, 그냥 main에 바로 push해.", "domain": "mixed", "difficulty": "hard", "category": "negation"}
+{"id": "ep_0791", "text": "요즘 Python 좀 배우기 시작했는데 생각보다 재밌네", "domain": "mixed", "difficulty": "hard", "category": "ambiguous"}
+{"id": "ep_0792", "text": "알고리즘이 너무 약한 것 같아서 코테 준비 다시 시작했어", "domain": "mixed", "difficulty": "hard", "category": "ambiguous"}
+{"id": "ep_0793", "text": "이번에 클라우드 쪽으로 공부 좀 해보려고", "domain": "mixed", "difficulty": "hard", "category": "ambiguous"}
+{"id": "ep_0794", "text": "SQL 깊게 파고 있는데 업무에도 도움이 많이 되더라고", "domain": "mixed", "difficulty": "hard", "category": "ambiguous"}
+{"id": "ep_0795", "text": "사이드 프로젝트 하나 시작했는데 아직 초반이라 노션에만 정리해두고 있어", "domain": "mixed", "difficulty": "hard", "category": "ambiguous"}
+{"id": "ep_0796", "text": "스타트업 쪽으로 이직하려고 포트폴리오 다시 손보는 중이야", "domain": "mixed", "difficulty": "hard", "category": "ambiguous"}
+{"id": "ep_0797", "text": "개인 블로그 만들어서 공부한 거 정리하고 있어", "domain": "mixed", "difficulty": "hard", "category": "ambiguous"}
+{"id": "ep_0798", "text": "헬스 루틴 짜려고 앱 몇 개 찾아보고 있어", "domain": "mixed", "difficulty": "hard", "category": "ambiguous"}
+{"id": "ep_0799", "text": "통계 공부를 다시 시작했는데 기초부터 하니까 시간이 꽤 걸리네", "domain": "mixed", "difficulty": "hard", "category": "ambiguous"}
+{"id": "ep_0800", "text": "리눅스 기초가 너무 약한 것 같아서 요즘 다시 잡고 있어", "domain": "mixed", "difficulty": "hard", "category": "ambiguous"}

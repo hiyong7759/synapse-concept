@@ -1,0 +1,33 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=Noto+Sans+KR:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --bg:            #0A0B0E;
+  --surface:       #141519;
+  --surface-2:     #1C1E24;
+  --surface-3:     #1E2030;
+  --border:        #252730;
+  --border-2:      #3A3D4A;
+  --text-primary:  #E8E4D9;
+  --text-secondary:#9A9BA2;
+  --text-tertiary: #8A8B92;
+  --accent:        #C8A96E;
+  --accent-dim:    rgba(200, 169, 110, 0.15);
+  --accent-border: rgba(200, 169, 110, 0.35);
+  --accent-glow:   rgba(200, 169, 110, 0.45);
+  --success:       #5DAB8A;
+  --danger:        #C85D5D;
+  --graph-edge:    #3A3D4A;
+  --sidebar-w:     260px;
+  --detail-w:      300px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: 'Noto Sans KR', sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  min-height: 100vh;
+}

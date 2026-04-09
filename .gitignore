@@ -6,6 +6,8 @@ dist/
 *.pyc
 .DS_Store
 synapse.db
+synapse.db-shm
+synapse.db-wal
 
 # 생성물
 graph.html
@@ -23,3 +25,4 @@ resume_*
 # 개발용 스크립트
 scripts/find_threshold.py
 scripts/simulate_threshold.py
+.gstack/

@@ -1,0 +1,320 @@
+[
+  {
+    "sentence": "안녕",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [],
+      "edges": [],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "오늘 좀 피곤해",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [],
+      "edges": [],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "아 힘들다",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [],
+      "edges": [],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "배고파",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [],
+      "edges": [],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "졸려",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [],
+      "edges": [],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "ㅋㅋㅋ",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [],
+      "edges": [],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "그렇구나",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [],
+      "edges": [],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "고마워",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [],
+      "edges": [],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "오늘 병원 갔다왔어",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [
+        {"name": "병원", "category": "BOD.medical"}
+      ],
+      "edges": [
+        {"source": "나", "target": "병원", "label": null}
+      ],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "아까 두통약 먹었어",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [
+        {"name": "두통약", "category": "BOD.medical"}
+      ],
+      "edges": [
+        {"source": "나", "target": "두통약", "label": null}
+      ],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "지금 산책 중이야",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [
+        {"name": "산책", "category": "BOD.exercise"}
+      ],
+      "edges": [
+        {"source": "나", "target": "산책", "label": null}
+      ],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "엄마한테 전화했어",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [
+        {"name": "엄마", "category": "PER.family"}
+      ],
+      "edges": [
+        {"source": "나", "target": "엄마", "label": "한테"}
+      ],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "오늘 기분 좋아",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [],
+      "edges": [],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "아빠랑 점심 먹었어",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [
+        {"name": "아빠", "category": "PER.family"}
+      ],
+      "edges": [
+        {"source": "나", "target": "아빠", "label": "랑"}
+      ],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "오늘 헬스장 다녀왔어",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [
+        {"name": "헬스장", "category": "BOD.exercise"}
+      ],
+      "edges": [
+        {"source": "나", "target": "헬스장", "label": null}
+      ],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "약국에서 감기약 사왔어",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [
+        {"name": "약국", "category": "BOD.medical"},
+        {"name": "감기약", "category": "BOD.medical"}
+      ],
+      "edges": [
+        {"source": "나", "target": "약국", "label": "에서"},
+        {"source": "나", "target": "감기약", "label": null}
+      ],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "동생이랑 카페 갔어",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [
+        {"name": "동생", "category": "PER.family"}
+      ],
+      "edges": [
+        {"source": "나", "target": "동생", "label": "이랑"}
+      ],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "오늘 스트레칭 좀 했어",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [
+        {"name": "스트레칭", "category": "BOD.exercise"}
+      ],
+      "edges": [
+        {"source": "나", "target": "스트레칭", "label": null}
+      ],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "오늘 좀 우울해",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [],
+      "edges": [],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "아 짜증나",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [],
+      "edges": [],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "기분 최고야",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [],
+      "edges": [],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "좀 불안해",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [],
+      "edges": [],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "스트레스 받아 오늘",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [],
+      "edges": [],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "어젯밤 잠 못 잤어",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [],
+      "edges": [],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "머리가 좀 아파",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [],
+      "edges": [],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "오늘 허리가 좀 뻐근해",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [],
+      "edges": [],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "요즘 좀 외로워",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [],
+      "edges": [],
+      "deactivate": []
+    }
+  },
+  {
+    "sentence": "아 오늘 너무 긴장됐어",
+    "current_graph": [],
+    "answer": {
+      "retention": "daily",
+      "nodes": [],
+      "edges": [],
+      "deactivate": []
+    }
+  }
+]

@@ -1,0 +1,100 @@
+{
+  "summary": {
+    "total": 775,
+    "valid": 769,
+    "invalid": 6,
+    "error_rate": 0.77
+  },
+  "error_type_counts": {
+    "suspicious_empty_result": 6
+  },
+  "errors": {
+    "entry_0021": [
+      "suspicious_empty_result"
+    ],
+    "entry_0567": [
+      "suspicious_empty_result"
+    ],
+    "entry_0740": [
+      "suspicious_empty_result"
+    ],
+    "entry_0760": [
+      "suspicious_empty_result"
+    ],
+    "entry_0762": [
+      "suspicious_empty_result"
+    ],
+    "entry_0763": [
+      "suspicious_empty_result"
+    ]
+  },
+  "statistics": {
+    "total_entries": 775,
+    "empty_results": 14,
+    "avg_nodes_per_entry": 3.76,
+    "avg_edges_per_entry": 2.84,
+    "edge_per_node_ratio": 0.76,
+    "domain_distribution": {
+      "기술": 488,
+      "업무": 381,
+      "장비": 251,
+      "위치": 215,
+      "프로젝트": 178,
+      "역할": 165,
+      "회사": 155,
+      "용도": 153,
+      "학력": 153,
+      "경력": 128,
+      "고객사": 116,
+      "조직": 112,
+      "건강": 102,
+      "스펙": 72,
+      "직급": 68,
+      "프로필": 56,
+      "음식": 46,
+      "자격": 37,
+      "병역": 37
+    },
+    "top_labels": {
+      "용도": 206,
+      "담당": 128,
+      "소속": 80,
+      "위치": 76,
+      "역할": 70,
+      "전공": 54,
+      "업무": 53,
+      "기술": 51,
+      "기간": 39,
+      "도구": 37,
+      "고객사": 31,
+      "직급": 29,
+      "발주": 27,
+      "프레임워크": 25,
+      "제약": 22,
+      "입사": 21,
+      "근무형태": 21,
+      "원인": 19,
+      "대상": 18,
+      "졸업": 16,
+      "이직": 14,
+      "거주": 14,
+      "통근": 13,
+      "프로젝트": 12,
+      "대응": 11,
+      "CPU": 11,
+      "근무지": 11,
+      "플랫폼": 10,
+      "종류": 10,
+      "설치": 10
+    },
+    "edge_type_distribution": {
+      "link": 2046,
+      "same": 144,
+      "similar": 10
+    },
+    "unique_labels": 559
+  },
+  "warnings": [
+    "Domain bias: top domain has 488/775 entries"
+  ]
+}

@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+"""시냅스 — 내 맥락으로 질문하기.
+
+사용법:
+  synapse 삼성전자에 입사지원하고 싶어 이력서 만들어줘
+  synapse 운동 추천해줘
+  synapse 점심 뭐 먹을까
+"""
+import sys
+import os
+import subprocess
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts"))
+from get_context import get_context
+
+if len(sys.argv) < 2:
+    print("사용법: synapse <질문>")
+    print("예: synapse 이력서 만들어줘")
+    sys.exit(1)
+
+query = " ".join(sys.argv[1:])
+result = get_context(query)
+
+# 맥락 + 질문을 합쳐서 claude에 전달
+prompt = f"""{result["prompt"]}
+
+---
+
+질문: {query}
+"""
+
+subprocess.run(["claude", "-p", prompt], check=True)

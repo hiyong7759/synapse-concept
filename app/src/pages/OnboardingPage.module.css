@@ -1,0 +1,222 @@
+/* ─── 공통 레이아웃 ─── */
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+/* ─── 환영 화면 ─── */
+.welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  padding: 60px 30px;
+  gap: 20px;
+  text-align: center;
+}
+.welcomeDivider {
+  width: 40px;
+  height: 1px;
+  background: var(--border);
+}
+.welcomeLogo {
+  font-family: 'Playfair Display', serif;
+  font-size: 36px;
+  color: var(--accent);
+  letter-spacing: 0.05em;
+}
+.welcomeTagline {
+  font-size: 14px;
+  color: var(--text-secondary);
+  line-height: 1.8;
+  max-width: 220px;
+}
+.welcomeBtn {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: 10px;
+  padding: 12px 40px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: 'Noto Sans KR', sans-serif;
+  margin-top: 12px;
+  transition: opacity 0.15s;
+}
+.welcomeBtn:hover { opacity: 0.85; }
+.welcomePrivacy {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ─── 온보딩 단계 공통 ─── */
+.header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.backBtn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+.headerTitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.stepLabel {
+  margin-left: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+
+.body {
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+  overflow-y: auto;
+}
+.heading {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.note {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  line-height: 1.6;
+}
+.spacer { flex: 1; }
+
+/* ─── Step1: 토글 목록 ─── */
+.toggleList {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.toggleItem {
+  background: var(--surface-2);
+  padding: 13px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.toggleItem:not(:last-child) { border-bottom: 1px solid var(--border); }
+.toggleIcon { font-size: 16px; }
+.toggleLabel { flex: 1; color: var(--text-primary); }
+.toggle {
+  width: 36px; height: 20px;
+  border-radius: 10px;
+  position: relative;
+  cursor: pointer;
+  border: none;
+  transition: background 0.2s;
+}
+.toggle::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  width: 14px; height: 14px;
+  background: white;
+  border-radius: 50%;
+  transition: left 0.2s;
+}
+.toggleOn { background: var(--accent); }
+.toggleOn::after { left: 18px; }
+.toggleOff { background: var(--border-2); }
+.toggleOff::after { left: 3px; }
+
+/* ─── Step2: 드롭존 ─── */
+.dropzone {
+  border: 1px dashed var(--border-2);
+  border-radius: 10px;
+  padding: 28px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.dropzone:hover { border-color: var(--accent); }
+.dropzoneIcon { font-size: 24px; color: var(--text-tertiary); }
+.dropzoneLabel { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+.dropzoneHint { font-size: 11px; color: var(--text-tertiary); text-align: center; line-height: 1.6; }
+
+/* ─── Step3: 채팅 ─── */
+.chatArea {
+  flex: 1;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.chatArea::-webkit-scrollbar { width: 3px; }
+.chatArea::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* ─── 공통 버튼 ─── */
+.primaryBtn {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: 'Noto Sans KR', sans-serif;
+  transition: opacity 0.15s;
+}
+.primaryBtn:hover { opacity: 0.85; }
+.skipBtn {
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.skipBtn:hover { color: var(--text-secondary); }
+
+/* ─── 진행 점 ─── */
+.progress {
+  display: flex;
+  gap: 5px;
+  justify-content: center;
+}
+.dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--border-2);
+}
+.dotActive { background: var(--accent); }

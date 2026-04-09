@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<title>Synapse Graph</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<script src="https://unpkg.com/vis-network@10.0.2/standalone/umd/vis-network.min.js" integrity="sha384-m/pqkSdIs50f1nWlv062s9HmCAygFne+xY7uot2M8ZVijdcC+c/n97dFCfAZnKwO" crossorigin="anonymous"></script>
+<style>
+:root {
+  --bg:            #0A0B0E;
+  --surface:       #141519;
+  --surface-2:     #1C1E24;
+  --border:        #252730;
+  --border-2:      #3A3D4A;
+  --text-primary:  #E8E4D9;
+  --text-secondary:#9A9BA2;
+  --text-tertiary: #8A8B92;
+  --accent:        #C8A96E;
+  --accent-dim:    rgba(200,169,110,0.12);
+  --accent-glow:   rgba(200,169,110,0.45);
+  --success:       #5DAB8A;
+  --danger:        #C85D5D;
+  --sidebar-w:     260px;
+  --detail-w:      300px;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  background: var(--bg);
+  font-family: 'Noto Sans KR', sans-serif;
+  color: var(--text-primary);
+  overflow: hidden;
+  width: 100vw; height: 100vh;
+  display: flex;
+}
+
+/* ═══════════════════════════════════
+   사이드바 (데스크탑 좌측)
+═══════════════════════════════════ */
+#sidebar {
+  width: var(--sidebar-w);
+  flex-shrink: 0;
+  height: 100vh;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: width 0.28s cubic-bezier(0.22,1,0.36,1),
+              opacity 0.2s ease;
+  z-index: 20;
+}
+#sidebar.collapsed {
+  width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+#sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 14px 10px;
+  flex-shrink: 0;
+}
+#brand-name {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.28em;
+  color: var(--accent);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+#sidebar-toggle {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  padding: 2px 4px;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+#sidebar-toggle:hover { color: var(--text-primary); }
+
+#stats {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  padding: 0 14px 12px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+#stats span { color: var(--text-secondary); }
+
+/* ── 검색 (사이드바 내) ── */
+#search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+#search-icon {
+  color: var(--text-tertiary);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+#search {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: 'Noto Sans KR', sans-serif;
+  font-size: 13px;
+}
+#search::placeholder { color: var(--text-tertiary); }
+#search-clear {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px;
+  display: none;
+  line-height: 1;
+  flex-shrink: 0;
+}
+#search-clear:hover { color: var(--text-primary); }
+
+/* ── 필터 (사이드바 스크롤 영역) ── */
+#filter-panel {
+  flex: 1;
+  padding: 14px 14px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+#filter-panel::-webkit-scrollbar { width: 3px; }
+#filter-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.filter-toolbar {
+  display: flex;
+  gap: 4px;
+}
+.filter-tool-btn {
+  flex: 1;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-tertiary);
+  border-radius: 5px;
+  padding: 5px 6px;
+  font-size: 10px;
+  cursor: pointer;
+  font-family: 'Noto Sans KR', sans-serif;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.filter-tool-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.domain-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.domain-group:last-child { border-bottom: none; padding-bottom: 0; }
+.domain-group-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  user-select: none;
+}
+.domain-group-label:hover { color: var(--text-secondary); }
+.domain-group-label .grp-count { font-size: 9px; color: var(--text-tertiary); }
+.domain-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+.domain-badge {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: 'Noto Sans KR', sans-serif;
+  white-space: nowrap;
+}
+.domain-badge.off {
+  background: transparent !important;
+  color: var(--text-tertiary) !important;
+  border-color: var(--border) !important;
+}
+
+/* ── 깊이 슬라이더 ── */
+#depth-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#depth-wrap label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+#depth-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--accent);
+  min-width: 22px;
+  text-align: right;
+  flex-shrink: 0;
+}
+input[type=range] {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 2px;
+  background: var(--border-2);
+  border-radius: 1px;
+  outline: none;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+/* ═══════════════════════════════════
+   사이드바 열기 버튼 (접혔을 때)
+═══════════════════════════════════ */
+#sidebar-open {
+  position: fixed;
+  top: 16px; left: 16px;
+  z-index: 25;
+  width: 32px; height: 32px;
+  background: rgba(20,21,25,0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 16px;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s;
+}
+#sidebar-open:hover { border-color: var(--accent); }
+
+/* ═══════════════════════════════════
+   그래프 영역
+═══════════════════════════════════ */
+#graph-area {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+}
+#graph {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+}
+
+/* ═══════════════════════════════════
+   줌 컨트롤 (우하단)
+═══════════════════════════════════ */
+#zoom-controls {
+  position: absolute;
+  bottom: 20px; right: 20px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: rgba(14,15,18,0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  z-index: 10;
+}
+.zoom-btn {
+  width: 30px; height: 30px;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  font-family: monospace;
+}
+.zoom-btn:hover { border-color: var(--accent); color: var(--accent); }
+.zoom-divider { height: 1px; background: var(--border); margin: 2px 0; }
+
+/* ═══════════════════════════════════
+   노드 상세 패널
+   — 데스크탑: 우측 슬라이드
+   — 모바일:   하단 시트
+═══════════════════════════════════ */
+#node-detail {
+  position: fixed;
+  top: 0; right: 0; bottom: 0;
+  width: var(--detail-w);
+  padding: 20px 18px;
+  background: rgba(12,13,16,0.93);
+  backdrop-filter: blur(20px) saturate(1.5);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  border-left: 1px solid var(--border);
+  z-index: 40;
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.22,1,0.36,1);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+#node-detail::-webkit-scrollbar { width: 3px; }
+#node-detail::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+#node-detail.open { transform: translateX(0); }
+
+#node-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+}
+#node-name {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--accent);
+  line-height: 1.4;
+  word-break: break-all;
+}
+#node-domain {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  margin-top: 4px;
+  display: none;
+}
+#node-close {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 2px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+#node-close:hover { color: var(--text-primary); }
+
+#edge-list {
+  list-style: none;
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+#edge-list::-webkit-scrollbar { width: 3px; }
+#edge-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.edge-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  cursor: pointer;
+  transition: opacity 0.1s;
+}
+.edge-item:last-child { border-bottom: none; }
+.edge-item:hover { opacity: 0.72; }
+#node-stats {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+.edge-dir {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  width: 14px;
+  flex-shrink: 0;
+}
+.edge-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--accent);
+  opacity: 0.8;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.edge-node {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ═══════════════════════════════════
+   모바일 FAB + 백드롭
+═══════════════════════════════════ */
+#fab {
+  display: none;
+  position: fixed;
+  bottom: 22px; right: 22px;
+  z-index: 45;
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  color: var(--accent);
+  font-size: 18px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+  transition: transform 0.15s;
+}
+#fab:active { transform: scale(0.9); }
+
+#backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 29;
+  background: rgba(0,0,0,0.55);
+}
+#backdrop.show { display: block; }
+
+/* ═══════════════════════════════════
+   모바일 오버라이드  (≤ 768px)
+═══════════════════════════════════ */
+@media (max-width: 768px) {
+  body { display: block; }
+
+  /* 사이드바 → 하단 시트 */
+  #sidebar {
+    position: fixed;
+    left: 0; right: 0;
+    bottom: 0; top: auto;
+    width: 100% !important;
+    height: auto;
+    max-height: 72vh;
+    border-right: none;
+    border-top: 1px solid var(--border);
+    border-radius: 18px 18px 0 0;
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.22,1,0.36,1);
+    z-index: 35;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+  }
+  #sidebar.mobile-open { transform: translateY(0); }
+  #sidebar-header {
+    padding: 14px 16px 8px;
+    justify-content: center;
+    position: relative;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+  /* 드래그 핸들 */
+  #sidebar-header::before {
+    content: '';
+    position: absolute;
+    top: 7px; left: 50%;
+    transform: translateX(-50%);
+    width: 36px; height: 3px;
+    background: var(--border-2);
+    border-radius: 2px;
+  }
+  #sidebar-toggle { display: none; }
+
+  /* 그래프 전체화면 */
+  #graph-area {
+    position: fixed;
+    inset: 0;
+  }
+
+  /* 노드 상세 → 하단 시트 */
+  #node-detail {
+    top: auto;
+    right: 0; left: 0;
+    width: 100%;
+    height: auto;
+    max-height: 58vh;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    border-radius: 18px 18px 0 0;
+    transform: translateY(100%);
+    bottom: 0;
+    padding: 16px 20px 28px;
+    flex-direction: column;
+  }
+  #node-detail.open { transform: translateX(0) translateY(0); }
+
+  #zoom-controls { display: none; }
+  #fab { display: flex; }
+  #sidebar-open { display: none !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- ── 사이드바 (데스크탑 좌측 / 모바일 하단 시트) ── -->
+<aside id="sidebar">
+  <div id="sidebar-header">
+    <div id="brand-name">Synapse</div>
+    <button id="sidebar-toggle" title="사이드바 닫기">‹</button>
+  </div>
+  <div id="stats">노드 <span id="s-nodes">0</span> · 엣지 <span id="s-edges">0</span></div>
+
+  <div id="search-wrap">
+    <span id="search-icon">⌕</span>
+    <input id="search" type="text" placeholder="노드 검색..." autocomplete="off" spellcheck="false"/>
+    <button id="search-clear">✕</button>
+  </div>
+
+  <div id="filter-panel">
+    <div class="filter-toolbar">
+      <button class="filter-tool-btn" id="all-on">전체 켜기</button>
+      <button class="filter-tool-btn" id="all-off">전체 끄기</button>
+    </div>
+    <div id="depth-wrap">
+      <label>깊이</label>
+      <input type="range" id="depth-slider" min="0" max="5" value="0" step="1"/>
+      <span id="depth-val">전체</span>
+    </div>
+    <div id="filters"></div>
+  </div>
+</aside>
+
+<!-- 사이드바 열기 버튼 (접혔을 때만 표시) -->
+<button id="sidebar-open" title="사이드바 열기">›</button>
+
+<!-- ── 그래프 영역 ── -->
+<div id="graph-area">
+  <div id="graph"></div>
+
+  <div id="zoom-controls">
+    <button class="zoom-btn" id="zoom-in">+</button>
+    <div class="zoom-divider"></div>
+    <button class="zoom-btn" id="zoom-fit">⊡</button>
+    <div class="zoom-divider"></div>
+    <button class="zoom-btn" id="zoom-out">−</button>
+  </div>
+</div>
+
+<!-- ── 노드 상세 패널 (데스크탑 우측 / 모바일 하단) ── -->
+<div id="node-detail">
+  <div id="node-detail-header">
+    <div>
+      <div id="node-name"></div>
+      <span id="node-domain"></span>
+    </div>
+    <button id="node-close">✕</button>
+  </div>
+  <ul id="edge-list"></ul>
+  <div id="node-stats"></div>
+</div>
+
+<!-- 모바일 FAB + 백드롭 -->
+<button id="fab">☰</button>
+<div id="backdrop"></div>
+
+<script>
+// ────────────────────────────────────────────
+// 1. 데이터
+// ────────────────────────────────────────────
+const RAW = {"nodes": [{"id": 1, "label": "React Native", "group": "기술", "color": {"background": "#1abc9c", "border": "#1abc9c", "highlight": {"background": "#fff", "border": "#1abc9c"}}, "font": {"color": "#dfe6e9"}}, {"id": 2, "label": "TypeScript", "group": "기술", "color": {"background": "#1abc9c", "border": "#1abc9c", "highlight": {"background": "#fff", "border": "#1abc9c"}}, "font": {"color": "#dfe6e9"}}, {"id": 3, "label": "Docker", "group": "기술", "color": {"background": "#1abc9c", "border": "#1abc9c", "highlight": {"background": "#fff", "border": "#1abc9c"}}, "font": {"color": "#dfe6e9"}}, {"id": 4, "label": "Python", "group": "기술", "color": {"background": "#1abc9c", "border": "#1abc9c", "highlight": {"background": "#fff", "border": "#1abc9c"}}, "font": {"color": "#dfe6e9"}}, {"id": 5, "label": "PostgreSQL", "group": "기술", "color": {"background": "#1abc9c", "border": "#1abc9c", "highlight": {"background": "#fff", "border": "#1abc9c"}}, "font": {"color": "#dfe6e9"}}, {"id": 6, "label": "Expo", "group": "기술", "color": {"background": "#1abc9c", "border": "#1abc9c", "highlight": {"background": "#fff", "border": "#1abc9c"}}, "font": {"color": "#dfe6e9"}}, {"id": 7, "label": "맥북 프로 16", "group": "장비", "color": {"background": "#0984e3", "border": "#0984e3", "highlight": {"background": "#fff", "border": "#0984e3"}}, "font": {"color": "#dfe6e9"}}, {"id": 8, "label": "M3 Max", "group": "장비", "color": {"background": "#0984e3", "border": "#0984e3", "highlight": {"background": "#fff", "border": "#0984e3"}}, "font": {"color": "#dfe6e9"}}, {"id": 9, "label": "RTX4080", "group": "장비", "color": {"background": "#0984e3", "border": "#0984e3", "highlight": {"background": "#fff", "border": "#0984e3"}}, "font": {"color": "#dfe6e9"}}, {"id": 10, "label": "우분투 서버", "group": "장비", "color": {"background": "#0984e3", "border": "#0984e3", "highlight": {"background": "#fff", "border": "#0984e3"}}, "font": {"color": "#dfe6e9"}}, {"id": 11, "label": "커밋매니저", "group": "프로젝트", "color": {"background": "#f39c12", "border": "#f39c12", "highlight": {"background": "#fff", "border": "#f39c12"}}, "font": {"color": "#dfe6e9"}}, {"id": 12, "label": "푸드로그", "group": "프로젝트", "color": {"background": "#f39c12", "border": "#f39c12", "highlight": {"background": "#fff", "border": "#f39c12"}}, "font": {"color": "#dfe6e9"}}, {"id": 13, "label": "사내 ERP", "group": "프로젝트", "color": {"background": "#f39c12", "border": "#f39c12", "highlight": {"background": "#fff", "border": "#f39c12"}}, "font": {"color": "#dfe6e9"}}, {"id": 14, "label": "허리디스크", "group": "건강", "color": {"background": "#e84393", "border": "#e84393", "highlight": {"background": "#fff", "border": "#e84393"}}, "font": {"color": "#dfe6e9"}}, {"id": 15, "label": "L4-L5", "group": "건강", "color": {"background": "#e84393", "border": "#e84393", "highlight": {"background": "#fff", "border": "#e84393"}}, "font": {"color": "#dfe6e9"}}, {"id": 16, "label": "데드리프트", "group": "운동", "color": {"background": "#00b894", "border": "#00b894", "highlight": {"background": "#fff", "border": "#00b894"}}, "font": {"color": "#dfe6e9"}}, {"id": 17, "label": "트랩바", "group": "운동", "color": {"background": "#00b894", "border": "#00b894", "highlight": {"background": "#fff", "border": "#00b894"}}, "font": {"color": "#dfe6e9"}}, {"id": 18, "label": "수영", "group": "운동", "color": {"background": "#00b894", "border": "#00b894", "highlight": {"background": "#fff", "border": "#00b894"}}, "font": {"color": "#dfe6e9"}}, {"id": 19, "label": "카페인 알레르기", "group": "음식", "color": {"background": "#f7dc6f", "border": "#f7dc6f", "highlight": {"background": "#fff", "border": "#f7dc6f"}}, "font": {"color": "#dfe6e9"}}, {"id": 20, "label": "집", "group": "위치", "color": {"background": "#27ae60", "border": "#27ae60", "highlight": {"background": "#fff", "border": "#27ae60"}}, "font": {"color": "#dfe6e9"}}, {"id": 21, "label": "회사", "group": "위치", "color": {"background": "#27ae60", "border": "#27ae60", "highlight": {"background": "#fff", "border": "#27ae60"}}, "font": {"color": "#dfe6e9"}}, {"id": 22, "label": "프론트엔드 개발자", "group": "역할", "color": {"background": "#5d6d7e", "border": "#5d6d7e", "highlight": {"background": "#fff", "border": "#5d6d7e"}}, "font": {"color": "#dfe6e9"}}, {"id": 23, "label": "3년차", "group": "경력", "color": {"background": "#c0392b", "border": "#c0392b", "highlight": {"background": "#fff", "border": "#c0392b"}}, "font": {"color": "#dfe6e9"}}, {"id": 24, "label": "Git", "group": "기술", "color": {"background": "#1abc9c", "border": "#1abc9c", "highlight": {"background": "#fff", "border": "#1abc9c"}}, "font": {"color": "#dfe6e9"}}, {"id": 25, "label": "Figma", "group": "기술", "color": {"background": "#1abc9c", "border": "#1abc9c", "highlight": {"background": "#fff", "border": "#1abc9c"}}, "font": {"color": "#dfe6e9"}}, {"id": 26, "label": "김시냅스", "group": "프로필", "color": {"background": "#e74c3c", "border": "#e74c3c", "highlight": {"background": "#fff", "border": "#e74c3c"}}, "font": {"color": "#dfe6e9"}}, {"id": 27, "label": "서울", "group": "위치", "color": {"background": "#27ae60", "border": "#27ae60", "highlight": {"background": "#fff", "border": "#27ae60"}}, "font": {"color": "#dfe6e9"}}, {"id": 28, "label": "스타트업A", "group": "회사", "color": {"background": "#3498db", "border": "#3498db", "highlight": {"background": "#fff", "border": "#3498db"}}, "font": {"color": "#dfe6e9"}}], "edges": [{"id": "e0", "from": 1, "to": 6, "label": "빌드도구", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e1", "from": 1, "to": 2, "label": "주 언어", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e2", "from": 1, "to": 11, "label": "프레임워크", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e3", "from": 1, "to": 12, "label": "프레임워크", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e4", "from": 3, "to": 10, "label": "실행환경", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e5", "from": 4, "to": 13, "label": "백엔드", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e6", "from": 5, "to": 13, "label": "DB", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e7", "from": 7, "to": 8, "label": "스펙", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e8", "from": 7, "to": 20, "label": "위치", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e9", "from": 9, "to": 21, "label": "위치", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e10", "from": 14, "to": 15, "label": "부위", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e11", "from": 14, "to": 16, "label": "주의", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e12", "from": 16, "to": 17, "label": "대체", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e13", "from": 17, "to": 14, "label": "허리부담적음", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e14", "from": 18, "to": 14, "label": "안전", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e15", "from": 22, "to": 1, "label": "주력", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e16", "from": 22, "to": 23, "label": "경력", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e17", "from": 3, "to": 4, "label": "함께사용", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e18", "from": 24, "to": 11, "label": "핵심도구", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e19", "from": 25, "to": 12, "label": "디자인", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e20", "from": 26, "to": 22, "label": "직업", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e21", "from": 26, "to": 28, "label": "소속", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e22", "from": 28, "to": 27, "label": "위치", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e23", "from": 26, "to": 14, "label": "지병", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e24", "from": 26, "to": 19, "label": "알레르기", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e25", "from": 26, "to": 1, "label": "주력기술", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e26", "from": 26, "to": 2, "label": "사용언어", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e27", "from": 26, "to": 3, "label": "사용기술", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e28", "from": 26, "to": 4, "label": "사용언어", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e29", "from": 26, "to": 7, "label": "장비", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e30", "from": 26, "to": 9, "label": "장비", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e31", "from": 26, "to": 11, "label": "프로젝트", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e32", "from": 26, "to": 12, "label": "프로젝트", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e33", "from": 26, "to": 13, "label": "프로젝트", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e34", "from": 26, "to": 16, "label": "운동", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e35", "from": 26, "to": 18, "label": "운동", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}, {"id": "e36", "from": 26, "to": 20, "label": "거주지", "arrows": "to", "font": {"color": "#b2bec3", "strokeWidth": 0}, "color": {"color": "#636e72", "highlight": "#dfe6e9"}}]};
+
+// ────────────────────────────────────────────
+// 2. 도메인 설정
+// ────────────────────────────────────────────
+const DOMAIN_COLORS = {"프로필": "#e74c3c", "회사": "#3498db", "학력": "#2ecc71", "프로젝트": "#f39c12", "자격": "#9b59b6", "기술": "#1abc9c", "고객사": "#e67e22", "역할": "#5d6d7e", "조직": "#7fb3d8", "직급": "#aed6f1", "업무": "#d35400", "위치": "#27ae60", "경력": "#c0392b", "병역": "#8e44ad", "음식": "#f7dc6f", "건강": "#e84393", "운동": "#00b894", "장비": "#0984e3", "용도": "#a29bfe", "판단": "#fd79a8"};
+
+const DOMAIN_GROUPS = {
+  '인물':      ['프로필','역할','직급','경력','병역'],
+  '조직':      ['회사','고객사','조직','업무'],
+  '교육/기술': ['학력','기술','자격'],
+  '프로젝트':  ['프로젝트'],
+  '환경':      ['장비','용도','위치'],
+  '생활':      ['음식','건강','운동','판단'],
+};
+
+// ────────────────────────────────────────────
+// 3. 허브 감지 — degree 기준 노드 크기
+// ────────────────────────────────────────────
+const degreeMap = {};
+RAW.nodes.forEach(n => { degreeMap[n.id] = 0; });
+RAW.edges.forEach(e => {
+  if (degreeMap[e.from] !== undefined) degreeMap[e.from]++;
+  if (degreeMap[e.to]   !== undefined) degreeMap[e.to]++;
+});
+const maxDeg = Math.max(...Object.values(degreeMap), 1);
+
+function nodeSize(id) {
+  const d = degreeMap[id] || 0;
+  const base = isMobile() ? 7 : 4;
+  const range = isMobile() ? 22 : 18;
+  return base + (d / maxDeg) * range; // mobile: 7~29px, desktop: 4~22px
+}
+function nodeGlow(id) {
+  const d = degreeMap[id] || 0;
+  return 6 + (d / maxDeg) * 20;
+}
+function isHub(id) {
+  return degreeMap[id] > (maxDeg * 0.35);
+}
+
+// ────────────────────────────────────────────
+// 4. vis.js 데이터 변환
+// ────────────────────────────────────────────
+function buildNode(n) {
+  const color = DOMAIN_COLORS[n.group] || '#636e72';
+  const size  = nodeSize(n.id);
+  const hub   = isHub(n.id);
+  return {
+    id:    n.id,
+    label: n.label,
+    group: n.group || '',
+    size:  size,
+    color: {
+      background: color,
+      border:     color,
+      highlight:  { background: '#fff', border: color },
+    },
+    font: {
+      color:      '#E8E4D9',
+      size:       hub ? 13 : 11,
+      face:       'JetBrains Mono',
+      vadjust:    size + 4,
+    },
+    shadow: {
+      enabled: true,
+      color:   color.replace('#', 'rgba(').replace(/(.{2})(.{2})(.{2})/, (_, r,g,b) =>
+        `${parseInt(r,16)},${parseInt(g,16)},${parseInt(b,16)}`
+      ) + `,${hub ? 0.55 : 0.35})`,
+      size: nodeGlow(n.id),
+      x: 0, y: 0,
+    },
+  };
+}
+
+function buildEdge(e) {
+  return {
+    id:     e.id || `${e.from}-${e.to}`,
+    from:   e.from,
+    to:     e.to,
+    label:  e.label || '',
+    arrows: { to: { enabled: false } },
+    color:  { color: 'rgba(58,61,74,0.5)', highlight: 'rgba(200,169,110,0.8)' },
+    width:  0.8,
+    font:   { color: '#8A8B92', size: 9, face: 'JetBrains Mono', strokeWidth: 0 },
+    smooth: { type: 'continuous', roundness: 0.2 },
+  };
+}
+
+const allNodeDefs = RAW.nodes.map(buildNode);
+const allEdgeDefs = RAW.edges.map(buildEdge);
+
+const visNodes = new vis.DataSet(allNodeDefs);
+const visEdges = new vis.DataSet(allEdgeDefs);
+
+// ────────────────────────────────────────────
+// 5. 네트워크 초기화
+// ────────────────────────────────────────────
+const isMobile = () => window.matchMedia('(max-width:768px)').matches;
+
+function networkOptions() {
+  const m = isMobile();
+  return {
+    physics: {
+      solver: 'forceAtlas2Based',
+      forceAtlas2Based: {
+        gravitationalConstant: -55,
+        centralGravity:        0.004,
+        springLength:          m ? 110 : 130,
+        springConstant:        0.015,
+        damping:               0.88,
+        avoidOverlap:          0.5,
+      },
+      stabilization: { iterations: 250, fit: true },
+    },
+    interaction: {
+      hover:           !m,
+      tooltipDelay:    200,
+      hideEdgesOnDrag: true,
+      multiselect:     false,
+      zoomSpeed:       0.6,
+      zoomView:        true,
+    },
+    edges: {
+      smooth: { type: 'continuous', roundness: 0.2 },
+      width:  0.8,
+      hoverWidth: 2,
+      selectionWidth: 2.5,
+    },
+    nodes: {
+      shape:       'dot',
+      borderWidth: 0,
+      borderWidthSelected: 2,
+    },
+    layout: { improvedLayout: true },
+  };
+}
+
+const container = document.getElementById('graph');
+const network   = new vis.Network(container, { nodes: visNodes, edges: visEdges }, networkOptions());
+
+// 통계
+document.getElementById('s-nodes').textContent = RAW.nodes.length;
+document.getElementById('s-edges').textContent = RAW.edges.length;
+
+// 모바일: stabilization 후 전체 노드 맞춤 fit
+network.once('stabilizationIterationsDone', () => {
+  if (isMobile()) network.fit({ animation: false });
+});
+
+// 리사이즈
+window.addEventListener('resize', () => network.setOptions(networkOptions()));
+
+// ────────────────────────────────────────────
+// 6. 도메인 필터
+// ────────────────────────────────────────────
+const existingDomains = new Set(RAW.nodes.map(n => n.group).filter(Boolean));
+let   activeDomains   = new Set(existingDomains);
+const badgeMap = {};  // domain → button
+
+const filtersEl = document.getElementById('filters');
+
+Object.entries(DOMAIN_GROUPS).forEach(([grpName, domains]) => {
+  const inGroup = domains.filter(d => existingDomains.has(d));
+  if (!inGroup.length) return;
+
+  const grpEl = document.createElement('div');
+  grpEl.className = 'domain-group';
+
+  const cnt = RAW.nodes.filter(n => inGroup.includes(n.group)).length;
+  const lbl = document.createElement('div');
+  lbl.className = 'domain-group-label';
+  lbl.innerHTML = `<span>${grpName}</span><span class="grp-count">${cnt}</span>`;
+
+  const badges = document.createElement('div');
+  badges.className = 'domain-badges';
+
+  inGroup.forEach(d => {
+    const col = DOMAIN_COLORS[d] || '#636e72';
+    const btn = document.createElement('button');
+    btn.className = 'domain-badge';
+    btn.textContent = d;
+    btn.style.backgroundColor = col;
+    btn.style.color = textOnColor(col);
+    btn.dataset.domain = d;
+    btn.addEventListener('click', e => { e.stopPropagation(); toggleDomain(btn, d); });
+    badges.appendChild(btn);
+    badgeMap[d] = btn;
+  });
+
+  lbl.addEventListener('click', () => {
+    const allOn = inGroup.every(d => activeDomains.has(d));
+    inGroup.forEach(d => {
+      if (allOn) { activeDomains.delete(d); setBadgeOff(badgeMap[d], d); }
+      else        { activeDomains.add(d);    setBadgeOn(badgeMap[d],  d); }
+    });
+    applyFilter();
+  });
+
+  grpEl.append(lbl, badges);
+  filtersEl.appendChild(grpEl);
+});
+
+function textOnColor(hex) {
+  const r = parseInt(hex.slice(1,3),16),
+        g = parseInt(hex.slice(3,5),16),
+        b = parseInt(hex.slice(5,7),16);
+  const lum = 0.2126*(r/255) + 0.7152*(g/255) + 0.0722*(b/255);
+  return lum > 0.4 ? '#1a1a2e' : '#fff';
+}
+
+function setBadgeOn(btn, d) {
+  btn.classList.remove('off');
+  const c = DOMAIN_COLORS[d] || '#636e72';
+  btn.style.backgroundColor = c;
+  btn.style.color = textOnColor(c);
+  btn.style.borderColor = 'transparent';
+}
+function setBadgeOff(btn) {
+  btn.classList.add('off');
+}
+function toggleDomain(btn, d) {
+  if (activeDomains.has(d)) { activeDomains.delete(d); setBadgeOff(btn, d); }
+  else                       { activeDomains.add(d);   setBadgeOn(btn, d);  }
+  applyFilter();
+}
+document.getElementById('all-on').addEventListener('click', () => {
+  existingDomains.forEach(d => { activeDomains.add(d); if (badgeMap[d]) setBadgeOn(badgeMap[d], d); });
+  applyFilter();
+});
+document.getElementById('all-off').addEventListener('click', () => {
+  existingDomains.forEach(d => { activeDomains.delete(d); if (badgeMap[d]) setBadgeOff(badgeMap[d], d); });
+  applyFilter();
+});
+
+// ────────────────────────────────────────────
+// 7. 검색
+// ────────────────────────────────────────────
+let searchText = '';
+const searchEl  = document.getElementById('search');
+const clearBtn  = document.getElementById('search-clear');
+
+searchEl.addEventListener('input', () => {
+  searchText = searchEl.value.toLowerCase().trim();
+  clearBtn.style.display = searchText ? 'block' : 'none';
+  applyFilter();
+});
+clearBtn.addEventListener('click', () => {
+  searchEl.value = ''; searchText = '';
+  clearBtn.style.display = 'none';
+  applyFilter();
+});
+
+// ────────────────────────────────────────────
+// 8. 깊이 필터 (선택 노드 기준 BFS)
+// ────────────────────────────────────────────
+let depthLimit    = 0; // 0 = 전체
+let selectedNodeId = null;
+
+const depthSlider = document.getElementById('depth-slider');
+const depthVal    = document.getElementById('depth-val');
+depthSlider.addEventListener('input', () => {
+  depthLimit = parseInt(depthSlider.value, 10);
+  depthVal.textContent = depthLimit === 0 ? '전체' : depthLimit;
+  applyFilter();
+});
+
+function bfsReachable(startId, depth) {
+  const visited = new Set([startId]);
+  let frontier = [startId];
+  for (let i = 0; i < depth; i++) {
+    const next = [];
+    frontier.forEach(nid => {
+      RAW.edges.forEach(e => {
+        if (e.from === nid && !visited.has(e.to)) { visited.add(e.to); next.push(e.to); }
+        if (e.to   === nid && !visited.has(e.from)){ visited.add(e.from); next.push(e.from); }
+      });
+    });
+    frontier = next;
+    if (!frontier.length) break;
+  }
+  return visited;
+}
+
+// ────────────────────────────────────────────
+// 9. 필터 적용
+// ────────────────────────────────────────────
+function applyFilter() {
+  let reachable = null;
+  if (depthLimit > 0 && selectedNodeId !== null) {
+    reachable = bfsReachable(selectedNodeId, depthLimit);
+  }
+
+  const visibleIds = new Set();
+  allNodeDefs.forEach(n => {
+    const domainOk  = !n.group || activeDomains.has(n.group);
+    const searchOk  = !searchText || n.label.toLowerCase().includes(searchText);
+    const depthOk   = !reachable || reachable.has(n.id);
+    if (domainOk && searchOk && depthOk) visibleIds.add(n.id);
+  });
+
+  // 검색어 있으면 매칭 노드 하이라이트
+  const nodeUpdates = allNodeDefs.map(n => {
+    if (!visibleIds.has(n.id)) return { id: n.id, hidden: true };
+    const base = { id: n.id, hidden: false };
+    if (searchText && n.label.toLowerCase().includes(searchText)) {
+      return { ...base, borderWidth: 2, color: { ...n.color, border: '#C8A96E' } };
+    }
+    return { ...base, borderWidth: 0, color: n.color };
+  });
+
+  const edgeUpdates = allEdgeDefs.map(e => ({
+    id: e.id || `${e.from}-${e.to}`,
+    hidden: !visibleIds.has(e.from) || !visibleIds.has(e.to),
+  }));
+
+  visNodes.update(nodeUpdates);
+  visEdges.update(edgeUpdates);
+
+  // 통계 업데이트
+  document.getElementById('s-nodes').textContent = visibleIds.size;
+  document.getElementById('s-edges').textContent = edgeUpdates.filter(e => !e.hidden).length;
+}
+
+// ────────────────────────────────────────────
+// 10. 호버 하이라이트 (Obsidian 스타일)
+// ────────────────────────────────────────────
+let dimmedNodes = [], dimmedEdges = [];
+
+network.on('hoverNode', ({ node: nodeId }) => {
+  const connectedNodeIds = new Set([nodeId]);
+  const connectedEdgeIds = new Set();
+
+  RAW.edges.forEach(e => {
+    if (e.from === nodeId || e.to === nodeId) {
+      connectedNodeIds.add(e.from);
+      connectedNodeIds.add(e.to);
+      connectedEdgeIds.add(e.id || `${e.from}-${e.to}`);
+    }
+  });
+
+  const nUp = [], eUp = [];
+
+  allNodeDefs.forEach(n => {
+    if (visNodes.get(n.id)?.hidden) return;
+    if (!connectedNodeIds.has(n.id)) {
+      nUp.push({ id: n.id, opacity: 0.08, font: { color: 'rgba(232,228,217,0.06)' } });
+    }
+  });
+
+  allEdgeDefs.forEach(e => {
+    const eid = e.id || `${e.from}-${e.to}`;
+    if (visEdges.get(eid)?.hidden) return;
+    if (connectedEdgeIds.has(eid)) {
+      eUp.push({ id: eid, color: { color: 'rgba(200,169,110,0.75)' }, width: 1.5,
+                 font: { color: '#C8A96E', strokeWidth: 0 } });
+    } else {
+      eUp.push({ id: eid, color: { color: 'rgba(58,61,74,0.06)' }, width: 0.3,
+                 font: { color: 'transparent' } });
+    }
+  });
+
+  visNodes.update(nUp); dimmedNodes = nUp.map(n => n.id);
+  visEdges.update(eUp); dimmedEdges = eUp.map(e => e.id);
+});
+
+network.on('blurNode', () => {
+  if (dimmedNodes.length) {
+    visNodes.update(dimmedNodes.map(id => {
+      const n = allNodeDefs.find(x => x.id === id);
+      return { id, opacity: 1, font: n?.font || { color: '#E8E4D9' } };
+    }));
+    dimmedNodes = [];
+  }
+  if (dimmedEdges.length) {
+    visEdges.update(dimmedEdges.map(id => {
+      const e = allEdgeDefs.find(x => (x.id || `${x.from}-${x.to}`) === id);
+      return { id, color: { color: 'rgba(58,61,74,0.5)' }, width: 0.8,
+               font: { color: '#8A8B92', size: 9, face: 'JetBrains Mono', strokeWidth: 0 } };
+    }));
+    dimmedEdges = [];
+  }
+});
+
+// ────────────────────────────────────────────
+// 11. 노드 클릭 → 상세 패널
+// ────────────────────────────────────────────
+const detailEl    = document.getElementById('node-detail');
+const nodeNameEl  = document.getElementById('node-name');
+const nodeDomEl   = document.getElementById('node-domain');
+const edgeListEl  = document.getElementById('edge-list');
+const nodeStatsEl = document.getElementById('node-stats');
+
+function openDetail(nodeId) {
+  selectedNodeId = nodeId;
+  const node = allNodeDefs.find(n => n.id === nodeId);
+  if (!node) return;
+
+  nodeNameEl.textContent = node.label;
+
+  if (node.group) {
+    const col = DOMAIN_COLORS[node.group] || '#636e72';
+    nodeDomEl.textContent = node.group;
+    nodeDomEl.style.backgroundColor = col;
+    nodeDomEl.style.color = textOnColor(col);
+    nodeDomEl.style.display = 'inline-block';
+  } else {
+    nodeDomEl.style.display = 'none';
+  }
+
+  const connected = RAW.edges.filter(e => e.from === nodeId || e.to === nodeId);
+  edgeListEl.innerHTML = '';
+  connected.forEach(e => {
+    const isOut = e.from === nodeId;
+    const otherId = isOut ? e.to : e.from;
+    const other = allNodeDefs.find(n => n.id === otherId);
+    if (!other) return;
+    const li = document.createElement('li');
+    li.className = 'edge-item';
+    li.innerHTML = `
+      <span class="edge-dir">${isOut ? '→' : '←'}</span>
+      ${e.label ? `<span class="edge-label">${e.label}</span>` : ''}
+      <span class="edge-node">${other.label}</span>
+    `;
+    li.addEventListener('click', () => { network.focus(otherId, { animation: true }); openDetail(otherId); });
+    edgeListEl.appendChild(li);
+  });
+
+  const deg = degreeMap[nodeId] || 0;
+  const inDeg  = RAW.edges.filter(e => e.to   === nodeId).length;
+  const outDeg = RAW.edges.filter(e => e.from === nodeId).length;
+  nodeStatsEl.textContent = `연결 ${deg}개 (→ ${outDeg} ← ${inDeg})${isHub(nodeId) ? '  ·  허브 노드' : ''}`;
+
+  detailEl.classList.add('open');
+  if (depthLimit > 0) applyFilter();
+}
+
+function closeDetail() {
+  selectedNodeId = null;
+  detailEl.classList.remove('open');
+  if (depthLimit > 0) applyFilter();
+}
+
+network.on('click', ({ nodes }) => {
+  if (nodes.length === 0) { closeDetail(); return; }
+  // 모바일: 필터 시트가 열려있으면 먼저 닫기
+  if (window.matchMedia('(max-width:768px)').matches) {
+    if (typeof closeMobileSidebar === 'function') closeMobileSidebar();
+  }
+  openDetail(nodes[0]);
+});
+
+document.getElementById('node-close').addEventListener('click', closeDetail);
+
+// ────────────────────────────────────────────
+// 12. 줌 컨트롤
+// ────────────────────────────────────────────
+document.getElementById('zoom-in').addEventListener('click',  () => network.moveTo({ scale: network.getScale() * 1.3, animation: true }));
+document.getElementById('zoom-out').addEventListener('click', () => network.moveTo({ scale: network.getScale() * 0.77, animation: true }));
+document.getElementById('zoom-fit').addEventListener('click', () => network.fit({ animation: true }));
+
+// ────────────────────────────────────────────
+// 13. 사이드바 토글 (데스크탑) + 모바일 FAB
+// ────────────────────────────────────────────
+const sidebarEl      = document.getElementById('sidebar');
+const sidebarOpenBtn = document.getElementById('sidebar-open');
+const sidebarTogBtn  = document.getElementById('sidebar-toggle');
+const fab            = document.getElementById('fab');
+const backdrop       = document.getElementById('backdrop');
+let   fabOpen        = false;
+
+// 데스크탑: 사이드바 닫기
+sidebarTogBtn.addEventListener('click', () => {
+  sidebarEl.classList.add('collapsed');
+  sidebarOpenBtn.style.display = 'flex';
+  setTimeout(() => network.fit({ animation: { duration: 400, easingFunction: 'easeInOutQuad' } }), 300);
+});
+// 데스크탑: 사이드바 열기
+sidebarOpenBtn.addEventListener('click', () => {
+  sidebarEl.classList.remove('collapsed');
+  sidebarOpenBtn.style.display = 'none';
+  setTimeout(() => network.fit({ animation: { duration: 400, easingFunction: 'easeInOutQuad' } }), 300);
+});
+
+// 모바일 FAB: 사이드바(바텀시트) 토글
+function closeMobileSidebar() {
+  fabOpen = false;
+  sidebarEl.classList.remove('mobile-open');
+  backdrop.classList.remove('show');
+  fab.textContent = '☰';
+}
+fab.addEventListener('click', () => {
+  // 노드 상세가 열려있으면 먼저 닫기
+  if (detailEl.classList.contains('open')) { closeDetail(); return; }
+  fabOpen = !fabOpen;
+  sidebarEl.classList.toggle('mobile-open', fabOpen);
+  backdrop.classList.toggle('show', fabOpen);
+  fab.textContent = fabOpen ? '✕' : '☰';
+});
+backdrop.addEventListener('click', closeMobileSidebar);
+
+// ────────────────────────────────────────────
+// 14. 바텀시트 드래그 dismiss (모바일)
+// ────────────────────────────────────────────
+function makeDraggable(el, closeFn) {
+  let startY = 0, dy = 0, active = false;
+
+  function onStart(e) {
+    if (!window.matchMedia('(max-width:768px)').matches) return;
+    const rect = el.getBoundingClientRect();
+    const y = e.touches[0].clientY;
+    // 핸들 영역(상단 56px)에서만 드래그 시작
+    if (y - rect.top > 56) return;
+    startY = y;
+    dy = 0;
+    active = true;
+    el.style.transition = 'none';
+  }
+
+  function onMove(e) {
+    if (!active) return;
+    dy = Math.max(0, e.touches[0].clientY - startY);
+    el.style.transform = `translateY(${dy}px)`;
+  }
+
+  function onEnd() {
+    if (!active) return;
+    active = false;
+    el.style.transition = '';
+    if (dy > 80) {
+      el.style.transform = '';
+      closeFn();
+    } else {
+      el.style.transform = ''; // snap back
+    }
+  }
+
+  el.addEventListener('touchstart', onStart, { passive: true });
+  el.addEventListener('touchmove',  onMove,  { passive: true });
+  el.addEventListener('touchend',   onEnd);
+}
+
+makeDraggable(sidebarEl, closeMobileSidebar);
+makeDraggable(detailEl,  closeDetail);
+
+// 깊이 슬라이더 초기값 0 = 전체
+depthSlider.value = 0;
+</script>
+</body>
+</html>
