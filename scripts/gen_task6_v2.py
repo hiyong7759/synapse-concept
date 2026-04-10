@@ -88,6 +88,17 @@ JSON만 출력. 다른 텍스트 금지.
 출력: {"retention":"memory","nodes":[{"name":"박지수","category":"PER.colleague"},{"name":"개발팀장","category":"WRK.role"}],"edges":[{"source":"박지수","label":"으로","target":"개발팀장"}],"deactivate":[{"source":"박지수","target":"팀원"},{"source":"박지수","target":"마케팅팀"}]}
 
 입력:
+스타벅스 안 좋아
+알려진 사실: 없음
+출력: {"retention":"memory","nodes":[{"name":"스타벅스","category":"FOD.restaurant"},{"name":"안","category":null},{"name":"좋아","category":null}],"edges":[{"source":"스타벅스","label":null,"target":"안"},{"source":"안","label":null,"target":"좋아"}],"deactivate":[]}
+
+입력:
+나 교회 안 다니기로 했어
+알려진 사실:
+- 나 매주 일요일 교회 나가고 있어
+출력: {"retention":"memory","nodes":[{"name":"나","category":"PER.individual"},{"name":"교회","category":"REL.christianity"},{"name":"안","category":null}],"edges":[{"source":"나","label":null,"target":"안"},{"source":"안","label":null,"target":"교회"}],"deactivate":[{"source":"나","target":"교회"}]}
+
+입력:
 삼겹살 먹었어
 알려진 사실: 없음
 출력: {"retention":"daily","nodes":[{"name":"삼겹살","category":"FOD.ingredient"}],"edges":[],"deactivate":[]}
@@ -244,10 +255,73 @@ PER: individual, family, friend, colleague, public, org
 """
 
 
-def build_gen_prompt(group: dict, n: int) -> str:
+def build_gen_prompt(group: dict, n: int, simple_only: bool = False) -> str:
     deactivate_n = int(n * group["deactivate_ratio"])
     empty_n = max(3, int(n * 0.08))
     normal_n = n - deactivate_n - empty_n
+
+    if simple_only:
+        # 단순 deactivate 보충 생성 전용
+        topics_str = "\n".join(f"  - {t}" for t in group["topics"])
+        return f"""\
+Synapse 지식 그래프 파인튜닝 데이터를 생성하라. 단순 상태변경 케이스 전용.
+대상 카테고리: {group['categories']}
+주제 가이드:
+{topics_str}
+
+아래 형식으로 정확히 {n}개 예시를 JSON 배열로 출력하라. 다른 텍스트 금지.
+
+[
+  {{
+    "sentence": "한국어 문장",
+    "context_sentences": ["과거에 저장된 관련 문장1"],
+    "answer": {{
+      "retention": "memory",
+      "nodes": [{{"name":"노드명","category":"대분류.소분류"}}],
+      "edges": [{{"source":"노드명","label":"조사or null","target":"노드명"}}],
+      "deactivate": [{{"source":"노드명","target":"노드명"}}]
+    }}
+  }}
+]
+
+모든 예시: deactivate 정확히 1개. context_sentences 1~2개. 단순한 사실 하나만 바뀌는 케이스.
+부정부사(안, 못) 포함 케이스도 포함하라: 안/못은 독립 노드 (나→안→헬스 구조).
+
+치환 전제 (sentence 생성 시 반드시 준수):
+- 시간 부사(오늘/어제/지난달/이번 주/작년 등) 사용 금지 → 실제 날짜/연도로
+- 장소 지시어(거기서/그곳에서 등) 사용 금지 → 구체 장소명으로
+- 인물 지시어(걔/그분/그사람 등) 사용 금지 → 구체 인물명으로
+- 구체화 불가능한 모호한 부사는 문장에서 제거.
+
+단순 상태변경 예시:
+sentence: "허리 다 나았어"
+context_sentences: ["허리디스크 L4-L5 진단받았어"]
+answer: {{"retention":"memory","nodes":[],"edges":[],"deactivate":[{{"source":"허리디스크","target":"L4-L5"}}]}}
+
+부정부사+단순 상태변경 예시:
+sentence: "나 교회 안 다니기로 했어"
+context_sentences: ["나 매주 일요일 교회 나가고 있어"]
+answer: {{"retention":"memory","nodes":[{{"name":"나","category":"PER.individual"}},{{"name":"교회","category":"REL.christianity"}},{{"name":"안","category":null}}],"edges":[{{"source":"나","label":null,"target":"안"}},{{"source":"안","label":null,"target":"교회"}}],"deactivate":[{{"source":"나","target":"교회"}}]}}
+
+카테고리 소분류 (공식 목록에서 선택):
+PER: individual, family, friend, colleague, public, org
+BOD: part, disease, medical, exercise, nutrition, sleep
+MND: emotion, personality, mental, motivation, coping
+FOD: ingredient, recipe, restaurant, drink, product
+LIV: housing, appliance, interior, supply, maintenance, moving
+MON: income, spending, invest, payment, loan, insurance
+WRK: workplace, role, jobchange, business, cert, tool
+TEC: sw, hw, ai, infra, data, security
+EDU: school, online, language, academic, reading, exam
+LAW: statute, contract, admin, rights, tax
+TRV: domestic, abroad, transport, stay, flight, place
+NAT: animal, plant, weather, terrain, ecology, space
+CUL: film, music, book, art, show, media
+HOB: sport, outdoor, game, craft, sing, collect, social
+SOC: politics, international, incident, economy, issue, news
+REL: romance, conflict, comm, manner, online
+REG: christianity, buddhism, catholic, islam, other, practice
+"""
 
     topics_str = "\n".join(f"  - {t}" for t in group["topics"])
 
@@ -274,8 +348,7 @@ Synapse 지식 그래프 파인튜닝 데이터를 생성하라.
 
 생성 비율:
 - 일반 추출 (context_sentences=[], retention="memory"): {normal_n}개
-- 상태변경 포함 (deactivate 있음, context_sentences에 과거 문장 2~5개 포함): {deactivate_n}개
-  → 상태변경은 복합적으로: 한 문장이 여러 과거 사실을 동시에 바꾸는 경우 포함 (deactivate 2개 이상)
+- 상태변경 포함 (deactivate 있음): {deactivate_n}개
   → context_sentences는 실제 대화처럼 자연스러운 과거 문장으로. 트리플이 아닌 완전한 문장.
 - 그래프 추출 없음 또는 daily (인사·일상 활동·순간 감정): {empty_n}개
 
@@ -296,14 +369,24 @@ Synapse 지식 그래프 파인튜닝 데이터를 생성하라.
 - 문장은 구어체 한국어로. 실제 대화처럼 자연스럽게.
 - 중복 문장 없이 다양하게 생성.
 
-복합 상태변경 예시:
-sentence: "나 삼성 그만두고 네이버로 이직했어"
-context_sentences: ["나 삼성에서 백엔드 개발자로 일하고 있어", "나 삼성 3년째야", "연봉은 6000이야"]
+단순 상태변경 예시 (deactivate 1개):
+sentence: "허리 다 나았어"
+context_sentences: ["허리디스크 L4-L5 진단받았어"]
 answer: {{
   "retention": "memory",
-  "nodes": [{{"name":"나","category":"PER.individual"}},{{"name":"네이버","category":"WRK.workplace"}}],
-  "edges": [{{"source":"나","label":"으로","target":"네이버"}}],
-  "deactivate": [{{"source":"나","target":"삼성"}},{{"source":"나","target":"백엔드 개발자"}}]
+  "nodes": [],
+  "edges": [],
+  "deactivate": [{{"source":"허리디스크","target":"L4-L5"}}]
+}}
+
+부정부사+상태변경 예시 (안/못은 반드시 독립 노드):
+sentence: "나 교회 안 다니기로 했어"
+context_sentences: ["나 매주 일요일 교회 나가고 있어"]
+answer: {{
+  "retention": "memory",
+  "nodes": [{{"name":"나","category":"PER.individual"}},{{"name":"교회","category":"REL.christianity"}},{{"name":"안","category":null}}],
+  "edges": [{{"source":"나","label":null,"target":"안"}},{{"source":"안","label":null,"target":"교회"}}],
+  "deactivate": [{{"source":"나","target":"교회"}}]
 }}
 
 카테고리 소분류 (공식 목록에서 선택):
