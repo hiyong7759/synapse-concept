@@ -195,6 +195,7 @@ doc_mode 추출 규칙:
 - 엣지 label: 계층 기호(항/호/조)이거나 원문 조사(의/에/으로 등). 없으면 null.
 - 1인칭 없음 (문서 내용이므로). 주어는 직원/회사/조항 등 명시됨.
 - deactivate: 개정 시 기존 앵커 노드→내용 엣지를 비활성화.
+- 엣지의 source와 target은 반드시 nodes 배열에 있는 노드명과 정확히 일치해야 한다. nodes에 없는 노드를 엣지에 사용하는 것은 절대 금지.
 
 예시:
 sentence: "제3조(유급휴가) ① 직원은 연간 15일의 유급휴가를 받는다. ② 출근율 80% 이상인 경우에 한한다."
@@ -202,13 +203,13 @@ current_graph: []
 answer: {{
   "retention": "memory",
   "nodes": [
-    {{"name":"제3조","category":"LAW.article"}},
-    {{"name":"제3조①","category":"LAW.clause"}},
-    {{"name":"제3조②","category":"LAW.clause"}},
-    {{"name":"유급휴가","category":"LAW.right"}},
-    {{"name":"15일","category":"LAW.duration"}},
-    {{"name":"출근율","category":"WRK.attendance"}},
-    {{"name":"80%","category":"LAW.condition"}}
+    {{"name":"제3조","category":"LAW.statute"}},
+    {{"name":"제3조①","category":"LAW.statute"}},
+    {{"name":"제3조②","category":"LAW.statute"}},
+    {{"name":"유급휴가","category":"LAW.rights"}},
+    {{"name":"15일","category":"LAW.contract"}},
+    {{"name":"출근율","category":"WRK.workplace"}},
+    {{"name":"80%","category":"LAW.statute"}}
   ],
   "edges": [
     {{"source":"제3조","label":"항","target":"제3조①"}},
@@ -225,7 +226,7 @@ answer: {{
 문장은 실제 한국 기업 문서 스타일로. 조항 번호는 다양하게.
 
 카테고리 소분류 (공식 목록에서만 선택):
-LAW: statute, contract, admin, rights, tax, article, clause, duration, condition, right, rate, period
+LAW: statute, contract, admin, rights, tax
 WRK: workplace, role, jobchange, business, cert, tool
 MON: income, spending, invest, payment, loan, insurance
 PER: individual, family, friend, colleague, public, org
