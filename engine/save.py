@@ -14,6 +14,7 @@
 from __future__ import annotations
 import json
 import re
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional
@@ -115,18 +116,50 @@ def _deactivate_edge(conn, edge_id: int) -> None:
 
 # ─── LLM 전처리 ───────────────────────────────────────────
 
-_DATE_WORDS = ('어제', '오늘', '내일', '그저께', '모레', '이번주', '이번 주', '지난주', '저번주', '글피')
-_PRONOUN_WORDS = ('이거', '그거', '거기', '이쪽', '그쪽', '저쪽', '이분', '그분', '저분', '쟤', '걔', '여기', '저기', '이것', '그것')
+_DATE_WORDS = (
+    # 일 — 과거
+    '어제', '그저께', '그제', '엊그제', '그끄제',
+    # 일 — 현재/미래
+    '오늘', '내일', '모레', '글피', '그글피',
+    # 주
+    '이번주', '이번 주', '지난주', '저번주', '다음주', '다음 주',
+    # 월
+    '이번달', '지난달', '다음달',
+    # 연
+    '올해', '작년', '내년', '재작년', '내후년',
+)
+_PRONOUN_WORDS = (
+    # 사물
+    '이거', '그거', '저거', '이것', '그것', '저것',
+    # 장소
+    '거기', '여기', '저기', '이곳', '그곳', '저곳',
+    # 방향
+    '이쪽', '그쪽', '저쪽', '이리', '저리',
+    # 인물 — 존대
+    '이분', '그분', '저분',
+    # 인물 — 비존대
+    '걔', '쟤', '얘', '그사람', '그 사람', '그애', '그 애', '그녀',
+    # 지시형용사/부사
+    '이런', '그런', '저런', '이러한', '그러한', '저러한',
+    '이렇게', '그렇게', '저렇게',
+    # 모호 시간 (LLM 판단)
+    '방금', '아까', '지금', '요즘', '최근', '이번에',
+    '그날', '그때', '당시', '주말',
+    # 요일 (맥락 판단 — "다음 목요일" vs "목요일마다")
+    '월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일',
+)
+_AGE_PATTERN = re.compile(r'\d{1,3}(살|세)|[0-9]0대')
 
 
 def _preprocess(text: str) -> dict:
     """대명사/날짜 치환. 모호하면 {"question": ...}, 정상이면 {"text": ...} 반환."""
     needs_today = any(w in text for w in _DATE_WORDS)
     needs_pronoun = any(w in text for w in _PRONOUN_WORDS)
-    if not needs_today and not needs_pronoun:
+    needs_age = bool(_AGE_PATTERN.search(text))
+    if not needs_today and not needs_pronoun and not needs_age:
         return {"text": text}
     today = date.today().isoformat()
-    return save_pronoun(text, today=today if needs_today else "")
+    return save_pronoun(text, today=today if (needs_today or needs_age) else "")
 
 
 def _detect_state_changes(text: str, existing: list[dict]) -> list[dict]:
