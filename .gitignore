@@ -26,3 +26,6 @@ resume_*
 scripts/find_threshold.py
 scripts/simulate_threshold.py
 .gstack/
+
+# MLX 모델 (대용량)
+archive/finetune/models/
