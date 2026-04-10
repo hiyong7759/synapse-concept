@@ -14,7 +14,6 @@
 from __future__ import annotations
 import json
 import re
-import re
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Optional
@@ -25,7 +24,7 @@ from .llm import chat, LLMError, save_pronoun, llm_extract
 
 @dataclass
 class SaveResult:
-    session_id: Optional[int] = None
+    sentence_ids: list[int] = field(default_factory=list)
     triples_added: list[tuple[str, Optional[str], str]] = field(default_factory=list)
     edge_ids_added: list[int] = field(default_factory=list)
     nodes_added: list[str] = field(default_factory=list)
@@ -38,17 +37,12 @@ class SaveResult:
 
 # ─── DB 헬퍼 ──────────────────────────────────────────────
 
-def _create_session(conn) -> int:
-    cur = conn.execute("INSERT INTO sessions DEFAULT VALUES")
-    return cur.lastrowid
-
-
 def _insert_sentence(
-    conn, session_id: int, paragraph_index: int, text: str, retention: str = "memory"
+    conn, text: str, role: str = "user", retention: str = "memory"
 ) -> int:
     cur = conn.execute(
-        "INSERT INTO sentences (session_id, paragraph_index, text, retention) VALUES (?,?,?,?)",
-        (session_id, paragraph_index, text, retention),
+        "INSERT INTO sentences (text, role, retention) VALUES (?,?,?)",
+        (text, role, retention),
     )
     return cur.lastrowid
 
@@ -71,14 +65,7 @@ def _upsert_node(conn, name: str, category: Optional[str] = None) -> tuple[int, 
 
 def _insert_edge(
     conn, src_id: int, tgt_id: int, label: Optional[str], sentence_id: Optional[int]
-) -> Optional[int]:
-    existing = conn.execute(
-        "SELECT id FROM edges WHERE source_node_id=? AND target_node_id=? "
-        "AND (label=? OR (label IS NULL AND ? IS NULL))",
-        (src_id, tgt_id, label, label),
-    ).fetchone()
-    if existing:
-        return None
+) -> int:
     cur = conn.execute(
         "INSERT INTO edges (source_node_id, target_node_id, label, sentence_id) VALUES (?,?,?,?)",
         (src_id, tgt_id, label, sentence_id),
@@ -149,6 +136,79 @@ _PRONOUN_WORDS = (
     '월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일',
 )
 _AGE_PATTERN = re.compile(r'\d{1,3}(살|세)|[0-9]0대')
+_NEG_WORDS = ('안', '못')
+_NEG_PATTERN = re.compile(r'(?:^|\s)(안|못)\s')
+
+_NEG_2PASS_PROMPT = (
+    '이 문장에서 부정부사(안/못)의 대상을 찾아라.\n'
+    'JSON만 출력: {"negation": "안|못", "subject": "주어노드", "object": "대상노드"}\n'
+    '대상을 특정할 수 없으면: {"negation": null}'
+)
+
+
+def _postprocess_negation(
+    text: str, nodes: list[dict], edges: list[dict], use_llm: bool = True
+) -> tuple[list[dict], list[dict]]:
+    """부정부사(안/못) 후처리.
+
+    1차: 엣지 label에 안/못이 있으면 노드+엣지로 변환.
+    2차: 문장에 안/못이 있는데 1차에서도 감지 안 되면 LLM 2-pass 호출.
+    """
+    neg_match = _NEG_PATTERN.search(f' {text} ')
+    if not neg_match:
+        return nodes, edges
+
+    neg_word = neg_match.group(1)  # "안" or "못"
+    node_names = {n['name'] for n in nodes}
+
+    # 이미 노드에 있으면 패스
+    if neg_word in node_names:
+        return nodes, edges
+
+    # 1차: label에 안/못이 있으면 → 노드+엣지 변환
+    new_edges = []
+    converted = False
+    for e in edges:
+        if e.get('label') in _NEG_WORDS:
+            neg = e['label']
+            src = e.get('source', '')
+            tgt = e.get('target', '')
+            # 노드 추가
+            if neg not in node_names:
+                nodes.append({'name': neg, 'category': None})
+                node_names.add(neg)
+            # 엣지 변환: src→neg(null), neg→tgt(null)
+            new_edges.append({'source': src, 'label': None, 'target': neg})
+            new_edges.append({'source': neg, 'label': None, 'target': tgt})
+            converted = True
+        else:
+            new_edges.append(e)
+
+    if converted:
+        return nodes, new_edges
+
+    # 2차: 완전 누락 → LLM 2-pass
+    if use_llm:
+        try:
+            from .llm import mlx_chat
+            raw = mlx_chat('extract', f'{_NEG_2PASS_PROMPT}\n\n문장: {text}', max_tokens=128)
+            match = re.search(r'\{.*\}', raw, re.DOTALL)
+            if match:
+                d2 = json.loads(match.group())
+                if d2.get('negation'):
+                    neg = d2['negation']
+                    subj = d2.get('subject', '')
+                    obj = d2.get('object', '')
+                    if neg not in node_names:
+                        nodes.append({'name': neg, 'category': None})
+                    if subj and subj in node_names:
+                        edges.append({'source': subj, 'label': None, 'target': neg})
+                    if obj and obj in node_names and obj != neg:
+                        edges.append({'source': neg, 'label': None, 'target': obj})
+        except Exception:
+            pass
+
+    return nodes, edges
 
 
 def _preprocess(text: str) -> dict:
@@ -161,15 +221,6 @@ def _preprocess(text: str) -> dict:
     today = date.today().isoformat()
     return save_pronoun(text, today=today if (needs_today or needs_age) else "")
 
-
-def _detect_state_changes(text: str, existing: list[dict]) -> list[dict]:
-    """기존 트리플에서 상태 변경 감지. [{"node": ..., "edge_label": ...}] 반환."""
-    existing_strs = [
-        f"{e['src']} —({e['label']})→ {e['tgt']}" if e["label"] else f"{e['src']} → {e['tgt']}"
-        for e in existing
-    ]
-    inactive = save_state(text, existing_strs)
-    return [{"node": item.get("source", ""), "edge_label": item.get("label")} for item in inactive]
 
 
 # ─── 별칭 ─────────────────────────────────────────────────
@@ -219,7 +270,6 @@ def save(
     db_path: str = DB_PATH,
     use_llm: bool = True,
     images: Optional[list[str]] = None,
-    session_id: Optional[int] = None,
     context_sentences: Optional[list[str]] = None,
 ) -> SaveResult:
     """텍스트를 그래프에 저장. SaveResult 반환.
@@ -230,17 +280,13 @@ def save(
 
     conn = get_connection(db_path)
     try:
-        # 0. 세션
-        if session_id is None:
-            session_id = _create_session(conn)
-        result.session_id = session_id
-
-        # 1. 문단 분리 → sentences 저장
+        # 1. 문단 분리 → sentences 저장 (role='user')
         paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()] or [text]
         sentence_ids: list[int] = []
-        for para_idx, paragraph in enumerate(paragraphs):
-            sid = _insert_sentence(conn, session_id, para_idx, paragraph)
+        for paragraph in paragraphs:
+            sid = _insert_sentence(conn, paragraph)
             sentence_ids.append(sid)
+        result.sentence_ids = sentence_ids
 
         # 2. LLM 전처리: 치환 / 모호성 감지
         effective_text = text
@@ -268,6 +314,11 @@ def save(
         ext_edges = extracted.get("edges", [])  # [{"source": ..., "label": ..., "target": ...}]
         ext_deactivate = extracted.get("deactivate", [])  # [{"source": ..., "target": ...}]
         retention = extracted.get("retention", "memory")
+
+        # 부정부사(안/못) 후처리: label→노드 변환 + 2-pass fallback
+        ext_nodes, ext_edges = _postprocess_negation(
+            effective_text, ext_nodes, ext_edges, use_llm=use_llm
+        )
 
         # 4. 기존 트리플 조회 (deactivate 매칭용)
         # target 없는 엣지(LLM 오출력) 필터링
@@ -335,9 +386,8 @@ def save(
             if src_id is None or tgt_id is None:
                 continue
             edge_id = _insert_edge(conn, src_id, tgt_id, edge.get("label"), sentence_id)
-            if edge_id is not None:
-                result.triples_added.append((edge["source"], edge.get("label"), edge["target"]))
-                result.edge_ids_added.append(edge_id)
+            result.triples_added.append((edge["source"], edge.get("label"), edge["target"]))
+            result.edge_ids_added.append(edge_id)
 
         conn.commit()
 
@@ -399,6 +449,17 @@ def rollback(edge_ids: list[int], node_ids: list[int], db_path: str = DB_PATH) -
     return {"edges_deleted": edges_deleted, "nodes_deleted": nodes_deleted}
 
 
+def save_response(text: str, db_path: str = DB_PATH) -> int:
+    """assistant 응답을 sentences에 저장. 그래프 추출 없음. sentence_id 반환."""
+    conn = get_connection(db_path)
+    try:
+        sid = _insert_sentence(conn, text, role="assistant")
+        conn.commit()
+    finally:
+        conn.close()
+    return sid
+
+
 if __name__ == "__main__":
     tests = [
         "오늘 병원 다녀왔어",
@@ -408,7 +469,7 @@ if __name__ == "__main__":
     for text in tests:
         r = save(text, use_llm=False)
         print(f"\n입력: {text!r}")
-        print(f"  session_id: {r.session_id}")
+        print(f"  sentence_ids: {r.sentence_ids}")
         for src, label, tgt in r.triples_added:
             lbl = f" —({label})→ " if label else " → "
             print(f"  [저장] {src}{lbl}{tgt}")
