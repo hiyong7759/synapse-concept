@@ -69,22 +69,16 @@ def validate_record(rec: dict, line_no: int) -> list[str]:
 
     try:
         messages = rec["messages"]
-        system_msg = messages[0]["content"]
         user_content = messages[1]["content"]
         answer_str = messages[2]["content"]
     except (KeyError, IndexError):
         return [f"L{line_no}: messages 구조 오류"]
 
-    # 문장과 current_graph 파싱
+    # 문장과 context_sentences 파싱
     lines = user_content.split("\n")
     sentence = lines[0].strip() if lines else ""
 
-    current_graph_nodes: set[str] = set()
-    for line in lines[1:]:
-        m = re.match(r"-\s*(.+?)\s*→\s*(.+)", line)
-        if m:
-            current_graph_nodes.add(m.group(1).strip())
-            current_graph_nodes.add(m.group(2).strip())
+    has_context = "알려진 사실:" in user_content and "알려진 사실: 없음" not in user_content
 
     # answer 파싱
     try:
@@ -102,7 +96,6 @@ def validate_record(rec: dict, line_no: int) -> list[str]:
     deactivate = answer.get("deactivate", [])
 
     node_names: set[str] = {n["name"] for n in nodes if isinstance(n, dict) and "name" in n}
-    node_names |= current_graph_nodes  # current_graph의 기존 노드도 유효한 참조 대상
 
     # 2. 비공식 카테고리 검사
     for n in nodes:
@@ -123,23 +116,14 @@ def validate_record(rec: dict, line_no: int) -> list[str]:
         if tgt and tgt not in node_names:
             errors.append(f"L{line_no}: 엣지 target {tgt!r}가 nodes에 없음 — '{sentence[:30]}'")
 
-    # 4. "나" 노드가 문장에 1인칭 없는데 생성된 것 (answer.nodes만 검사, current_graph 제외)
-    answer_node_names: set[str] = {n["name"] for n in nodes if isinstance(n, dict) and "name" in n}
-    if "나" in answer_node_names:
+    # 4. "나" 노드가 문장에 1인칭 없는데 생성된 것
+    if "나" in node_names:
         if not FIRST_PERSON_RE.search(sentence):
             errors.append(f"L{line_no}: '나' 노드가 있으나 문장에 1인칭 없음 — '{sentence[:50]}'")
 
-    # 5. deactivate source/target이 current_graph에 없는 것
-    if deactivate and current_graph_nodes:
-        for d in deactivate:
-            if not isinstance(d, dict):
-                continue
-            src = d.get("source")
-            tgt = d.get("target")
-            if src and src not in current_graph_nodes:
-                errors.append(f"L{line_no}: deactivate source {src!r}가 current_graph에 없음 — '{sentence[:30]}'")
-            if tgt and tgt not in current_graph_nodes:
-                errors.append(f"L{line_no}: deactivate target {tgt!r}가 current_graph에 없음 — '{sentence[:30]}'")
+    # 5. context 없는데 deactivate 있는 것
+    if deactivate and not has_context:
+        errors.append(f"L{line_no}: context_sentences 없는데 deactivate 있음 — '{sentence[:30]}'")
 
     return errors
 
