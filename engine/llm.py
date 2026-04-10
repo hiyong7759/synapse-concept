@@ -22,7 +22,7 @@ class LLMError(RuntimeError):
 # ── MLX 태스크별 시스템 프롬프트 ───────────────────────────
 _MLX_SYSTEM: dict[str, str] = {
     "retrieve-filter": (
-        "당신은 지식 그래프 인출 필터입니다. 질문과 트리플을 보고, 이 트리플이 질문과 관련 있는지 판단하세요. "
+        "당신은 지식 그래프 인출 필터입니다. 질문과 문장을 보고, 이 문장이 질문과 관련 있는지 판단하세요. "
         "불확실하면 pass로 판단하세요 (제외보다 포함이 안전). 출력: pass 또는 reject (한 단어만)"
     ),
     "retrieve-expand": (
@@ -77,17 +77,23 @@ _MLX_SYSTEM: dict[str, str] = {
         "출력: personal_only 또는 augment_org (한 단어만)"
     ),
     "extract": (
-        "한국어 문장에서 지식 그래프의 노드와 엣지를 추출하라.\n"
+        "한국어 문장에서 지식 그래프의 노드, 엣지, 카테고리, 상태변경, 보관 유형을 추출하라.\n"
         "JSON만 출력. 다른 텍스트 금지.\n\n"
         "출력 형식:\n"
-        '{"nodes":[{"name":"노드명","category":"대분류.소분류"}],'
-        '"edges":[{"source":"노드명","label":"조사","target":"노드명"}]}\n\n'
+        '{"retention":"memory|daily","nodes":[{"name":"노드명","category":"대분류.소분류"}],'
+        '"edges":[{"source":"노드명","label":"조사","target":"노드명"}],'
+        '"deactivate":[{"source":"노드명","target":"노드명"}]}\n\n'
         "규칙:\n"
         "- 노드는 원자. 하나의 개념 = 하나의 노드.\n"
-        "- 1인칭(나/내/저/제)이 문장에 명시된 경우에만 \"나\"(PER.individual) 노드로 추출. 문장에 없는 1인칭 추가 금지.\n"
-        "- 3인칭 주어는 나로 치환하지 말 것. 원문 그대로 노드로 추출.\n"
-        "- 저장 불필요한 일상 대화 → {\"nodes\":[],\"edges\":[]}\n"
-        "- 엣지 label은 원문의 조사 그대로 (에, 에서, 으로, 의, 를, 이/가, 와/과 등). 조사 없으면 null."
+        "- 1인칭(나/내/저/제)이 문장에 명시된 경우 \"나\" 노드로 추출. 문장에 없는 1인칭 추가 금지.\n"
+        "- 3인칭 주어는 원문 그대로 노드 추출.\n"
+        "- 엣지 label = 원문의 조사 그대로 (에서, 으로, 의, 에, 를/을, 와/과, 고, 이/가 등). 조사 없으면 null.\n"
+        "- 부정부사(안, 못)는 독립 노드다. 예: \"스타벅스 안 좋아\" → 스타벅스→안→좋아 (3노드, 2엣지 null).\n"
+        "- 엣지의 source와 target은 반드시 nodes 배열에 있는 노드명과 정확히 일치해야 한다.\n"
+        "- \"알려진 사실:\"이 제공된 경우: 현재 입력과 상충되는 기존 문장을 파악해 deactivate에 포함. 없으면 [].\n"
+        "- retention: 잘 변하지 않는 사실/상태/이력 → \"memory\". 순간적 활동/감정/일상 → \"daily\".\n"
+        "- 추출할 노드/엣지가 없는 대화 → {\"retention\":\"daily\",\"nodes\":[],\"edges\":[],\"deactivate\":[]}\n\n"
+        "카테고리 대분류(17개): PER BOD MND FOD LIV MON WRK TEC EDU LAW TRV NAT CUL HOB SOC REL REG"
     ),
 }
 
@@ -223,14 +229,14 @@ SYSTEM_RETRIEVE_FILTER = """당신은 한국어 지식 그래프 필터입니다
 출력: [true, false]"""
 
 SYSTEM_CHAT = """당신은 사용자의 개인 비서입니다.
-아래 지식 그래프 트리플이 사용자에 대해 알려진 사실입니다.
+아래는 사용자에 대해 알려진 사실 문장들입니다.
 이 사실들을 근거로 질문에 자연스럽고 간결하게 한국어로 답변하세요.
 
 주의사항:
-- 트리플에 없는 내용은 "모르겠어요" 또는 "기록이 없어요"라고 답변
+- 문장에 없는 내용은 "모르겠어요" 또는 "기록이 없어요"라고 답변
 - 추측하거나 일반적인 정보를 보충하지 말 것
 - 짧고 명확하게 답변 (2-3문장 이내)
-- 반말/존댓말은 트리플 문맥에 맞게 판단"""
+- 반말/존댓말은 문장 문맥에 맞게 판단"""
 
 SYSTEM_IMAGE_EXTRACT = """이미지에서 텍스트를 읽어 한국어 단문으로 변환하세요.
 - 표나 목록은 "X는 Y입니다" 형식 문장으로 변환하세요
@@ -251,10 +257,10 @@ def retrieve_expand(question: str) -> list[str]:
         return question.split()
 
 
-def retrieve_filter_triple(question: str, triple_str: str) -> bool:
-    """트리플 1개가 질문과 관련 있는지 판단. True=pass, False=reject."""
+def retrieve_filter_sentence(question: str, sentence: str) -> bool:
+    """문장 1개가 질문과 관련 있는지 판단. True=pass, False=reject."""
     try:
-        user = f"질문: {question}\n트리플: {triple_str}"
+        user = f"질문: {question}\n문장: {sentence}"
         result = mlx_chat("retrieve-filter", user, max_tokens=8)
         return result.strip().lower() != "reject"
     except Exception:
@@ -278,13 +284,19 @@ def save_pronoun(text: str, context: str = "", today: str = "") -> dict:
         return {"text": text}
 
 
-def llm_extract(text: str) -> dict:
+def llm_extract(text: str, context_sentences: Optional[list[str]] = None) -> dict:
     """LLM으로 노드/엣지/카테고리/상태변경/보관유형 추출 (task6 파인튜닝 모델).
 
+    context_sentences: retrieve에서 가져온 관련 원본 문장들. deactivate 판단에 사용.
     반환: {"retention": "memory|daily", "nodes": [...], "edges": [...], "deactivate": [...]}
     """
     try:
-        raw = mlx_chat("extract", text, max_tokens=512)
+        if context_sentences:
+            ctx = "\n".join(f"- {s}" for s in context_sentences)
+            input_text = f"{text}\n알려진 사실:\n{ctx}"
+        else:
+            input_text = text
+        raw = mlx_chat("extract", input_text, max_tokens=512)
         match = re.search(r"\{.*\}", raw, re.DOTALL)
         if not match:
             return {"retention": "memory", "nodes": [], "edges": [], "deactivate": []}

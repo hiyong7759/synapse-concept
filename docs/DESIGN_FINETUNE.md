@@ -81,10 +81,13 @@ Task 6은 저장 파이프라인의 핵심: Kiwi 형태소 분석 제거 → LLM
 
 ### 태스크 3: 인출 필터
 
+> **v2 변경**: 판단 단위가 트리플 문자열 → 원본 문장(sentence_text)으로 변경됨.
+> 트리플은 추적 구조. 판단은 엣지가 속한 실제 문장으로 한다.
+
 **시스템 프롬프트:**
 ```
 당신은 지식 그래프 인출 필터입니다.
-질문과 트리플을 보고, 이 트리플이 질문과 관련 있는지 판단하세요.
+질문과 문장을 보고, 이 문장이 질문과 관련 있는지 판단하세요.
 불확실하면 pass로 판단하세요 (제외보다 포함이 안전).
 출력: pass 또는 reject (한 단어만)
 ```
@@ -92,23 +95,23 @@ Task 6은 저장 파이프라인의 핵심: Kiwi 형태소 분석 제거 → LLM
 **예시 데이터:**
 ```jsonl
 {"messages": [
-  {"role": "system", "content": "당신은 지식 그래프 인출 필터입니다. 질문과 트리플을 보고 관련 있는지 판단하세요. 불확실하면 pass. 출력: pass 또는 reject"},
-  {"role": "user", "content": "질문: 언제 허리 아팠지?\n트리플: 허리 → 아프"},
+  {"role": "system", "content": "당신은 지식 그래프 인출 필터입니다. 질문과 문장을 보고 관련 있는지 판단하세요. 불확실하면 pass. 출력: pass 또는 reject"},
+  {"role": "user", "content": "질문: 언제 허리 아팠지?\n문장: 허리디스크 L4-L5 진단받았어"},
   {"role": "assistant", "content": "pass"}
 ]}
 {"messages": [
-  {"role": "system", "content": "당신은 지식 그래프 인출 필터입니다. 질문과 트리플을 보고 관련 있는지 판단하세요. 불확실하면 pass. 출력: pass 또는 reject"},
-  {"role": "user", "content": "질문: 언제 허리 아팠지?\n트리플: 스타벅스 → 좋"},
+  {"role": "system", "content": "당신은 지식 그래프 인출 필터입니다. 질문과 문장을 보고 관련 있는지 판단하세요. 불확실하면 pass. 출력: pass 또는 reject"},
+  {"role": "user", "content": "질문: 언제 허리 아팠지?\n문장: 스타벅스 신메뉴 맛있어"},
   {"role": "assistant", "content": "reject"}
 ]}
 {"messages": [
-  {"role": "system", "content": "당신은 지식 그래프 인출 필터입니다. 질문과 트리플을 보고 관련 있는지 판단하세요. 불확실하면 pass. 출력: pass 또는 reject"},
-  {"role": "user", "content": "질문: 언제 허리 아팠지?\n트리플: 낫 → 었"},
+  {"role": "system", "content": "당신은 지식 그래프 인출 필터입니다. 질문과 문장을 보고 관련 있는지 판단하세요. 불확실하면 pass. 출력: pass 또는 reject"},
+  {"role": "user", "content": "질문: 언제 허리 아팠지?\n문장: 허리 다 나았어"},
   {"role": "assistant", "content": "pass"}
 ]}
 {"messages": [
-  {"role": "system", "content": "당신은 지식 그래프 인출 필터입니다. 질문과 트리플을 보고 관련 있는지 판단하세요. 불확실하면 pass. 출력: pass 또는 reject"},
-  {"role": "user", "content": "질문: 좋아하는 음식 뭐야?\n트리플: 삼성 → 재직"},
+  {"role": "system", "content": "당신은 지식 그래프 인출 필터입니다. 질문과 문장을 보고 관련 있는지 판단하세요. 불확실하면 pass. 출력: pass 또는 reject"},
+  {"role": "user", "content": "질문: 좋아하는 음식 뭐야?\n문장: 나 삼성에서 일하고 있어"},
   {"role": "assistant", "content": "reject"}
 ]}
 ```
@@ -428,22 +431,30 @@ admin       — 시스템 관리자 (전체)
 - 상태변경 감지가 별도 LLM 호출 → 통합으로 단순화
 - LLM이 한 번에 노드·엣지·카테고리·상태변경을 추출하도록 재학습
 
-**시스템 프롬프트:**
+**시스템 프롬프트 (v2.1 — 문장 컨텍스트):**
 ```
-한국어 문장에서 지식 그래프의 노드, 엣지, 카테고리, 상태변경을 추출하라.
+한국어 문장에서 지식 그래프의 노드, 엣지, 카테고리, 상태변경, 보관 유형을 추출하라.
 JSON만 출력. 다른 텍스트 금지.
 
 출력 형식:
-{"nodes":[{"name":"노드명","category":"대분류.소분류"}],"edges":[{"source":"노드명","label":"조사","target":"노드명"}],"deactivate":[{"source":"노드명","target":"노드명"}]}
+{"retention":"memory|daily","nodes":[{"name":"노드명","category":"대분류.소분류"}],"edges":[{"source":"노드명","label":"조사","target":"노드명"}],"deactivate":[{"source":"노드명","target":"노드명"}]}
 
 규칙:
 - 노드는 원자. 하나의 개념 = 하나의 노드.
-- 개인 모드: 1인칭(나/내/저/제)이 문장에 명시된 경우 "나" 노드 추출. 없으면 미생성 + 엣지에도 미사용.
-- 조직 모드: 1인칭 → 사용자 이름으로 치환. 주어 항상 명시.
+- 1인칭(나/내/저/제)이 문장에 명시된 경우 "나" 노드로 추출. 문장에 없는 1인칭 추가 금지.
 - 3인칭 주어는 원문 그대로 노드 추출.
-- 엣지 label은 원문의 조사 그대로. 조사 없으면 null.
-- deactivate: 입력이 기존 상태를 변경하면 비활성화할 엣지 목록. 없으면 [].
-- 저장 불필요한 일상 대화 → {"nodes":[],"edges":[],"deactivate":[]}
+- 엣지 label = 원문의 조사 그대로. 조사 없으면 null.
+- "알려진 사실:"이 제공된 경우: 현재 입력과 상충되는 기존 문장을 파악해 deactivate에 포함. 없으면 [].
+- retention: 잘 변하지 않는 사실/상태/이력 → "memory". 순간적 활동/감정/일상 → "daily".
+- 저장 불필요한 대화 → {"retention":"daily","nodes":[],"edges":[],"deactivate":[]}
+```
+
+**입력 형식**: 현재 발화 + "알려진 사실:" 섹션 (retrieve에서 가져온 원본 문장들)
+```
+허리 다 나았어
+알려진 사실:
+- 나는 허리디스크 L4-L5 진단받았어
+- 허리 너무 아파서 병원 다니고 있어
 ```
 
 **출력 규칙:**
@@ -490,18 +501,19 @@ PER BOD MND FOD LIV MON WRK TEC EDU LAW TRV NAT CUL HOB SOC REL REG
 ```
 → 상세 목록: `docs/DESIGN_CATEGORY.md`
 
-**데이터 현황 (완료):**
+**데이터 현황:**
 
-| 파일 | 내용 | 건수 |
-|------|------|------|
-| task6_extract_category.jsonl | 초기 균형 세트 | 500건 |
-| task6_sup_a.jsonl | BOD/WRK/MON + 복합문 | 280건 |
-| task6_sup_b.jsonl | TEC/LIV/HOB/TRV | 277건 |
-| task6_sup_c.jsonl | FOD/MND/EDU/LAW/CUL | 280건 |
-| task6_sup_d.jsonl | SOC/REL/REG/NAT/PER + 빈결과 + 복합문 | 340건 |
-| **합계** | | **1,677건** |
+| 파일 | 내용 | 건수 | 상태 |
+|------|------|------|------|
+| task6_extract_category.jsonl | 초기 균형 세트 | 500건 | 구버전 (트리플 컨텍스트) |
+| task6_sup_a~d.jsonl | 카테고리별 보강 | 1,177건 | 구버전 (트리플 컨텍스트) |
+| **task6_v2_a.jsonl** | PER/BOD/MND | — | **재생성 중 (v2.1)** |
+| **task6_v2_b.jsonl** | WRK/MON/TEC/EDU | — | **재생성 중 (v2.1)** |
+| **task6_v2_c.jsonl** | FOD/LIV/HOB/TRV/CUL | — | **재생성 중 (v2.1)** |
+| **task6_v2_d.jsonl** | LAW/NAT/SOC/REL/REG | — | **재생성 중 (v2.1)** |
+| **task6_v2_e.jsonl** | doc_mode (조직 문서) | — | **재생성 중 (v2.1)** |
 
-카테고리 분포 (문장 기준): BOD 236 · WRK 216 · MON 206 · TEC 160 · TRV 156 · FOD 122 · HOB 118 · EDU 104 · MND 99 · LIV 98 · NAT 89 · LAW 85 · CUL 66 · SOC 51 · 빈결과 50 · REL 44 · REG 40
+v2.1 변경: `current_graph`(트리플) → `context_sentences`(원본 문장) 포맷. deactivate 학습 정확도 향상 목적.
 
 ---
 
@@ -524,8 +536,7 @@ PER BOD MND FOD LIV MON WRK TEC EDU LAW TRV NAT CUL HOB SOC REL REG
 
 ## 다음 세션 할 일
 
-1. Task 6 학습 데이터 갱신 (`deactivate` 필드 추가, "나" 노드 규칙 반영 — 1인칭 명시 시 추출, 없으면 미생성)
-2. Task 6 파인튜닝 재실행 (MLX LoRA, gemma4:e2b)
+1. task6_v2 a~e 생성 완료 → validate_task6.py 전수검사 → 오류 제거 → 커밋
+2. Task 6 파인튜닝 재실행 (MLX LoRA, gemma4:e2b, task6_v2 데이터)
 3. eval: 추출 정확도 + deactivate 정확도 측정
-4. 저장 파이프라인 코드에서 Kiwi 제거 → LLM 추출로 교체
-5. Org 데이터셋 생성 스크립트 작성
+4. Org 데이터셋 생성 스크립트 작성

@@ -19,6 +19,7 @@ from engine.db import get_stats, init_db, DB_PATH
 from engine.save import save
 from engine.retrieve import retrieve
 from engine.llm import llm_extract
+from typing import Optional
 
 
 def _fmt_triple(src, label, tgt) -> str:
@@ -75,30 +76,37 @@ def cmd_interactive(use_llm: bool) -> None:
                 cmd_reset()
             continue
 
-        # 저장인지 질문인지 판단: "?" 또는 의문사가 있으면 질문, 아니면 저장
-        is_question = "?" in text or any(
-            kw in text for kw in ["언제", "어디", "뭐", "무슨", "누가", "어떻", "얼마", "몇"]
-        )
+        # 1. 인출: 관련 문장 수집 + 잠재적 답변 생성
+        r_retrieve = retrieve(text, use_llm=use_llm)
+        if r_retrieve.start_nodes:
+            print(f"  [탐색] {' / '.join(r_retrieve.start_nodes)} → {len(r_retrieve.context_triples)}개 트리플")
 
-        if is_question:
-            r = retrieve(text, use_llm=use_llm)
-            if r.start_nodes:
-                print(f"  [탐색] {' / '.join(r.start_nodes)} → {len(r.context_triples)}개 트리플")
-            if r.answer:
-                print(f"  {r.answer}")
-        else:
-            r = save(text, use_llm=use_llm)
+        # 2. context_sentences: 인출된 트리플에서 원본 문장 추출 (문장 단위 dedup)
+        seen_sentences: set[str] = set()
+        context_sentences = []
+        for t in r_retrieve.context_triples:
+            if t.sentence_text and t.sentence_text not in seen_sentences:
+                seen_sentences.add(t.sentence_text)
+                context_sentences.append(t.sentence_text)
 
-            if r.question:
-                print(f"  비서: {r.question}")
-                # 되물음 — 사용자 답변 받아서 재저장
-                answer = input("synapse> ").strip()
-                if answer:
-                    r2 = save(answer, use_llm=use_llm)
-                    _print_save_result(r2)
-                continue
+        # 3. 저장: context 포함하여 노드/엣지 추출
+        r_save = save(text, use_llm=use_llm, context_sentences=context_sentences)
 
-            _print_save_result(r)
+        # 4. 모호성 되물음 처리
+        if r_save.question:
+            print(f"  비서: {r_save.question}")
+            answer = input("synapse> ").strip()
+            if answer:
+                r2 = save(answer, use_llm=use_llm)
+                _print_save_result(r2)
+            continue
+
+        # 5. 저장 결과 출력
+        _print_save_result(r_save)
+
+        # 6. 인출 답변 출력
+        if r_retrieve.answer:
+            print(f"  비서: {r_retrieve.answer}")
 
 
 def _print_save_result(r) -> None:

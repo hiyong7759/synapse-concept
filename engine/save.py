@@ -187,6 +187,7 @@ def save(
     use_llm: bool = True,
     images: Optional[list[str]] = None,
     session_id: Optional[int] = None,
+    context_sentences: Optional[list[str]] = None,
 ) -> SaveResult:
     """텍스트를 그래프에 저장. SaveResult 반환.
 
@@ -224,7 +225,7 @@ def save(
         # 3. LLM 추출 (task6): 노드+엣지+카테고리
         if use_llm:
             try:
-                extracted = llm_extract(effective_text)
+                extracted = llm_extract(effective_text, context_sentences=context_sentences)
             except LLMError:
                 extracted = {"nodes": [], "edges": []}
         else:

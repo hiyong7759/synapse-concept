@@ -1,6 +1,6 @@
 # Synapse 설계 — 저장/인출/대화 파이프라인
 
-**최종 업데이트**: 2026-04-09 (통합 파이프라인, v8 스키마, 어댑터 목록 정리)
+**최종 업데이트**: 2026-04-10 (retrieve-filter 문장 기준, sentence_id dedup, context_sentences 전달, SYSTEM_CHAT 문장 포맷)
 
 ## 근본 목표
 
@@ -59,7 +59,7 @@ LLM이 형태소 분석 없이 노드·엣지·카테고리·상태변경을 한
 - 조직 모드: 1인칭 → 사용자 이름으로 치환, 주어 항상 명시
 - 3인칭 주어는 원문 그대로 노드 추출
 - 엣지 label = 원문의 조사 그대로. 조사 없으면 null.
-- `deactivate`: 상태변경으로 비활성화할 기존 엣지 목록 (1단계 인출 결과 참조)
+- `deactivate`: 상태변경으로 비활성화할 기존 엣지 목록 (1단계 인출 결과의 원본 문장들을 "알려진 사실:" 형태로 참조)
 
 ### 파이프라인 흐름
 
@@ -78,7 +78,8 @@ LLM이 형태소 분석 없이 노드·엣지·카테고리·상태변경을 한
     대명사·장소 지시어 → 구체값 치환
     모호하면 {"question": ...} 반환 → 저장 중단
   [LLM — synapse/extract]  temperature=0, max_tokens=512
-    노드 + 엣지 + 카테고리 + deactivate → JSON
+    입력: 사용자 텍스트 + "알려진 사실:" (인출 원본 문장들)
+    출력: 노드 + 엣지 + 카테고리 + deactivate → JSON
   DB 저장:
     nodes upsert (name + category)
     edges insert (sentence_id 포함)
@@ -150,8 +151,9 @@ session_id + selected_sentence_ids
   ↓
 [BFS 루프]  max_layers=5
   현재 노드 집합 → 연결 엣지 + 원본 문장 조회 (sentences LEFT JOIN)
-  → [LLM — synapse/retrieve-filter] 관련성 판단 (관련/무관)
-  → 관련 문장의 새 노드 → 다음 레이어
+  → [LLM — synapse/retrieve-filter] 엣지의 sentence_text(원본 문장)로 관련성 판단 (관련/무관)
+    같은 sentence_id는 재판단 없이 스킵 (visited_sentence_ids 추적)
+  → 통과 문장의 새 노드 → 다음 레이어
   새 노드 없으면 종료
   ↓
 [카테고리 보완]
@@ -245,8 +247,8 @@ while True:
 | 단계 | 어댑터 | 역할 |
 |------|--------|------|
 | 1단계 인출 — 확장 | retrieve-expand | 질문 의도 → 노드 후보 키워드 |
-| 1단계 인출 — 필터 | retrieve-filter | 관련성 판단 (관련/무관) |
+| 1단계 인출 — 필터 | retrieve-filter | 엣지의 원본 문장(sentence_text)으로 관련성 판단 |
 | 2단계 저장 — 전처리 | save-pronoun | 대명사/날짜/장소 지시어 치환, 모호성 질문 반환 |
 | 2단계 저장 — 추출 | extract | 노드+엣지+카테고리+deactivate 한 번에 추출 |
 | 2단계 저장 — 별칭 | chat (base) | 동의어 자동 제안 (새 노드 시에만) |
-| 3단계 응답 | chat (base) | 인출 맥락 + 저장 결과 종합 → 개인화 답변 |
+| 3단계 응답 | chat (base) | 인출 원본 문장들("알려진 사실:") + 저장 결과 → 개인화 답변 |

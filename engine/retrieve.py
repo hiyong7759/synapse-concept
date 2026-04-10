@@ -18,7 +18,7 @@ from typing import Optional
 from .db import get_connection, DB_PATH
 from .llm import (
     chat, SYSTEM_CHAT, LLMError,
-    retrieve_expand, retrieve_filter_triple,
+    retrieve_expand, retrieve_filter_sentence,
 )
 
 
@@ -285,10 +285,16 @@ def _llm_expand_keywords(question: str) -> list[str]:
 
 
 def _llm_filter_sentences(question: str, triples: list[Triple]) -> list[Triple]:
-    """트리플 단위 LLM 필터."""
+    """문장(sentence_text) 단위 LLM 필터. sentence_text 없으면 트리플 문자열로 대체."""
     if not triples:
         return []
-    return [t for t in triples if retrieve_filter_triple(question, str(t))]
+    return [
+        t for t in triples
+        if retrieve_filter_sentence(
+            question,
+            t.sentence_text if t.sentence_text else str(t),
+        )
+    ]
 
 
 def _llm_answer(
@@ -297,9 +303,16 @@ def _llm_answer(
     images: Optional[list[str]] = None,
     history: Optional[list[dict]] = None,
 ) -> str:
-    """최종 컨텍스트로 자연어 답변 생성."""
-    context = "\n".join(str(t) for t in context_triples)
-    user_msg = f"지식 그래프:\n{context}\n\n질문: {question}"
+    """최종 컨텍스트로 자연어 답변 생성. sentence_text(원본 문장) 기준으로 모델에 전달."""
+    seen: set[str] = set()
+    lines: list[str] = []
+    for t in context_triples:
+        txt = t.sentence_text if t.sentence_text else str(t)
+        if txt not in seen:
+            seen.add(txt)
+            lines.append(f"- {txt}")
+    context = "\n".join(lines)
+    user_msg = f"알려진 사실:\n{context}\n\n질문: {question}"
     try:
         return chat(
             SYSTEM_CHAT, user_msg,
@@ -307,7 +320,7 @@ def _llm_answer(
             images=images, history=history,
         )
     except LLMError:
-        return f"[MLX 서버 미실행] 컨텍스트 트리플 {len(context_triples)}개 인출됨:\n{context}"
+        return f"[MLX 서버 미실행] 인출된 문장 {len(lines)}개:\n{context}"
 
 
 # ─── BFS ─────────────────────────────────────────────────
@@ -345,6 +358,7 @@ def retrieve(
         # 3. BFS
         visited_node_ids: set[int] = set(start_nodes.values())
         visited_edge_ids: set[int] = set()
+        visited_sentence_ids: set[int] = set()  # 문장 단위 중복 방지
         all_visited_edge_ids: list[int] = []  # last_used 배치 업데이트용
         context_triples: list[Triple] = []
         current_node_ids = set(start_nodes.values())
@@ -353,11 +367,12 @@ def retrieve(
             layer_triples = [
                 t for t in _get_triples(conn, current_node_ids)
                 if t.edge_id not in visited_edge_ids
+                and (t.sentence_id is None or t.sentence_id not in visited_sentence_ids)
             ]
             if not layer_triples:
                 break
 
-            # LLM 필터 (문장 기준 dedup 포함)
+            # LLM 필터 (sentence_text 기준)
             if use_llm:
                 filtered = _llm_filter_sentences(question, layer_triples)
             else:
@@ -367,6 +382,8 @@ def retrieve(
             for t in filtered:
                 visited_edge_ids.add(t.edge_id)
                 all_visited_edge_ids.append(t.edge_id)
+                if t.sentence_id is not None:
+                    visited_sentence_ids.add(t.sentence_id)
 
             # 다음 레이어: 통과 트리플의 새 노드 (Triple에서 직접 추출)
             new_ids = (
