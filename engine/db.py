@@ -1,4 +1,4 @@
-"""Synapse DB — SQLite v6 스키마 + 연결 관리."""
+"""Synapse DB — SQLite v9 세션리스 스키마 + 연결 관리."""
 
 import os
 import sqlite3
@@ -7,24 +7,17 @@ DATA_DIR = os.environ.get("SYNAPSE_DATA_DIR", os.path.expanduser("~/.synapse"))
 DB_PATH = os.path.join(DATA_DIR, "synapse.db")
 
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS sessions (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    type       TEXT    NOT NULL DEFAULT 'conversation' CHECK(type IN ('conversation', 'archive')),
-    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
-);
-
 CREATE TABLE IF NOT EXISTS sentences (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id      INTEGER NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-    paragraph_index INTEGER NOT NULL DEFAULT 0,
     text            TEXT    NOT NULL,
+    role            TEXT    NOT NULL DEFAULT 'user' CHECK(role IN ('user', 'assistant')),
     retention       TEXT    NOT NULL DEFAULT 'memory' CHECK(retention IN ('memory', 'daily')),
     created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS nodes (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    name       TEXT    NOT NULL UNIQUE,
+    name       TEXT    NOT NULL,
     category   TEXT,
     status     TEXT    NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive')),
     created_at TEXT    NOT NULL DEFAULT (datetime('now')),
@@ -46,8 +39,8 @@ CREATE TABLE IF NOT EXISTS aliases (
     node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_sentences_session ON sentences(session_id);
-CREATE INDEX IF NOT EXISTS idx_nodes_name        ON nodes(name);
+CREATE INDEX IF NOT EXISTS idx_sentences_role     ON sentences(role);
+CREATE INDEX IF NOT EXISTS idx_nodes_name         ON nodes(name);
 CREATE INDEX IF NOT EXISTS idx_nodes_status      ON nodes(status);
 CREATE INDEX IF NOT EXISTS idx_edges_src         ON edges(source_node_id);
 CREATE INDEX IF NOT EXISTS idx_edges_tgt         ON edges(target_node_id);
@@ -57,20 +50,19 @@ CREATE INDEX IF NOT EXISTS idx_aliases           ON aliases(alias);
 
 
 def _is_current_schema(conn: sqlite3.Connection) -> bool:
-    """현재 스키마 여부 확인: sentences.retention + sessions.type + nodes.category 컬럼 존재."""
+    """현재 스키마 여부 확인: sentences.role + nodes.category + edges.sentence_id 컬럼 존재. sessions 테이블 없음."""
     tables = {r[0] for r in conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table'"
     ).fetchall()}
     if "sentences" not in tables:
         return False
-    edge_cols = [r[1] for r in conn.execute("PRAGMA table_info(edges)").fetchall()]
-    if "sentence_id" not in edge_cols:
+    if "sessions" in tables:
         return False
     sent_cols = [r[1] for r in conn.execute("PRAGMA table_info(sentences)").fetchall()]
-    if "retention" not in sent_cols:
+    if "role" not in sent_cols or "retention" not in sent_cols:
         return False
-    sess_cols = [r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()]
-    if "type" not in sess_cols:
+    edge_cols = [r[1] for r in conn.execute("PRAGMA table_info(edges)").fetchall()]
+    if "sentence_id" not in edge_cols:
         return False
     node_cols = [r[1] for r in conn.execute("PRAGMA table_info(nodes)").fetchall()]
     return "category" in node_cols
@@ -110,17 +102,19 @@ def get_stats(db_path: str = DB_PATH) -> dict:
         nodes_active   = conn.execute("SELECT COUNT(*) FROM nodes WHERE status='active'").fetchone()[0]
         edges_total    = conn.execute("SELECT COUNT(*) FROM edges").fetchone()[0]
         aliases_total  = conn.execute("SELECT COUNT(*) FROM aliases").fetchone()[0]
-        sessions_total = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
         sentences_total = conn.execute("SELECT COUNT(*) FROM sentences").fetchone()[0]
+        sentences_user = conn.execute("SELECT COUNT(*) FROM sentences WHERE role='user'").fetchone()[0]
+        sentences_assistant = conn.execute("SELECT COUNT(*) FROM sentences WHERE role='assistant'").fetchone()[0]
     finally:
         conn.close()
     return {
-        "nodes_total":     nodes_total,
-        "nodes_active":    nodes_active,
-        "edges_total":     edges_total,
-        "aliases_total":   aliases_total,
-        "sessions_total":  sessions_total,
-        "sentences_total": sentences_total,
+        "nodes_total":          nodes_total,
+        "nodes_active":         nodes_active,
+        "edges_total":          edges_total,
+        "aliases_total":        aliases_total,
+        "sentences_total":      sentences_total,
+        "sentences_user":       sentences_user,
+        "sentences_assistant":  sentences_assistant,
     }
 
 

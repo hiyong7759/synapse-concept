@@ -412,6 +412,12 @@
   padding-top: 6px;
   border-top: 1px solid var(--border);
 }
+.nodeEditGuide {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-align: center;
+  margin-top: 8px;
+}
 .nodeDetailChatBtn {
   width: 100%;
   background: var(--surface-2);

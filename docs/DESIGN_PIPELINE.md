@@ -1,6 +1,6 @@
 # Synapse 설계 — 저장/인출/대화 파이프라인
 
-**최종 업데이트**: 2026-04-10 (retrieve-filter 문장 기준, sentence_id dedup, context_sentences 전달, SYSTEM_CHAT 문장 포맷)
+**최종 업데이트**: 2026-04-11 (v9 세션리스 스키마, 메타 대화/직전 맥락 추가)
 
 ## 근본 목표
 
@@ -8,11 +8,10 @@
 
 ---
 
-## DB 스키마 (현재)
+## DB 스키마 (v9 — 세션리스)
 
 ```sql
-sessions:  id, type('conversation'|'archive'), created_at
-sentences: id, session_id, paragraph_index, text, role('user'|'assistant'), retention('memory'|'daily'), created_at
+sentences: id, text, role('user'|'assistant'), retention('memory'|'daily'), created_at
 nodes:     id, name, category, status('active'|'inactive'), created_at, updated_at
 edges:     id, source_node_id, target_node_id, label, sentence_id, created_at, last_used
 aliases:   alias TEXT PRIMARY KEY, node_id
@@ -20,18 +19,14 @@ aliases:   alias TEXT PRIMARY KEY, node_id
 
 **sentences.role**
 - `user`: 사용자 입력. 그래프 추출 대상.
-- `assistant`: 모델 응답. 대화 히스토리 표시용만. 그래프 추출 제외.
+- `assistant`: 모델 응답. 대화 기록 + 메타 대화 참조용. 그래프 추출 제외.
 
 **nodes.category**: `대분류.소분류` 형식 (예: `BOD.disease`, `MON.spending`). NULL 허용.
 저장 시 LLM이 자동 부여. 분류체계 상세 → `docs/DESIGN_CATEGORY.md`.
 
-**sessions.type**
-- `conversation`: 일반 대화 세션
-- `archive`: 월별 장기 보관함 (콤팩팅으로만 유입). `strftime('%Y-%m', created_at)`으로 월 식별.
-
 **sentences.retention**
 - `memory`: 잘 변하지 않는 사실·상태·이력. LLM이 저장 시 판단.
-- `daily`: 순간적 활동·감정·일상. 콤팩팅 시 기본 제외 대상.
+- `daily`: 순간적 활동·감정·일상.
 
 ---
 
@@ -73,13 +68,21 @@ LLM이 형태소 분석 없이 노드·엣지·카테고리·상태변경을 한
   → 개인 맥락 수집 + 상태변경 감지용 기존 문장 조회
   ↓
 [2단계: 저장]
-  [전처리 — 규칙 기반] 시간 부사 → session 날짜 자동 치환
+  [전처리 — 규칙 기반] 시간 부사 → 입력 시점 날짜 자동 치환
   [전처리 — LLM synapse/save-pronoun]  temperature=0, max_tokens=256
     대명사·장소 지시어 → 구체값 치환
     모호하면 {"question": ...} 반환 → 저장 중단
   [LLM — synapse/extract]  temperature=0, max_tokens=512
     입력: 사용자 텍스트 + "알려진 사실:" (인출 원본 문장들)
     출력: 노드 + 엣지 + 카테고리 + deactivate → JSON
+  [후처리 — 부정부사(안/못)]
+    1차: extract가 label에 "안"/"못"을 넣은 경우 → 노드+엣지로 변환 (스타벅스→안→좋아)
+    2차: 문장에 안/못이 있는데 1차에서 미감지 → LLM 2-pass로 대상 특정
+  [후처리 — 오타 교정]
+    추출된 노드 이름을 기존 노드+별칭과 자모 분해 Levenshtein 거리 비교
+    distance == 1 && 자모 길이 >= 6 → 기존 노드 이름으로 치환
+    치환된 오타는 별칭으로 자동 등록 (재발 방지)
+    LLM 호출 없음, 규칙 기반
   DB 저장:
     nodes upsert (name + category)
     edges insert (sentence_id 포함)
@@ -97,7 +100,7 @@ LLM이 형태소 분석 없이 노드·엣지·카테고리·상태변경을 한
 
 ---
 
-## 세션 관리
+## 문장 관리
 
 ### 문장 수정 (`update_sentence`)
 
@@ -108,28 +111,72 @@ sentence_id + new_text
   → new_text 재분석 → 새 edges INSERT (동일 sentence_id 재사용)
 ```
 
-### 세션 삭제 (`rollback_session`)
-
-`edges.sentence_id`는 `ON DELETE SET NULL`이므로 순서 중요:
+### 문장 삭제 (`rollback_sentences`)
 
 ```
-1. 해당 session의 sentences 조회
-2. sentence_id로 연결된 edges 삭제
-3. 고아 노드 (다른 edges 없는 노드) 삭제
-4. session DELETE → sentences CASCADE 삭제
+sentence_id 목록
+  → 해당 sentence_id로 연결된 edges 삭제
+  → 고아 노드는 보존 (재연결 가능성)
+  → sentences 삭제
 ```
 
-`preview_session_delete(session_id)` → 제거될 edges + 고아 노드 미리보기 반환.
+### 콤팩팅
 
-### 콤팩팅 (`compact_session`)
+sentence 단위 정리. 고아 노드는 보존 (재연결 가능성).
+
+**대상 조건** (세 조건 모두 충족):
+- `retention='daily'`
+- `edges.last_used IS NULL` (한 번도 인출 안 됨)
+- `created_at`이 N일 이상 경과
+
+**트리거**: 앱 시작 시 조건 체크. 대상 있으면 실행 (사용자 설정에 따라).
+
+**사용자 설정**:
+- 자동 정리: ON/OFF (기본 OFF)
+- 보관 기간: N일 (기본 30일)
+- 정리 전 확인: ON/OFF (기본 ON)
 
 ```
-session_id + selected_sentence_ids
-  → get_or_create_archive_session('YYYY-MM')  ← strftime('%Y-%m', created_at) 기준
-  → 선택 sentences.session_id → archive session으로 이동
-  → 비선택 sentences → edges 삭제 + 고아 노드 정리 + sentences 삭제
-  → 원본 session 삭제
+앱 시작
+  → 자동 정리 OFF → 패스
+  → 자동 정리 ON → 대상 수집
+    → 0건 → 패스
+    → 정리 전 확인 ON → "N건 정리할까요?" 알림
+    → 정리 전 확인 OFF → 자동 삭제
 ```
+
+구현: `compact()` 함수 — 앱 구현 시점에 `engine/db.py` 또는 `engine/save.py`에 추가. 현재 엔진에는 미구현.
+
+---
+
+## 직전 맥락 / 메타 대화
+
+### 직전 맥락
+
+매 메시지 처리 시, sentences 테이블에서 **최근 3턴(user+assistant 3쌍)**을 자동 포함.
+save-pronoun에 context로 전달하여 대명사/지시어 해소에 사용.
+
+### 메타 대화 패턴 감지
+
+"계속해", "자세하게", "아까 말한 거" 등 대상이 생략된 발화는 규칙 기반으로 감지하여
+시간/턴 기반으로 sentences를 조회한 뒤 처리.
+
+| 패턴 | 조회 범위 |
+|------|-----------|
+| "계속해", "자세하게", "다시 해줘" | 직전 1~2턴 |
+| "아까 말한 거", "방금 그거" | 최근 수분~1시간 |
+| "오전에 얘기한 거", "어제 그거" | 시간 범위 필터 |
+
+### 과거 대화 검색
+
+사용자 요청 시 sentences + 그래프 기반 검색. LLM 전달 문장 수 제한 없음 (실사용 품질 기반 조정).
+
+| 검색 방식 | 예시 |
+|-----------|------|
+| 키워드 (노드/별칭) | "허리 관련 대화" → 노드 → edges → sentence_id → sentences |
+| 시간 | "어제 대화" → created_at 필터 |
+| 카테고리 | "건강 관련" → BOD 카테고리 노드 → 연결 sentences |
+| 복합 | "지난달 병원 관련" → 시간 + 노드 교차 |
 
 ---
 
@@ -252,3 +299,41 @@ while True:
 | 2단계 저장 — 추출 | extract | 노드+엣지+카테고리+deactivate 한 번에 추출 |
 | 2단계 저장 — 별칭 | chat (base) | 동의어 자동 제안 (새 노드 시에만) |
 | 3단계 응답 | chat (base) | 인출 원본 문장들("알려진 사실:") + 저장 결과 → 개인화 답변 |
+
+---
+
+## assistant 응답 그래프화 (미래)
+
+현재: `role='assistant'` sentences에만 저장. 그래프 추출 안 함.
+이유: 2B 로컬 모델 응답이 사용자 말 되풀이 수준. 그래프화 가치 < 부하 증가.
+
+**재검토 조건:**
+- 모델 품질 향상 (응답에 새로운 인사이트/분석 포함)
+- 도구 확장으로 외부 데이터 수집 시
+
+---
+
+## 도구 라우팅 (미래)
+
+앱 레이어에서 규칙 기반으로 도구 호출 판단 (LLM 판단 아님, 2B 모델로는 신뢰성 부족).
+
+**저장 기준:** 원본이 사라지면 다시 얻을 수 없는 결과만 그래프에 저장. 다시 조회/계산 가능한 결과는 저장하지 않음.
+
+| 도구 | save | 이유 |
+|------|:---:|------|
+| 날씨 API | false | 다시 조회 가능 |
+| 웹 검색 | false | 다시 검색 가능 |
+| 뉴스 조회 | false | 다시 검색 가능 |
+| 번역 | false | 다시 번역 가능 |
+| 계산기 | false | 다시 계산 가능 |
+| 단위/환율 변환 | false | 다시 변환 가능 |
+| 지도/경로 검색 | false | 다시 검색 가능 |
+| 캘린더 조회 | false | 앱 내 히스토리 있음 |
+| 연락처 조회 | false | 디바이스에 있음 |
+| 알림/리마인더 | false | OS에서 관리 |
+| OCR (명함/처방전) | **true** | 원본 삭제 시 재추출 불가 |
+| 문서 파싱 (PDF) | **true** | 파일 삭제 시 재추출 불가 |
+| 음성 메모 (STT) | **true** | 원본 삭제 시 재변환 불가 |
+| 개인 데이터 종합/분석 | **true** | 시점 기반 그래프 도출 결과 |
+
+각 도구에 `save` 속성을 등록 시점에 설정. 런타임 판단 불필요.

@@ -136,13 +136,19 @@ const mdComponents: Components = {
   em: ({ children }) => <em className={styles.mdEm}>{children}</em>,
 };
 
+// ── 시간 포맷 ──────────────────────────────────────────────────
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: true });
+}
+
 // ── BubbleAI ─────────────────────────────────────────────────
 interface Props {
   text: string;
-  time?: string;
+  createdAt?: string;
 }
 
-export function BubbleAI({ text, time }: Props) {
+export function BubbleAI({ text, createdAt }: Props) {
   return (
     <div className={styles.msgAi}>
       <div className={styles.bubbleAi}>
@@ -150,7 +156,7 @@ export function BubbleAI({ text, time }: Props) {
           {text}
         </ReactMarkdown>
       </div>
-      {time && <span className={styles.ts}>{time}</span>}
+      {createdAt && <span className={styles.ts}>{formatTime(createdAt)}</span>}
     </div>
   );
 }

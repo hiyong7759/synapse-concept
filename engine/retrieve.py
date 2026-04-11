@@ -48,39 +48,58 @@ class RetrieveResult:
 
 # ─── DB 헬퍼 ──────────────────────────────────────────────
 
-def _match_start_nodes(conn, keywords: list[str]) -> dict[str, int]:
-    """키워드 → 노드 ID 매핑 (aliases 우선 → name 직접 → substring).
-    반환: {node_name: node_id}
+def _match_start_nodes(conn, keywords: list[str], question: str = "") -> dict[str, int]:
+    """키워드 → 노드 ID 매핑 (별칭 스캔 → name 직접 → substring).
+    별칭으로 특정된 name은 name/substring 매칭에서 제외 (동명 노드 오매칭 방지).
+    반환: {display_key: node_id}
     """
     matched: dict[str, int] = {}
+    alias_resolved_names: set[str] = set()
+
+    # 0. 질문 문자열 안에 포함된 별칭 스캔 (공백 포함 별칭 대응)
+    if question:
+        rows = conn.execute(
+            "SELECT a.alias, n.id, n.name FROM aliases a JOIN nodes n ON n.id = a.node_id WHERE n.status = 'active'"
+        ).fetchall()
+        for r in rows:
+            if r["alias"] in question:
+                matched[f"{r['name']}#{r['id']}"] = r["id"]
+                alias_resolved_names.add(r["name"])
 
     for kw in keywords:
         # 1. aliases 정확 매칭
-        row = conn.execute(
-            """SELECT n.id, n.name FROM aliases a
-               JOIN nodes n ON n.id = a.node_id
-               WHERE a.alias = ? AND n.status = 'active'""",
-            (kw,),
-        ).fetchone()
-        if row:
-            matched[row["name"]] = row["id"]
-            continue
+        if kw not in alias_resolved_names:
+            row = conn.execute(
+                """SELECT n.id, n.name FROM aliases a
+                   JOIN nodes n ON n.id = a.node_id
+                   WHERE a.alias = ? AND n.status = 'active'""",
+                (kw,),
+            ).fetchone()
+            if row:
+                matched[f"{row['name']}#{row['id']}"] = row["id"]
+                alias_resolved_names.add(row["name"])
+                continue
 
-        # 2. name 정확 매칭
-        row = conn.execute(
+        # 2. name 정확 매칭 (별칭 특정된 name 제외)
+        if kw in alias_resolved_names:
+            continue
+        rows = conn.execute(
             "SELECT id, name FROM nodes WHERE name = ? AND status = 'active'", (kw,)
-        ).fetchone()
-        if row:
-            matched[row["name"]] = row["id"]
+        ).fetchall()
+        if rows:
+            for r in rows:
+                if r["id"] not in matched.values():
+                    matched[f"{r['name']}#{r['id']}"] = r["id"]
             continue
 
         # 3. name substring 매칭
         rows = conn.execute(
-            "SELECT id, name FROM nodes WHERE name LIKE ? AND status = 'active' LIMIT 3",
+            "SELECT id, name FROM nodes WHERE name LIKE ? AND status = 'active' LIMIT 5",
             (f"%{kw}%",),
         ).fetchall()
         for r in rows:
-            matched[r["name"]] = r["id"]
+            if r["name"] not in alias_resolved_names and r["id"] not in matched.values():
+                matched[f"{r['name']}#{r['id']}"] = r["id"]
 
     return matched
 
@@ -316,7 +335,7 @@ def _llm_answer(
     try:
         return chat(
             SYSTEM_CHAT, user_msg,
-            temperature=0.3, max_tokens=1024,
+            temperature=0.3, max_tokens=4096,
             images=images, history=history,
         )
     except LLMError:
@@ -348,7 +367,7 @@ def retrieve(
         raw_tokens = question.split()
         keywords = list(dict.fromkeys(keywords + raw_tokens))
 
-        start_nodes = _match_start_nodes(conn, keywords)
+        start_nodes = _match_start_nodes(conn, keywords, question=question)
         if not start_nodes:
             result.answer = "관련 정보를 찾을 수 없습니다."
             return result

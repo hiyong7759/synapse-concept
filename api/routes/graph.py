@@ -1,4 +1,7 @@
-"""Synapse API 라우터."""
+"""Synapse API 라우터.
+
+설계서 기준 통합 파이프라인: 모든 입력 → retrieve → save → respond.
+"""
 
 import os
 from typing import Optional
@@ -6,14 +9,17 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from engine.save import save, rollback
+from engine.save import (
+    save, rollback, save_response,
+    search_sentences, get_sentence_impact, update_sentence, delete_sentence,
+)
 from engine.retrieve import retrieve
 from engine.db import get_connection, get_stats, DB_PATH
 from engine.llm import chat as llm_chat, SYSTEM_IMAGE_EXTRACT, OllamaError
 
 router = APIRouter()
 
-USE_LLM = os.environ.get("USE_LLM", "false").lower() == "true"
+USE_LLM = os.environ.get("USE_LLM", "true").lower() == "true"
 
 
 # ─── 요청/응답 모델 ───────────────────────────────────────────
@@ -29,27 +35,25 @@ class ChatRequest(BaseModel):
     history: list[HistoryItem] = [] # 이전 대화 (최근 N턴)
 
 
-class SaveResponse(BaseModel):
+class SaveResponseModel(BaseModel):
     triples_added: list[tuple[str, Optional[str], str]]
     edge_ids_added: list[int]
     nodes_added: list[str]
     node_ids_added: list[int]
     edges_deactivated: list[tuple[str, Optional[str], str]]
     aliases_added: list[tuple[str, str]]
-    question: Optional[str]
 
 
-class RetrieveResponse(BaseModel):
+class RetrieveResponseModel(BaseModel):
     start_nodes: list[str]
     context_triples: list[tuple[str, Optional[str], str]]
-    answer: Optional[str]
 
 
 class ChatResponse(BaseModel):
-    mode: str  # "save" | "retrieve" | "clarify"
-    save: Optional[SaveResponse] = None
-    retrieve: Optional[RetrieveResponse] = None
-    question: Optional[str] = None  # clarify 모드
+    save: Optional[SaveResponseModel] = None
+    retrieve: Optional[RetrieveResponseModel] = None
+    answer: Optional[str] = None
+    question: Optional[str] = None  # 모호성 되물음
 
 
 class RollbackRequest(BaseModel):
@@ -87,10 +91,14 @@ class EdgeItem(BaseModel):
 
 @router.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
+    """통합 파이프라인: retrieve → save → respond.
+
+    CLI cmd_interactive() 로직과 동일한 순서.
+    """
     images = req.images if req.images else None
     history = [{"role": h.role, "content": h.content} for h in req.history] or None
 
-    # 이미지가 있을 때: LLM으로 이미지에서 텍스트 추출 → save
+    # 이미지 텍스트 추출
     text = req.text
     if images and USE_LLM:
         try:
@@ -98,49 +106,54 @@ def chat(req: ChatRequest):
             text = llm_chat(SYSTEM_IMAGE_EXTRACT, prompt, images=images, temperature=0, max_tokens=512)
             print(f"[IMAGE EXTRACT]\n{text}\n{'─'*40}")
         except OllamaError:
-            pass  # 추출 실패 시 원본 텍스트로 진행
+            pass
 
-    # 이미지 있거나 텍스트 있으면 save 시도
-    if text.strip():
-        result = save(text, use_llm=USE_LLM)
+    if not text.strip():
+        return ChatResponse()
 
-        if result.question:
-            return ChatResponse(mode="clarify", question=result.question)
+    # ── 1단계: 인출 (retrieve) ──
+    r_retrieve = retrieve(text, use_llm=USE_LLM, images=images, history=history)
 
-        # 이미지 있었으면 트리플 0개여도 save 응답 (retrieve로 빠지지 않도록)
-        if result.triples_added or images:
-            return ChatResponse(
-                mode="save",
-                save=SaveResponse(
-                    triples_added=result.triples_added,
-                    edge_ids_added=result.edge_ids_added,
-                    nodes_added=result.nodes_added,
-                    node_ids_added=result.node_ids_added,
-                    edges_deactivated=result.edges_deactivated,
-                    aliases_added=result.aliases_added,
-                    question=None,
-                ),
-            )
+    # context_sentences: 인출된 트리플에서 원본 문장 추출 (문장 단위 dedup)
+    seen_sentences: set[str] = set()
+    context_sentences: list[str] = []
+    for t in r_retrieve.context_triples:
+        if t.sentence_text and t.sentence_text not in seen_sentences:
+            seen_sentences.add(t.sentence_text)
+            context_sentences.append(t.sentence_text)
 
-    # 이미지 있었지만 텍스트 추출 실패 → save 빈 응답
-    if images:
-        return ChatResponse(
-            mode="save",
-            save=SaveResponse(
-                triples_added=[], edge_ids_added=[], nodes_added=[],
-                node_ids_added=[], edges_deactivated=[], aliases_added=[], question=None,
-            ),
-        )
+    # ── 2단계: 저장 (save) ──
+    r_save = save(text, use_llm=USE_LLM, context_sentences=context_sentences or None)
 
-    # 저장된 것 없음 → retrieve
-    ret = retrieve(req.text, use_llm=USE_LLM, images=images, history=history)
+    # 모호성 되물음 → 저장/응답 중단, 질문만 반환
+    if r_save.question:
+        return ChatResponse(question=r_save.question)
+
+    # ── 3단계: 응답 구성 ──
+    save_model = SaveResponseModel(
+        triples_added=r_save.triples_added,
+        edge_ids_added=r_save.edge_ids_added,
+        nodes_added=r_save.nodes_added,
+        node_ids_added=r_save.node_ids_added,
+        edges_deactivated=r_save.edges_deactivated,
+        aliases_added=r_save.aliases_added,
+    )
+
+    retrieve_model = RetrieveResponseModel(
+        start_nodes=r_retrieve.start_nodes,
+        context_triples=[(t.src, t.label, t.tgt) for t in r_retrieve.context_triples],
+    )
+
+    answer = r_retrieve.answer
+
+    # assistant 응답을 sentences에 저장
+    if answer:
+        save_response(answer)
+
     return ChatResponse(
-        mode="retrieve",
-        retrieve=RetrieveResponse(
-            start_nodes=ret.start_nodes,
-            context_triples=[(t.src, t.label, t.tgt) for t in ret.context_triples],
-            answer=ret.answer,
-        ),
+        save=save_model,
+        retrieve=retrieve_model,
+        answer=answer,
     )
 
 
@@ -233,3 +246,49 @@ def add_alias(req: AliasRequest):
     finally:
         conn.close()
     return {"ok": True}
+
+
+# ─── 대화 탐색 (sentences) ───────────────────────────────────
+
+
+class SentenceItem(BaseModel):
+    id: int
+    text: str
+    role: str
+    retention: str
+    created_at: str
+
+
+class SentenceUpdateRequest(BaseModel):
+    text: str
+
+
+@router.get("/sentences")
+def list_sentences(
+    q: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    role: str = "",
+    offset: int = 0,
+    limit: int = 20,
+):
+    return search_sentences(q=q, date_from=date_from, date_to=date_to, role=role, offset=offset, limit=limit)
+
+
+@router.get("/sentences/{sentence_id}/impact")
+def sentence_impact(sentence_id: int):
+    return get_sentence_impact(sentence_id)
+
+
+@router.put("/sentences/{sentence_id}")
+def edit_sentence(sentence_id: int, req: SentenceUpdateRequest):
+    result = update_sentence(sentence_id, req.text, use_llm=USE_LLM)
+    return {
+        "triples_added": result.triples_added,
+        "edges_deactivated": result.edges_deactivated,
+    }
+
+
+@router.delete("/sentences/{sentence_id}")
+def remove_sentence(sentence_id: int):
+    return delete_sentence(sentence_id)

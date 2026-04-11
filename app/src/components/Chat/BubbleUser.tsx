@@ -1,12 +1,17 @@
 import styles from './Chat.module.css';
 
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: true });
+}
+
 interface Props {
   text: string;
   images?: string[];
-  time?: string;
+  createdAt?: string;
 }
 
-export function BubbleUser({ text, images, time }: Props) {
+export function BubbleUser({ text, images, createdAt }: Props) {
   return (
     <div className={styles.msgUser}>
       {images && images.length > 0 && (
@@ -22,7 +27,7 @@ export function BubbleUser({ text, images, time }: Props) {
         </div>
       )}
       {text && <div className={styles.bubbleUser}>{text}</div>}
-      {time && <span className={styles.ts}>{time}</span>}
+      {createdAt && <span className={styles.ts}>{formatTime(createdAt)}</span>}
     </div>
   );
 }

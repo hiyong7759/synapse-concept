@@ -520,7 +520,8 @@ export function GraphPage() {
               {isHub(detailNode) ? '  ·  허브 노드' : ''}
             </div>
 
-            <button className={styles.nodeDetailChatBtn} onClick={() => navigate('/chat')}>← 채팅으로</button>
+            <div className={styles.nodeEditGuide}>수정하려면 비서에게 말해주세요</div>
+            <button className={styles.nodeDetailChatBtn} onClick={() => navigate('/chat/new')}>채팅으로 이동</button>
           </>
         )}
       </div>

@@ -5,6 +5,7 @@
   → sentences 테이블에 문장 저장
   → LLM 전처리: 대명사/날짜 치환, 모호성 감지
   → LLM 추출 (task6): retention + 노드 + 엣지 + 카테고리 + deactivate 한 번에
+  → 오타 교정: 추출된 노드 이름을 기존 노드+별칭과 자모 거리 비교 (distance 1)
   → extract deactivate 필드로 기존 엣지 비활성화
   → sentences.retention 업데이트
   → DB 저장 (nodes with category + edges with sentence_id)
@@ -31,6 +32,7 @@ class SaveResult:
     node_ids_added: list[int] = field(default_factory=list)
     edges_deactivated: list[tuple[str, Optional[str], str]] = field(default_factory=list)
     aliases_added: list[tuple[str, str]] = field(default_factory=list)
+    typos_corrected: list[tuple[str, str]] = field(default_factory=list)
     question: Optional[str] = None
     is_question: bool = False
 
@@ -48,8 +50,12 @@ def _insert_sentence(
 
 
 def _upsert_node(conn, name: str, category: Optional[str] = None) -> tuple[int, bool]:
-    """노드 삽입 또는 기존 ID 반환. category는 NULL일 때만 업데이트. (id, is_new) 반환."""
-    row = conn.execute("SELECT id, category FROM nodes WHERE name=?", (name,)).fetchone()
+    """노드 삽입 또는 기존 ID 반환. 동명 노드가 여러 개면 가장 최근 업데이트된 노드 사용.
+    category는 NULL일 때만 업데이트. (id, is_new) 반환."""
+    row = conn.execute(
+        "SELECT id, category FROM nodes WHERE name=? ORDER BY updated_at DESC LIMIT 1",
+        (name,),
+    ).fetchone()
     if row:
         if category and not row["category"]:
             conn.execute(
@@ -223,6 +229,124 @@ def _preprocess(text: str) -> dict:
 
 
 
+# ─── 오타 교정 ────────────────────────────────────────────
+
+def _correct_typos(
+    conn,
+    ext_nodes: list[dict],
+    ext_edges: list[dict],
+    ext_deactivate: list[dict],
+) -> tuple[list[dict], list[dict], list[dict], list[tuple[str, str]]]:
+    """추출된 노드/엣지 이름을 기존 노드+별칭과 대조하여 오타 교정.
+
+    Returns: (ext_nodes, ext_edges, ext_deactivate, corrections)
+    corrections: [(typo_name, canonical_name), ...]
+    """
+    from .jamo import decompose, levenshtein, is_typo_candidate
+
+    # 1. DB에서 활성 노드 이름 + 별칭 로드
+    rows = conn.execute(
+        "SELECT id, name FROM nodes WHERE status='active'"
+    ).fetchall()
+    alias_rows = conn.execute(
+        """SELECT a.alias, n.name FROM aliases a
+           JOIN nodes n ON n.id = a.node_id
+           WHERE n.status = 'active'"""
+    ).fetchall()
+
+    # canonical 이름 → (이름, 엣지 수) 맵
+    canonical: dict[str, str] = {}  # lookup_key → node_name
+    for r in rows:
+        canonical[r["name"]] = r["name"]
+    for r in alias_rows:
+        canonical[r["alias"]] = r["name"]
+
+    # 자모 분해 캐시 (기존 노드 이름만, 별칭은 정확매칭용)
+    node_names = list({r["name"] for r in rows})
+    jamo_cache: dict[str, str] = {n: decompose(n) for n in node_names}
+
+    # 엣지 수 캐시 (tiebreaker용)
+    edge_counts: dict[str, int] = {}
+    for n in node_names:
+        row = conn.execute(
+            """SELECT COUNT(*) AS cnt FROM edges e
+               JOIN nodes ns ON ns.id = e.source_node_id
+               JOIN nodes nt ON nt.id = e.target_node_id
+               WHERE (ns.name=? OR nt.name=?) AND ns.status='active' AND nt.status='active'""",
+            (n, n),
+        ).fetchone()
+        edge_counts[n] = row["cnt"] if row else 0
+
+    # 2. 추출된 이름 수집
+    extracted_names: set[str] = set()
+    for n in ext_nodes:
+        extracted_names.add(n["name"])
+    for e in ext_edges:
+        extracted_names.add(e["source"])
+        extracted_names.add(e["target"])
+    for d in ext_deactivate:
+        if d.get("source"):
+            extracted_names.add(d["source"])
+        if d.get("target"):
+            extracted_names.add(d["target"])
+
+    # 3. 오타 감지
+    corrections: dict[str, str] = {}  # typo → canonical
+    for name in extracted_names:
+        if name in canonical:
+            continue  # 정확매칭 → 교정 불필요
+        jamo_name = decompose(name)
+        if len(jamo_name) < 6:
+            continue
+        best_match: str | None = None
+        best_edges = -1
+        for node_name, jamo_node in jamo_cache.items():
+            if abs(len(jamo_name) - len(jamo_node)) > 1:
+                continue
+            if levenshtein(jamo_name, jamo_node) == 1:
+                ec = edge_counts.get(node_name, 0)
+                if ec > best_edges:
+                    best_match = node_name
+                    best_edges = ec
+        if best_match:
+            corrections[name] = best_match
+
+    if not corrections:
+        return ext_nodes, ext_edges, ext_deactivate, []
+
+    # 4. 치환 적용
+    def fix(name: str) -> str:
+        return corrections.get(name, name)
+
+    ext_nodes = [
+        {**n, "name": fix(n["name"])} for n in ext_nodes
+    ]
+    ext_edges = [
+        {**e, "source": fix(e["source"]), "target": fix(e["target"])}
+        for e in ext_edges
+    ]
+    ext_deactivate = [
+        {**d,
+         "source": fix(d["source"]) if d.get("source") else d.get("source"),
+         "target": fix(d["target"]) if d.get("target") else d.get("target")}
+        for d in ext_deactivate
+    ]
+
+    # 5. 오타를 별칭으로 등록 (재발 방지)
+    for typo_name, canonical_name in corrections.items():
+        node_row = conn.execute(
+            "SELECT id FROM nodes WHERE name=? AND status='active' ORDER BY updated_at DESC LIMIT 1",
+            (canonical_name,),
+        ).fetchone()
+        if node_row:
+            conn.execute(
+                "INSERT OR IGNORE INTO aliases (alias, node_id) VALUES (?,?)",
+                (typo_name, node_row["id"]),
+            )
+
+    return ext_nodes, ext_edges, ext_deactivate, list(corrections.items())
+
+
 # ─── 별칭 ─────────────────────────────────────────────────
 
 _ALIAS_SYSTEM = """당신은 한국어 지식 그래프 별칭 추출기입니다.
@@ -319,6 +443,13 @@ def save(
         ext_nodes, ext_edges = _postprocess_negation(
             effective_text, ext_nodes, ext_edges, use_llm=use_llm
         )
+
+        # 3.5 오타 교정: 추출된 노드/엣지 이름을 기존 노드+별칭과 자모 거리 비교
+        if ext_nodes or ext_edges:
+            ext_nodes, ext_edges, ext_deactivate, corrections = _correct_typos(
+                conn, ext_nodes, ext_edges, ext_deactivate
+            )
+            result.typos_corrected = corrections
 
         # 4. 기존 트리플 조회 (deactivate 매칭용)
         # target 없는 엣지(LLM 오출력) 필터링
@@ -449,6 +580,162 @@ def rollback(edge_ids: list[int], node_ids: list[int], db_path: str = DB_PATH) -
     return {"edges_deleted": edges_deleted, "nodes_deleted": nodes_deleted}
 
 
+def split_node(
+    node_id: int,
+    alias_for_original: str,
+    alias_for_new: str,
+    edge_ids_to_move: list[int],
+    db_path: str = DB_PATH,
+) -> dict:
+    """동명 노드 분리. 기존 노드에서 지정된 엣지를 새 노드로 이동.
+
+    - 기존 노드의 name으로 새 노드 생성 (동명, 다른 id)
+    - edge_ids_to_move의 엣지를 새 노드로 이동 (source 또는 target)
+    - 양쪽 별칭 등록
+    """
+    conn = get_connection(db_path)
+    try:
+        orig = conn.execute("SELECT id, name, category FROM nodes WHERE id=?", (node_id,)).fetchone()
+        if not orig:
+            return {"error": "node not found"}
+
+        # 새 노드 생성 (같은 name)
+        cur = conn.execute(
+            "INSERT INTO nodes (name, category) VALUES (?,?)",
+            (orig["name"], orig["category"]),
+        )
+        new_id = cur.lastrowid
+
+        # 엣지 이동
+        moved = 0
+        for eid in edge_ids_to_move:
+            edge = conn.execute("SELECT source_node_id, target_node_id FROM edges WHERE id=?", (eid,)).fetchone()
+            if not edge:
+                continue
+            if edge["source_node_id"] == node_id:
+                conn.execute("UPDATE edges SET source_node_id=? WHERE id=?", (new_id, eid))
+                moved += 1
+            elif edge["target_node_id"] == node_id:
+                conn.execute("UPDATE edges SET target_node_id=? WHERE id=?", (new_id, eid))
+                moved += 1
+
+        # 별칭 등록
+        conn.execute("INSERT OR IGNORE INTO aliases (alias, node_id) VALUES (?,?)", (alias_for_original, node_id))
+        conn.execute("INSERT OR IGNORE INTO aliases (alias, node_id) VALUES (?,?)", (alias_for_new, new_id))
+
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {
+        "original_node_id": node_id,
+        "new_node_id": new_id,
+        "edges_moved": moved,
+        "aliases": {alias_for_original: node_id, alias_for_new: new_id},
+    }
+
+
+def merge_nodes(
+    keep_id: int,
+    remove_id: int,
+    db_path: str = DB_PATH,
+) -> dict:
+    """두 노드를 병합. remove_id의 엣지/별칭을 keep_id로 이동, 비활성화.
+
+    split_node()의 반대 동작. 오타 노드 정리용.
+    """
+    conn = get_connection(db_path)
+    try:
+        keep = conn.execute("SELECT id, name FROM nodes WHERE id=?", (keep_id,)).fetchone()
+        remove = conn.execute("SELECT id, name FROM nodes WHERE id=?", (remove_id,)).fetchone()
+        if not keep or not remove:
+            return {"error": "node not found"}
+
+        # 엣지 이동: source
+        cur1 = conn.execute(
+            "UPDATE edges SET source_node_id=? WHERE source_node_id=?",
+            (keep_id, remove_id),
+        )
+        # 엣지 이동: target
+        cur2 = conn.execute(
+            "UPDATE edges SET target_node_id=? WHERE target_node_id=?",
+            (keep_id, remove_id),
+        )
+        edges_moved = cur1.rowcount + cur2.rowcount
+
+        # 별칭 이동
+        aliases_moved = []
+        for r in conn.execute("SELECT alias FROM aliases WHERE node_id=?", (remove_id,)).fetchall():
+            aliases_moved.append(r["alias"])
+        conn.execute("UPDATE aliases SET node_id=? WHERE node_id=?", (keep_id, remove_id))
+
+        # 제거 노드 이름을 별칭으로 등록 (재발 방지)
+        conn.execute(
+            "INSERT OR IGNORE INTO aliases (alias, node_id) VALUES (?,?)",
+            (remove["name"], keep_id),
+        )
+
+        # 제거 노드 비활성화
+        conn.execute(
+            "UPDATE nodes SET status='inactive', updated_at=datetime('now') WHERE id=?",
+            (remove_id,),
+        )
+
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {
+        "keep_id": keep_id,
+        "keep_name": keep["name"],
+        "removed_id": remove_id,
+        "removed_name": remove["name"],
+        "edges_moved": edges_moved,
+        "aliases_moved": aliases_moved,
+    }
+
+
+def find_suspected_typos(db_path: str = DB_PATH) -> list[dict]:
+    """모든 활성 노드를 스캔하여 오타 의심 쌍 반환."""
+    from .jamo import decompose, levenshtein
+
+    conn = get_connection(db_path)
+    try:
+        rows = conn.execute(
+            """SELECT n.id, n.name,
+                  (SELECT COUNT(*) FROM edges
+                   WHERE source_node_id=n.id OR target_node_id=n.id) AS edge_count
+               FROM nodes n WHERE n.status='active'"""
+        ).fetchall()
+    finally:
+        conn.close()
+
+    nodes = [{"id": r["id"], "name": r["name"], "edge_count": r["edge_count"]} for r in rows]
+    jamo_cache = {n["name"]: decompose(n["name"]) for n in nodes}
+
+    suspects = []
+    for i, a in enumerate(nodes):
+        ja = jamo_cache[a["name"]]
+        if len(ja) < 6:
+            continue
+        for b in nodes[i + 1:]:
+            jb = jamo_cache[b["name"]]
+            if len(jb) < 6:
+                continue
+            if abs(len(ja) - len(jb)) > 1:
+                continue
+            dist = levenshtein(ja, jb)
+            if dist == 1:
+                suspects.append({
+                    "node_a": a,
+                    "node_b": b,
+                    "jamo_distance": dist,
+                })
+
+    suspects.sort(key=lambda s: max(s["node_a"]["edge_count"], s["node_b"]["edge_count"]), reverse=True)
+    return suspects
+
+
 def save_response(text: str, db_path: str = DB_PATH) -> int:
     """assistant 응답을 sentences에 저장. 그래프 추출 없음. sentence_id 반환."""
     conn = get_connection(db_path)
@@ -458,6 +745,133 @@ def save_response(text: str, db_path: str = DB_PATH) -> int:
     finally:
         conn.close()
     return sid
+
+
+# ── 문장 검색/수정/삭제 ──────────────────────────────────────
+
+
+def search_sentences(
+    q: str = "",
+    date_from: str = "",
+    date_to: str = "",
+    role: str = "",
+    offset: int = 0,
+    limit: int = 20,
+    db_path: str = DB_PATH,
+) -> dict:
+    """sentences 검색. 키워드·날짜·role 필터, 페이지네이션."""
+    conn = get_connection(db_path)
+    try:
+        where: list[str] = []
+        params: list = []
+
+        if q:
+            where.append("s.text LIKE ?")
+            params.append(f"%{q}%")
+        if date_from:
+            where.append("s.created_at >= ?")
+            params.append(date_from)
+        if date_to:
+            where.append("s.created_at <= ?")
+            params.append(date_to + " 23:59:59")
+        if role:
+            where.append("s.role = ?")
+            params.append(role)
+
+        where_clause = f"WHERE {' AND '.join(where)}" if where else ""
+
+        total = conn.execute(
+            f"SELECT COUNT(*) FROM sentences s {where_clause}", params
+        ).fetchone()[0]
+
+        rows = conn.execute(
+            f"""SELECT s.id, s.text, s.role, s.retention, s.created_at
+                FROM sentences s {where_clause}
+                ORDER BY s.created_at DESC
+                LIMIT ? OFFSET ?""",
+            params + [limit, offset],
+        ).fetchall()
+    finally:
+        conn.close()
+
+    return {
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "items": [
+            {
+                "id": r["id"],
+                "text": r["text"],
+                "role": r["role"],
+                "retention": r["retention"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ],
+    }
+
+
+def get_sentence_impact(sentence_id: int, db_path: str = DB_PATH) -> dict:
+    """문장 삭제 시 영향 받는 그래프 관계 미리보기."""
+    conn = get_connection(db_path)
+    try:
+        edges = conn.execute(
+            """SELECT e.id, n1.name AS src, e.label, n2.name AS tgt
+               FROM edges e
+               JOIN nodes n1 ON n1.id = e.source_node_id
+               JOIN nodes n2 ON n2.id = e.target_node_id
+               WHERE e.sentence_id = ?""",
+            (sentence_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    return {
+        "sentence_id": sentence_id,
+        "affected_edges": [
+            {"id": e["id"], "source": e["src"], "label": e["label"], "target": e["tgt"]}
+            for e in edges
+        ],
+    }
+
+
+def update_sentence(
+    sentence_id: int,
+    new_text: str,
+    use_llm: bool = True,
+    db_path: str = DB_PATH,
+) -> SaveResult:
+    """문장 수정: 기존 엣지 삭제 → 새 텍스트 재분석 → 새 엣지 삽입."""
+    conn = get_connection(db_path)
+    try:
+        # 기존 엣지 삭제
+        conn.execute("DELETE FROM edges WHERE sentence_id = ?", (sentence_id,))
+        # 문장 텍스트 업데이트
+        conn.execute(
+            "UPDATE sentences SET text = ? WHERE id = ?",
+            (new_text, sentence_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # 새 텍스트로 재분석 (save 파이프라인 재실행)
+    return save(new_text, db_path=db_path, use_llm=use_llm)
+
+
+def delete_sentence(sentence_id: int, db_path: str = DB_PATH) -> dict:
+    """문장 삭제: 연결된 엣지 삭제 → 고아 노드 보존 → 문장 삭제."""
+    conn = get_connection(db_path)
+    try:
+        edges_deleted = conn.execute(
+            "DELETE FROM edges WHERE sentence_id = ?", (sentence_id,)
+        ).rowcount
+        conn.execute("DELETE FROM sentences WHERE id = ?", (sentence_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {"sentence_id": sentence_id, "edges_deleted": edges_deleted}
 
 
 if __name__ == "__main__":

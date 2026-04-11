@@ -16,7 +16,7 @@ import argparse
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from engine.db import get_stats, init_db, DB_PATH
-from engine.save import save
+from engine.save import save, find_suspected_typos
 from engine.retrieve import retrieve
 from engine.llm import llm_extract
 from typing import Optional
@@ -40,6 +40,17 @@ def cmd_reset() -> None:
         print(f"[reset] {DB_PATH} 삭제됨")
     init_db(DB_PATH)
     print("[reset] 빈 DB 생성 완료")
+
+
+def cmd_typos() -> None:
+    pairs = find_suspected_typos()
+    if not pairs:
+        print("오타 의심 쌍 없음")
+        return
+    print(f"오타 의심 쌍 {len(pairs)}개:")
+    for p in pairs:
+        a, b = p["node_a"], p["node_b"]
+        print(f"  {a['name']} (id={a['id']}, edges={a['edge_count']}) ↔ {b['name']} (id={b['id']}, edges={b['edge_count']})")
 
 
 def cmd_interactive(use_llm: bool) -> None:
@@ -114,6 +125,8 @@ def _print_save_result(r) -> None:
         print(f"  [저장] {_fmt_triple(src, label, tgt)}")
     for src, label, tgt in r.edges_deactivated:
         print(f"  [비활성] {_fmt_triple(src, label, tgt)}")
+    for typo, canonical in r.typos_corrected:
+        print(f"  [오타교정] {typo} → {canonical}")
     for alias, node in r.aliases_added:
         print(f"  [별칭] {alias} → {node}")
     if not r.triples_added and not r.edges_deactivated:
@@ -125,10 +138,13 @@ def main() -> None:
     parser.add_argument("--no-llm", action="store_true", help="LLM 없이 실행")
     parser.add_argument("--stats",  action="store_true", help="DB 통계 출력")
     parser.add_argument("--reset",  action="store_true", help="DB 초기화")
+    parser.add_argument("--typos", action="store_true", help="오타 의심 노드 쌍 스캔")
     args = parser.parse_args()
 
     if args.stats:
         cmd_stats()
+    elif args.typos:
+        cmd_typos()
     elif args.reset:
         confirm = input(f"DB를 초기화합니다 ({DB_PATH}). 계속? (y/N) ").strip().lower()
         if confirm == "y":

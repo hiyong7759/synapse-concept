@@ -215,6 +215,15 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  animation: fadeIn 0.3s ease;
+  transition: opacity 0.3s ease;
+}
+.changeNoticeFading {
+  opacity: 0;
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* 변경 알림 (상태 변경 — 강조) */
@@ -359,6 +368,57 @@
   line-height: 1.7;
   white-space: pre-wrap;
 }
+
+/* ─── 태스크 결과물 카드 ─── */
+.taskCard {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 10px 10px 0;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 88%;
+  animation: scaleIn 0.2s ease-out;
+}
+.taskHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.taskIcon { font-size: 14px; }
+.taskTitle {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.taskDivider {
+  height: 1px;
+  background: var(--border);
+}
+.taskPreview {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+.taskActions {
+  display: flex;
+  gap: 12px;
+}
+.taskBtn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: 'Noto Sans KR', sans-serif;
+  transition: all 0.15s;
+}
+.taskBtn:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ─── 입력창 ─── */
 .inputAreaWrap {
