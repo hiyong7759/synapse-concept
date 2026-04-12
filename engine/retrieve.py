@@ -269,7 +269,12 @@ def _get_category_supplement_nodes(
         list(start_node_ids),
     ).fetchall()
 
-    subcats: set[str] = {r["category"] for r in rows if r["category"]}
+    # 사용자 지정 category(대문자3글자.소분류 패턴이 아닌 것)는 보완 대상에서 제외
+    import re as _re
+    subcats: set[str] = {
+        r["category"] for r in rows
+        if r["category"] and _re.match(r"^[A-Z]{3}\.", r["category"])
+    }
     if not subcats:
         return set()
 

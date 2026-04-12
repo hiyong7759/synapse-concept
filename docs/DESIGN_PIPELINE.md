@@ -21,8 +21,10 @@ aliases:   alias TEXT PRIMARY KEY, node_id
 - `user`: 사용자 입력. 그래프 추출 대상.
 - `assistant`: 모델 응답. 대화 기록 + 메타 대화 참조용. 그래프 추출 제외.
 
-**nodes.category**: `대분류.소분류` 형식 (예: `BOD.disease`, `MON.spending`). NULL 허용.
-저장 시 LLM이 자동 부여. 분류체계 상세 → `docs/DESIGN_CATEGORY.md`.
+**nodes.category**: 두 종류.
+- 사용자 지정 경로: 마크다운 heading에서 생성 (예: `더나은.개발팀`, `취업규칙.근로시간`). 깊이 제한 없음.
+- LLM 기본 분류: `대분류.소분류` 형식 17개 (예: `BOD.disease`, `MON.spending`). 마크다운 heading 없는 평문에서 폴백.
+NULL 허용. 분류체계 상세 → `docs/DESIGN_CATEGORY.md`.
 
 **sentences.retention**
 - `memory`: 잘 변하지 않는 사실·상태·이력. LLM이 저장 시 판단.
@@ -44,9 +46,11 @@ LLM이 형태소 분석 없이 노드·엣지·카테고리·상태변경을 한
   "retention": "memory|daily",
   "nodes": [{"name": "노드명", "category": "대분류.소분류"}],
   "edges": [{"source": "노드명", "label": "조사", "target": "노드명"}],
-  "deactivate": [{"source": "노드명", "target": "노드명"}]
+  "deactivate": [sentence_id, ...]
 }
 ```
+
+deactivate는 sentence_id 배열. 알려진 사실에 `[번호]`가 붙어서 제공되며, 현재 입력과 상충되는 문장의 번호를 반환. 해당 sentence_id에 연결된 엣지가 전부 비활성화됨.
 
 추출 규칙:
 - 노드는 원자 (하나의 개념 = 하나의 노드)
@@ -56,44 +60,90 @@ LLM이 형태소 분석 없이 노드·엣지·카테고리·상태변경을 한
 - 엣지 label = 원문의 조사 그대로. 조사 없으면 null.
 - `deactivate`: 상태변경으로 비활성화할 기존 엣지 목록 (1단계 인출 결과의 원본 문장들을 "알려진 사실:" 형태로 참조)
 
+### 입력 모드
+
+사용자 입력은 마크다운 파서(`engine/markdown.py`)를 먼저 거친다.
+heading(`#`)이 하나라도 있으면 **마크다운 모드**, 없으면 **평문 모드**.
+
+#### 마크다운 모드 — 문서 입력
+
+```markdown
+# 더나은
+## 개발팀
+- 팀장 박지수
+- 프론트엔드 김민수
+```
+
+→ heading 경로(`더나은.개발팀`) + 각 항목을 개별 extract.
+→ 추출된 노드의 category를 heading 경로로 설정 (LLM 분류 무시).
+→ 각 항목이 개별 sentence로 저장.
+
+계층 입력 두 방식 (동일 결과):
+- `# 더나은.개발부.개발팀` (점 구분 한 줄)
+- `# 더나은` → `## 개발부` → `### 개발팀` (heading 중첩)
+
+#### 평문 모드 — 대화 입력
+
+기존 파이프라인 + category DB 매칭 추가.
+추출된 노드 이름으로 DB의 사용자 지정 category를 검색하여 매칭.
+매칭 안 되면 LLM 17개 기본 분류 폴백.
+
 ### 파이프라인 흐름
 
 ```
 사용자 입력
+  ↓ parse_markdown(text)
+  ↓
+[마크다운 모드] heading 있음
+  각 (경로, 항목)마다:
+    → 항목을 sentence로 저장
+    → [LLM — synapse/extract] 노드+엣지 추출
+    → category를 heading 경로로 설정
+    → [후처리] 부정부사, 오타 교정
+    → DB 저장 (nodes, edges, aliases)
+  ↓
+[평문 모드] heading 없음
   ↓ sentences 저장 (role='user')
-[1단계: 인출]  temperature=0
-  [LLM — synapse/retrieve-expand] 키워드 추출
-  → DB 매칭 (aliases 우선 → name → substring)
-  → BFS 루프 (양방향, max_layers=5, visited 수렴)
-  → 개인 맥락 수집 + 상태변경 감지용 기존 문장 조회
-  ↓
-[2단계: 저장]
-  [전처리 — 규칙 기반] 시간 부사 → 입력 시점 날짜 자동 치환
-  [전처리 — LLM synapse/save-pronoun]  temperature=0, max_tokens=256
-    대명사·장소 지시어 → 구체값 치환
-    모호하면 {"question": ...} 반환 → 저장 중단
-  [LLM — synapse/extract]  temperature=0, max_tokens=512
-    입력: 사용자 텍스트 + "알려진 사실:" (인출 원본 문장들)
-    출력: 노드 + 엣지 + 카테고리 + deactivate → JSON
-  [후처리 — 부정부사(안/못)]
-    1차: extract가 label에 "안"/"못"을 넣은 경우 → 노드+엣지로 변환 (스타벅스→안→좋아)
-    2차: 문장에 안/못이 있는데 1차에서 미감지 → LLM 2-pass로 대상 특정
-  [후처리 — 오타 교정]
-    추출된 노드 이름을 기존 노드+별칭과 자모 분해 Levenshtein 거리 비교
-    distance == 1 && 자모 길이 >= 6 → 기존 노드 이름으로 치환
-    치환된 오타는 별칭으로 자동 등록 (재발 방지)
-    LLM 호출 없음, 규칙 기반
-  DB 저장:
-    nodes upsert (name + category)
-    edges insert (sentence_id 포함)
-    deactivate 엣지 → status='inactive'
-  [별칭 추가 — 기본]
-    새 노드 → aliases 자동 등록 (줄임말·외래어·다국어)
-    [LLM — synapse/chat] 동의어 제안 (새 노드 시에만)
-  ↓
-[3단계: 응답]  temperature=0.3, max_tokens=1024
-  인출 맥락 + 저장 결과 종합 → [LLM — synapse/chat] 개인화 답변
-  답변 → sentences 저장 (role='assistant')
+  [1단계: 인출]  temperature=0
+    [LLM — synapse/retrieve-expand] 키워드 추출
+    → DB 매칭 (aliases 우선 → name → substring)
+    → BFS 루프 (양방향, max_layers=5, visited 수렴)
+    → 개인 맥락 수집 + 상태변경 감지용 기존 문장 조회
+    ↓
+  [2단계: 저장]
+    [전처리 — LLM synapse/save-pronoun]  temperature=0
+      항상 호출 (조건 체크 없음). 직전 대화 2건을 DB에서 조회하여 context로 전달.
+      지시대명사(이거/거기 등) → 구체값 치환
+      생략된 주어/목적어/장소 → 직전 대화에서 복원 (예: "엑셀 못해" + 직전 "김부장 짜증나" → "김부장이 엑셀 못해")
+      인칭대명사(나/내/저/제)는 치환하��� 않음
+      시간부사(어제/오늘 등) → 날짜 치환
+      복원/치환 불가하면 {"question": ...} 반환 → 저장 중단
+    [LLM — synapse/extract]  temperature=0, max_tokens=32768
+      입력: 사용자 텍스트 + "알려진 사실:" (인출 원본 문장들)
+      출력: 노드 + 엣지 + 카테고리 + deactivate → JSON
+      전처리: ()[] 공백 치환 (2B 모델 반복 루프 방지)
+    [후처리 — category DB 매칭]
+      추출된 노드 이름으로 DB category 검색 → 사용자 지정 경로 매칭
+      매칭 안 되면 LLM 기본 분류 유지
+    [후처리 — 부정부사(안/못)]
+      1차: extract가 label에 "안"/"못"을 넣은 경우 → 노드+엣지로 변환
+      2차: 문장에 안/못이 있는데 1차에서 미감지 → LLM 2-pass로 대상 특정
+    [후처리 — 오타 교정]
+      추출된 노드 이름을 기존 노드+별칭과 자모 분해 Levenshtein 거리 비교
+      distance == 1 && 자모 길이 >= 6 → 기존 노드 이름으로 치환
+      치환된 오타는 별칭으로 자동 등록 (재발 방지)
+      LLM 호출 없음, 규칙 기반
+    DB 저장:
+      nodes upsert (name + category)
+      edges insert (sentence_id 포함)
+      deactivate 엣지 → status='inactive'
+    [별칭 추가 — 기본]
+      새 노드 → aliases 자동 등록 (줄임말·외래어·다국어)
+      [LLM — synapse/chat] 동의어 제안 (새 노드 시에만)
+    ↓
+  [3단계: 응답]  temperature=0.3, max_tokens=1024
+    인출 맥락 + 저장 결과 종합 → [LLM — synapse/chat] 개인화 답변
+    답변 → sentences 저장 (role='assistant')
 ```
 
 > **응답 max_tokens=4096** (~3,000자 한국어 기준). 이력서·요약·계획서 등 긴 결과물 태스크 대응 + 2B 모델 런어웨이 상한 보장.
