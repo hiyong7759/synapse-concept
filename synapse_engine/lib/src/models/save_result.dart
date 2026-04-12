@@ -8,8 +8,8 @@ class SaveResult {
   final List<(String, String?, String)> edgesDeactivated;
   final List<(String, String)> aliasesAdded;
   final List<(String, String)> typosCorrected;
-  final String? question;
-  final bool isQuestion;
+  String? question;
+  bool isQuestion;
 
   SaveResult({
     List<int>? sentenceIds,

@@ -3,7 +3,7 @@ import 'triple.dart';
 /// Result of the retrieve pipeline.
 class RetrieveResult {
   final List<Triple> contextTriples;
-  final String? answer;
+  String? answer;
   final List<String> startNodes;
 
   RetrieveResult({

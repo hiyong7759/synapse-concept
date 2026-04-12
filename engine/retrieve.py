@@ -262,10 +262,10 @@ def _get_category_supplement_nodes(
     if not start_node_ids:
         return set()
 
-    # 시작 노드들의 소분류 수집
+    # 시작 노드들의 소분류 수집 (node_categories JOIN)
     ph = ",".join("?" * len(start_node_ids))
     rows = conn.execute(
-        f"SELECT category FROM nodes WHERE id IN ({ph}) AND category IS NOT NULL",
+        f"SELECT nc.category FROM node_categories nc WHERE nc.node_id IN ({ph})",
         list(start_node_ids),
     ).fetchall()
 
@@ -291,12 +291,14 @@ def _get_category_supplement_nodes(
     result: set[int] = set()
     for sub in adjacent:
         cat_rows = conn.execute(
-            "SELECT id FROM nodes WHERE category = ? AND status='active' LIMIT 20",
+            "SELECT nc.node_id FROM node_categories nc "
+            "JOIN nodes n ON n.id = nc.node_id "
+            "WHERE nc.category = ? AND n.status='active' LIMIT 20",
             (sub,),
         ).fetchall()
         for r in cat_rows:
-            if r["id"] not in visited_ids:
-                result.add(r["id"])
+            if r["node_id"] not in visited_ids:
+                result.add(r["node_id"])
 
     return result
 

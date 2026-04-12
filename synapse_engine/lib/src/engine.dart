@@ -158,7 +158,10 @@ class SynapseEngine {
       args.addAll([q.nodeId!, q.nodeId!]);
     }
     if (q.category != null) {
-      conditions.add('(n1.category = ? OR n2.category = ?)');
+      conditions.add(
+        '(EXISTS (SELECT 1 FROM node_categories nc1 WHERE nc1.node_id = n1.id AND nc1.category = ?) '
+        'OR EXISTS (SELECT 1 FROM node_categories nc2 WHERE nc2.node_id = n2.id AND nc2.category = ?))',
+      );
       args.addAll([q.category!, q.category!]);
     }
     if (!q.includeInactive) {
@@ -223,16 +226,20 @@ class SynapseEngine {
 
   Future<void> splitNode(int nodeId, SplitSpec spec) async {
     final orig = await _db.rawQuery(
-      'SELECT id, name, category FROM nodes WHERE id=?',
+      'SELECT id, name FROM nodes WHERE id=?',
       [nodeId],
     );
     if (orig.isEmpty) return;
 
-    // Create new node with same name
+    // Create new node with same name + copy categories
     final newId = await _db.insert('nodes', {
       'name': orig.first['name'],
-      'category': orig.first['category'],
     });
+    await _db.execute(
+      'INSERT OR IGNORE INTO node_categories (node_id, category) '
+      'SELECT ?, category FROM node_categories WHERE node_id=?',
+      [newId, nodeId],
+    );
 
     // Move edges
     for (final eid in spec.edgeIdsToMove) {

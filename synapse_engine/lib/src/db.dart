@@ -1,4 +1,4 @@
-/// Synapse DB — SQLite v9 sessionless schema + connection management.
+/// Synapse DB — SQLite v10 sessionless schema + node_categories many-to-many + connection management.
 ///
 /// Direct port of engine/db.py.
 
@@ -17,10 +17,16 @@ CREATE TABLE IF NOT EXISTS sentences (
 CREATE TABLE IF NOT EXISTS nodes (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     name       TEXT    NOT NULL,
-    category   TEXT,
     status     TEXT    NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive')),
     created_at TEXT    NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS node_categories (
+    node_id    INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    category   TEXT    NOT NULL,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (node_id, category)
 );
 
 CREATE TABLE IF NOT EXISTS edges (
@@ -41,6 +47,8 @@ CREATE TABLE IF NOT EXISTS aliases (
 CREATE INDEX IF NOT EXISTS idx_sentences_role  ON sentences(role);
 CREATE INDEX IF NOT EXISTS idx_nodes_name      ON nodes(name);
 CREATE INDEX IF NOT EXISTS idx_nodes_status    ON nodes(status);
+CREATE INDEX IF NOT EXISTS idx_nc_category     ON node_categories(category);
+CREATE INDEX IF NOT EXISTS idx_nc_node         ON node_categories(node_id);
 CREATE INDEX IF NOT EXISTS idx_edges_src       ON edges(source_node_id);
 CREATE INDEX IF NOT EXISTS idx_edges_tgt       ON edges(target_node_id);
 CREATE INDEX IF NOT EXISTS idx_edges_sentence  ON edges(sentence_id);
@@ -52,7 +60,7 @@ Future<Database> openSynapseDb(String dataDir) async {
   final dbPath = p.join(dataDir, 'synapse.db');
   return openDatabase(
     dbPath,
-    version: 9,
+    version: 10,
     onConfigure: (db) async {
       await db.execute('PRAGMA journal_mode = WAL');
       await db.execute('PRAGMA foreign_keys = ON');
@@ -88,6 +96,7 @@ Future<bool> _isCurrentSchema(Database db) async {
 
   if (!tables.contains('sentences')) return false;
   if (tables.contains('sessions')) return false;
+  if (!tables.contains('node_categories')) return false;
 
   final sentCols = (await db.rawQuery('PRAGMA table_info(sentences)'))
       .map((r) => r['name'] as String)
@@ -104,7 +113,8 @@ Future<bool> _isCurrentSchema(Database db) async {
   final nodeCols = (await db.rawQuery('PRAGMA table_info(nodes)'))
       .map((r) => r['name'] as String)
       .toList();
-  return nodeCols.contains('category');
+  if (nodeCols.contains('category')) return false; // old schema with category column
+  return true;
 }
 
 /// Engine statistics.
@@ -112,6 +122,7 @@ class EngineStats {
   final int nodesTotal;
   final int nodesActive;
   final int edgesTotal;
+  final int categoriesTotal;
   final int aliasesTotal;
   final int sentencesTotal;
   final int sentencesUser;
@@ -121,6 +132,7 @@ class EngineStats {
     required this.nodesTotal,
     required this.nodesActive,
     required this.edgesTotal,
+    required this.categoriesTotal,
     required this.aliasesTotal,
     required this.sentencesTotal,
     required this.sentencesUser,
@@ -136,6 +148,8 @@ Future<EngineStats> getStats(Database db) async {
     nodesActive: _count(await db.rawQuery(
         "SELECT COUNT(*) FROM nodes WHERE status='active'")),
     edgesTotal: _count(await db.rawQuery('SELECT COUNT(*) FROM edges')),
+    categoriesTotal:
+        _count(await db.rawQuery('SELECT COUNT(*) FROM node_categories')),
     aliasesTotal: _count(await db.rawQuery('SELECT COUNT(*) FROM aliases')),
     sentencesTotal:
         _count(await db.rawQuery('SELECT COUNT(*) FROM sentences')),
@@ -161,13 +175,9 @@ Future<int> insertSentence(
   });
 }
 
-/// Upsert a node: if same name exists, update updated_at and return existing id.
-/// If category is provided and existing node has no category, update it.
-Future<int> upsertNode(
-  Database db,
-  String name, {
-  String? category,
-}) async {
+/// Upsert a node: if same name exists, return existing id.
+/// Returns (id, isNew).
+Future<(int, bool)> upsertNode(Database db, String name) async {
   final existing = await db.query(
     'nodes',
     where: "LOWER(name) = LOWER(?) AND status = 'active'",
@@ -178,19 +188,24 @@ Future<int> upsertNode(
 
   if (existing.isNotEmpty) {
     final id = existing.first['id'] as int;
-    final updates = <String, Object?>{'updated_at': DateTime.now().toIso8601String()};
-    if (category != null && existing.first['category'] == null) {
-      updates['category'] = category;
-    }
-    await db.update('nodes', updates, where: 'id = ?', whereArgs: [id]);
-    return id;
+    return (id, false);
   }
 
-  return db.insert('nodes', {
+  final id = await db.insert('nodes', {
     'name': name,
-    'category': category,
     'status': 'active',
   });
+  return (id, true);
+}
+
+/// Add a category to a node (duplicate-safe).
+Future<void> addNodeCategory(Database db, int nodeId, String? category) async {
+  if (category == null || category.isEmpty) return;
+  await db.insert(
+    'node_categories',
+    {'node_id': nodeId, 'category': category},
+    conflictAlgorithm: ConflictAlgorithm.ignore,
+  );
 }
 
 Future<int> insertEdge(

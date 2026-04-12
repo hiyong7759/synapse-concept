@@ -35,7 +35,6 @@ class SaveResult:
     aliases_added: list[tuple[str, str]] = field(default_factory=list)
     typos_corrected: list[tuple[str, str]] = field(default_factory=list)
     question: Optional[str] = None
-    is_question: bool = False
 
 
 # ─── DB 헬퍼 ──────────────────────────────────────────────
@@ -50,24 +49,28 @@ def _insert_sentence(
     return cur.lastrowid
 
 
-def _upsert_node(conn, name: str, category: Optional[str] = None) -> tuple[int, bool]:
-    """노드 삽입 또는 기존 ID 반환. 동명 노드가 여러 개면 가장 최근 업데이트된 노드 사용.
-    category는 NULL일 때만 업데이트. (id, is_new) 반환."""
+def _upsert_node(conn, name: str) -> tuple[int, bool]:
+    """노드 삽입 또는 기존 ID 반환. 대소문자 무시, active 노드만 매칭.
+    동명 노드가 여러 개면 가장 최근 업데이트된 노드 사용. (id, is_new) 반환."""
     row = conn.execute(
-        "SELECT id, category FROM nodes WHERE name=? ORDER BY updated_at DESC LIMIT 1",
+        "SELECT id FROM nodes WHERE name=? COLLATE NOCASE AND status='active' "
+        "ORDER BY updated_at DESC LIMIT 1",
         (name,),
     ).fetchone()
     if row:
-        if category and not row["category"]:
-            conn.execute(
-                "UPDATE nodes SET category=?, updated_at=datetime('now') WHERE id=?",
-                (category, row["id"]),
-            )
         return row["id"], False
-    cur = conn.execute(
-        "INSERT INTO nodes (name, category) VALUES (?,?)", (name, category)
-    )
+    cur = conn.execute("INSERT INTO nodes (name) VALUES (?)", (name,))
     return cur.lastrowid, True
+
+
+def _add_node_category(conn, node_id: int, category: Optional[str]) -> None:
+    """노드에 카테고리 추가 (중복 무시)."""
+    if not category:
+        return
+    conn.execute(
+        "INSERT OR IGNORE INTO node_categories (node_id, category) VALUES (?,?)",
+        (node_id, category),
+    )
 
 
 def _insert_edge(
@@ -79,22 +82,6 @@ def _insert_edge(
     )
     return cur.lastrowid
 
-
-def _get_existing_triples(conn, node_names: list[str]) -> list[dict]:
-    if not node_names:
-        return []
-    placeholders = ",".join("?" * len(node_names))
-    rows = conn.execute(
-        f"""
-        SELECT n1.name AS src, e.label, n2.name AS tgt, e.id AS edge_id
-        FROM edges e
-        JOIN nodes n1 ON n1.id = e.source_node_id
-        JOIN nodes n2 ON n2.id = e.target_node_id
-        WHERE n1.name IN ({placeholders}) OR n2.name IN ({placeholders})
-        """,
-        node_names + node_names,
-    ).fetchall()
-    return [dict(r) for r in rows]
 
 
 def _deactivate_edge(conn, edge_id: int) -> None:
@@ -204,7 +191,7 @@ def _postprocess_negation(
             tgt = e.get('target', '')
             # 노드 추가
             if neg not in node_names:
-                nodes.append({'name': neg, 'category': None})
+                nodes.append({'name': neg})
                 node_names.add(neg)
             # 엣지 변환: src→neg(null), neg→tgt(null)
             new_edges.append({'source': src, 'label': None, 'target': neg})
@@ -229,7 +216,7 @@ def _postprocess_negation(
                     subj = d2.get('subject', '')
                     obj = d2.get('object', '')
                     if neg not in node_names:
-                        nodes.append({'name': neg, 'category': None})
+                        nodes.append({'name': neg})
                     if subj and subj in node_names:
                         edges.append({'source': subj, 'label': None, 'target': neg})
                     if obj and obj in node_names and obj != neg:
@@ -288,17 +275,19 @@ def _correct_typos(
     node_names = list({r["name"] for r in rows})
     jamo_cache: dict[str, str] = {n: decompose(n) for n in node_names}
 
-    # 엣지 수 캐시 (tiebreaker용)
+    # 엣지 수 캐시 (tiebreaker용) — 단일 쿼리로 수집
     edge_counts: dict[str, int] = {}
-    for n in node_names:
-        row = conn.execute(
-            """SELECT COUNT(*) AS cnt FROM edges e
-               JOIN nodes ns ON ns.id = e.source_node_id
-               JOIN nodes nt ON nt.id = e.target_node_id
-               WHERE (ns.name=? OR nt.name=?) AND ns.status='active' AND nt.status='active'""",
-            (n, n),
-        ).fetchone()
-        edge_counts[n] = row["cnt"] if row else 0
+    if node_names:
+        ph = ",".join("?" * len(node_names))
+        ec_rows = conn.execute(
+            f"""SELECT n.name, COUNT(e.id) AS cnt FROM nodes n
+                LEFT JOIN edges e ON (e.source_node_id = n.id OR e.target_node_id = n.id)
+                WHERE n.name IN ({ph}) AND n.status='active'
+                GROUP BY n.name""",
+            node_names,
+        ).fetchall()
+        for r in ec_rows:
+            edge_counts[r["name"]] = r["cnt"]
 
     # 2. 추출된 이름 수집
     extracted_names: set[str] = set()
@@ -424,8 +413,9 @@ def _match_category_from_db(conn, node_names: list[str]) -> Optional[str]:
     cats_per_name: list[set[str]] = []
     for name in node_names:
         rows = conn.execute(
-            "SELECT DISTINCT category FROM nodes WHERE category IS NOT NULL "
-            "AND category LIKE ? AND status='active'",
+            "SELECT DISTINCT nc.category FROM node_categories nc "
+            "JOIN nodes n ON n.id = nc.node_id "
+            "WHERE nc.category LIKE ? AND n.status='active'",
             (f"%{name}%",),
         ).fetchall()
         cats = {r[0] for r in rows if r[0] and not re.match(r"^[A-Z]{3}\.", r[0])}
@@ -504,7 +494,8 @@ def _save_items(
         # 노드 upsert
         name_to_id: dict[str, int] = {}
         for node in ext_nodes:
-            nid, is_new = _upsert_node(conn, node["name"], node.get("category"))
+            nid, is_new = _upsert_node(conn, node["name"])
+            _add_node_category(conn, nid, node.get("category"))
             name_to_id[node["name"]] = nid
             if is_new:
                 result.nodes_added.append(node["name"])
@@ -515,8 +506,8 @@ def _save_items(
         for edge in ext_edges:
             for nm in (edge["source"], edge["target"]):
                 if nm not in name_to_id:
-                    cat = category_path if category_path else None
-                    nid, is_new = _upsert_node(conn, nm, cat)
+                    nid, is_new = _upsert_node(conn, nm)
+                    _add_node_category(conn, nid, category_path)
                     name_to_id[nm] = nid
                     if is_new:
                         result.nodes_added.append(nm)
@@ -670,7 +661,8 @@ def save(
                 cat = node.get("category")
                 if matched_category:
                     cat = matched_category
-                nid, is_new = _upsert_node(conn, node["name"], cat)
+                nid, is_new = _upsert_node(conn, node["name"])
+                _add_node_category(conn, nid, cat)
                 name_to_id[node["name"]] = nid
                 if is_new:
                     result.nodes_added.append(node["name"])
@@ -773,16 +765,18 @@ def split_node(
     """
     conn = get_connection(db_path)
     try:
-        orig = conn.execute("SELECT id, name, category FROM nodes WHERE id=?", (node_id,)).fetchone()
+        orig = conn.execute("SELECT id, name FROM nodes WHERE id=?", (node_id,)).fetchone()
         if not orig:
             return {"error": "node not found"}
 
-        # 새 노드 생성 (같은 name)
-        cur = conn.execute(
-            "INSERT INTO nodes (name, category) VALUES (?,?)",
-            (orig["name"], orig["category"]),
-        )
+        # 새 노드 생성 (같은 name) + 카테고리 복사
+        cur = conn.execute("INSERT INTO nodes (name) VALUES (?)", (orig["name"],))
         new_id = cur.lastrowid
+        conn.execute(
+            "INSERT OR IGNORE INTO node_categories (node_id, category) "
+            "SELECT ?, category FROM node_categories WHERE node_id=?",
+            (new_id, node_id),
+        )
 
         # 엣지 이동
         moved = 0

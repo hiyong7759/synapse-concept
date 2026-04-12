@@ -10,7 +10,8 @@ Text in → structured knowledge graph out. No server, no internet.
 "나 쿠팡에서 물류 기획 담당하고 있어"
   → nodes: [나, 쿠팡, 물류, 기획]
   → edges: [나 ─(에서)→ 쿠팡, 나 ─(으로)→ 물류, ...]
-  → category: WRK.workplace, WRK.role
+  → categories: 쿠팡→[WRK.workplace], 물류→[WRK.role], ...
+  (node_categories table — each node can have multiple categories)
 ```
 
 Later, ask a question → BFS traversal finds related context → LLM answers from your personal graph.
@@ -102,7 +103,7 @@ engine.onEdgeDeactivated.listen((event) {
 });
 
 engine.onNodeCreated.listen((event) {
-  print('Node: ${event.name} (${event.category})');
+  print('Node: ${event.name} (${event.category})');  // category assigned at creation time
 });
 ```
 
@@ -138,7 +139,8 @@ Default: 17 Synapse categories (PER, BOD, MND, ...). Replaceable per app.
 
 ### 2. User-Defined Categories — hierarchical free-text paths
 
-Unlimited depth, any language. Stored in the node's `category` field as-is.
+Unlimited depth, any language. Stored in the `node_categories` table (many-to-many).
+A single node can have multiple categories — both system and user-defined.
 Created via markdown headings or `ingest()` with structured input.
 
 ```
@@ -151,17 +153,20 @@ These are **not** used for BFS adjacency — they're tags for organizing and que
 
 ### How they coexist
 
+A single node can hold both types simultaneously via `node_categories` (many-to-many):
+
 ```dart
+// "김부장" node has categories: [CHR.boss, 인물.상사.김부장]
 // System category: BFS knows CHR.boss is adjacent to EPI.conflict
-// User category: "인물.상사.김부장.약점" tags specific data under a person
+// User category: "인물.상사.김부장" tags structured data
 
 // When you query by user category:
 final traits = await engine.query(GraphQuery(
   category: '인물.상사.김부장.약점',
 ));
 
-// When BFS runs, it uses system adjacency:
-// searching "김부장" → finds CHR.boss nodes → supplements with EPI.conflict nodes
+// When BFS runs, it uses system adjacency from ALL categories on the node:
+// searching "김부장" → finds CHR.boss → supplements with EPI.conflict nodes
 ```
 
 ## Integration Guide: gabjil
@@ -209,11 +214,11 @@ await engine.ingest('''
 - 퇴근 10분 전에 일 시킨다
 - 회의에서 남 탓만 한다
 ''');
-// Result:
-//   노드 "소심하다"  → category: "인물.상사.김부장.약점"
-//   노드 "꼬리"      → category: "인물.상사.김부장.약점"
-//   노드 "퇴근"      → category: "인물.상사.김부장.습관"
-//   ...
+// Result (node_categories table, many-to-many):
+//   노드 "소심하다"  → categories: ["인물.상사.김부장.약점"]
+//   노드 "꼬리"      → categories: ["인물.상사.김부장.약점"]
+//   노드 "퇴근"      → categories: ["인물.상사.김부장.습관"]
+//   Same node can accumulate categories from different inputs.
 
 // Query all of Kim's weaknesses:
 final weaknesses = await engine.query(GraphQuery(
@@ -234,10 +239,11 @@ Normal chat messages go through the standard pipeline — LLM extracts nodes/edg
 // User venting in chat — no markdown, just natural language
 await engine.process('김부장이 또 야근시켰어');
 // → nodes: [김부장, 야근], edges: [김부장 → 야근]
-// → category: auto-assigned by LLM (e.g., WRK.overtime)
+// → categories added: 김부장→WRK.overtime (accumulates with existing categories)
 
 await engine.process('김부장 진짜 짜증나 맨날 일 떠넘겨');
 // → nodes: [김부장, 짜증, 일], edges: [김부장 → 짜증, 김부장 → 일]
+// → 김부장 now has categories: [CHR.boss, 인물.상사.김부장, WRK.overtime, ...]
 ```
 
 ### Step 3: Event-Driven Character Detection
@@ -294,12 +300,16 @@ Future<CharacterSheet> buildCharacterSheet(String personName) async {
 final engine = await SynapseEngine.create(EngineConfig(
   // ...
   onAfterExtract: (raw) async {
-    // Auto-tag person nodes with user-defined category
+    // Auto-tag person nodes with user-defined category (additive)
     for (final node in raw['nodes']) {
       final name = node['name'] as String;
       if (await isKnownPerson(name)) {
         final role = await getPersonRole(name); // "상사", "동료", etc.
-        node['category'] = '인물.$role.$name';
+        // categories accumulate — LLM category + hook category both saved
+        node['categories'] = [
+          if (node['category'] != null) node['category'],
+          '인물.$role.$name',
+        ];
       }
     }
     return raw;

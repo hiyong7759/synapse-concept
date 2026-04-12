@@ -79,23 +79,32 @@ int jamoDistance(String a, String b) {
 
 /// Correct typos in extracted node names against existing nodes + aliases.
 ///
+/// [existingEdgeCounts] maps lowercase node/alias name → edge count (tiebreaker).
 /// Returns list of (original, corrected) for each correction made.
 List<(String, String)> correctTypos(
   List<Map<String, dynamic>> nodes,
-  Set<String> existingNames,
+  Map<String, int> existingEdgeCounts,
 ) {
   final corrections = <(String, String)>[];
 
   for (final node in nodes) {
     final name = node['name'] as String;
-    if (existingNames.contains(name.toLowerCase())) continue;
+    if (existingEdgeCounts.containsKey(name.toLowerCase())) continue;
 
-    // Find closest match with jamo distance 1
+    final jamoName = toJamo(name);
+    if (jamoName.length < 6) continue;
+
     String? bestMatch;
-    for (final existing in existingNames) {
+    int bestEdges = -1;
+    for (final existing in existingEdgeCounts.keys) {
+      final jamoExisting = toJamo(existing);
+      if ((jamoName.length - jamoExisting.length).abs() > 1) continue;
       if (jamoDistance(name, existing) == 1) {
-        bestMatch = existing;
-        break;
+        final ec = existingEdgeCounts[existing] ?? 0;
+        if (ec > bestEdges) {
+          bestMatch = existing;
+          bestEdges = ec;
+        }
       }
     }
 

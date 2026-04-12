@@ -31,6 +31,7 @@ def cmd_stats() -> None:
     print(f"DB: {DB_PATH}")
     print(f"  노드 {stats['nodes_active']}/{stats['nodes_total']} (활성/전체)")
     print(f"  엣지 {stats['edges_total']}")
+    print(f"  카테고리 {stats['categories_total']}")
     print(f"  별칭 {stats['aliases_total']}")
 
 

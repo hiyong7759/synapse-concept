@@ -12,7 +12,6 @@
 
 import 'dart:io';
 
-import 'package:llamadart/llamadart.dart';
 
 import '../lib/src/inference.dart';
 import '../lib/src/llamadart_backend.dart';

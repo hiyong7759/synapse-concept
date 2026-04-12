@@ -29,54 +29,12 @@ _MLX_SYSTEM: dict[str, str] = {
         "당신은 지식 그래프 검색 엔진입니다. 질문을 보고 그래프에서 검색해야 할 관련 노드 후보를 생성하세요. "
         '형태소 단위로 쪼개진 노드 이름으로 나열하세요. 출력 형식: ["노드1", "노드2", ...]'
     ),
-    "retrieve-expand-org": (
-        "당신은 지식 그래프 검색 엔진입니다. 조직 관련 질문을 보고 그래프에서 검색해야 할 관련 노드 후보를 생성하세요. "
-        '형태소 단위로 쪼개진 노드 이름으로 나열하세요. 출력 형식: ["노드1", "노드2", ...]'
-    ),
     "save-pronoun": (
         "당신은 지식 그래프 저장 엔진입니다. 텍스트에서 지시대명사와 부사를 구체적인 값으로 치환하세요. "
         "주어/목적어/장소가 생략되었으면 직전 대화를 참고하여 복원하세요. "
         "인칭대명사(나/내/저/제)는 치환하지 마세요. "
         '대화 맥락이 제공되면 활용하세요. 치환 불가능하면 {"question": "질문 내용"}을 반환하세요. '
         '출력 형식: {"text": "치환된 텍스트"} 또는 {"question": "..."}'
-    ),
-    "save-state-personal": (
-        "당신은 지식 그래프 관리 엔진입니다. 사용자 입력과 기존 트리플을 보고, 상태가 변경된 엣지를 찾아 JSON으로 반환하세요. "
-        '변경이 없으면 빈 배열을 반환하세요. 출력 형식: {"inactive": [{"source": "...", "target": "..."}]}'
-    ),
-    "save-state-org": (
-        "당신은 지식 그래프 관리 엔진입니다. 조직 모드에서 사용자 입력과 기존 트리플을 보고, 상태가 변경된 엣지를 찾아 JSON으로 반환하세요. "
-        '변경이 없으면 빈 배열을 반환하세요. 출력 형식: {"inactive": [{"source": "...", "target": "..."}]}'
-    ),
-    "save-subject-org": (
-        "당신은 지식 그래프 저장 엔진입니다. 조직 모드에서 발화의 주어를 특정하세요. "
-        '주어가 불명확하면 {"question": "..."}, 추론 가능하면 {"subject": "...", "text": "..."}, '
-        '주어가 불필요한 발화면 {"text": "..."}를 반환하세요.'
-    ),
-    "security-personal": (
-        "당신은 지식 그래프 보안 엔진입니다. 트리플 하나를 보고 민감정보 여부를 판단하세요. "
-        "출력 형식: safe 또는 sensitive:<카테고리> "
-        "(카테고리: health_detail | financial | location_precise | relationship_private | schedule_combined)"
-    ),
-    "security-org": (
-        "당신은 지식 그래프 보안 엔진입니다. 조직 그래프 트리플 하나를 보고 민감정보 여부와 최소 열람 권한을 판단하세요. "
-        "출력 형식: safe 또는 sensitive:<카테고리>:<최소권한> "
-        "(카테고리: personal_info|performance|trade_secret|internal_decision|client_confidential|legal_risk, "
-        "최소권한: team_lead|hr|executive)"
-    ),
-    "security-context": (
-        "당신은 지식 그래프 보안 엔진입니다. 질문과 인출된 전체 트리플 컨텍스트(각 트리플의 5A 마킹 포함)를 보고, "
-        '답변에 민감정보가 포함되는지 종합 판단하세요. 출력 형식: {"result": "safe"} 또는 '
-        '{"result": "confirm", "message": "사용자에게 보여줄 확인 메시지"}'
-    ),
-    "security-access": (
-        "당신은 지식 그래프 보안 엔진입니다. 질의자 권한과 인출된 전체 트리플 컨텍스트(5A 마킹 포함)를 보고, "
-        '정보 제공 가능 여부를 판단하세요. 출력 형식: {"result": "safe"} 또는 '
-        '{"result": "confirm", "message": "..."} 또는 {"result": "reject", "message": "..."}'
-    ),
-    "routing": (
-        "당신은 지식 그래프 라우팅 엔진입니다. 사용자 질문을 보고 조직 컨텍스트 augment가 필요한지 판단하세요. "
-        "출력: personal_only 또는 augment_org (한 단어만)"
     ),
     "extract": (
         "한국어 문장에서 지식 그래프의 노드, 엣지, 카테고리, 상태변경, 보관 유형을 추출하라.\n"
@@ -243,23 +201,6 @@ def llm_extract(text: str, context_sentences: Optional[list[tuple[int, str]]] = 
         return result
     except Exception:
         return {"retention": "memory", "nodes": [], "edges": [], "deactivate": []}
-
-
-def save_state(text: str, existing_triples: list[str], org_mode: bool = False) -> list[dict]:
-    """상태 변경 엣지 감지. [{"source": ..., "target": ...}] 반환."""
-    import re
-    try:
-        task = "save-state-org" if org_mode else "save-state-personal"
-        triples_str = "\n".join(f"- {t}" for t in existing_triples)
-        user = f"입력: {text}\n기존 트리플:\n{triples_str}"
-        raw = mlx_chat(task, user)
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        if not match:
-            return []
-        result = json.loads(match.group())
-        return result.get("inactive", [])
-    except Exception:
-        return []
 
 
 # 하위 호환을 위한 별칭

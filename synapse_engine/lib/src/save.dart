@@ -45,22 +45,6 @@ const _aliasSystem = '''당신은 한국어 지식 그래프 별칭 추출기입
 
 // ── DB helpers ───────────────────────────────────────────
 
-Future<List<Map<String, dynamic>>> _getExistingTriples(
-  Database db,
-  List<String> nodeNames,
-) async {
-  if (nodeNames.isEmpty) return [];
-  final ph = List.filled(nodeNames.length, '?').join(',');
-  return db.rawQuery(
-    '''SELECT n1.name AS src, e.label, n2.name AS tgt, e.id AS edge_id
-       FROM edges e
-       JOIN nodes n1 ON n1.id = e.source_node_id
-       JOIN nodes n2 ON n2.id = e.target_node_id
-       WHERE n1.name IN ($ph) OR n2.name IN ($ph)''',
-    [...nodeNames, ...nodeNames],
-  );
-}
-
 Future<void> _deactivateEdge(Database db, int edgeId) async {
   await db.execute(
     "UPDATE edges SET last_used=datetime('now') WHERE id=?",
@@ -177,8 +161,8 @@ Future<void> _saveItems(
 
     // Typo correction
     if (extNodes.isNotEmpty || extEdges.isNotEmpty) {
-      final existingNames = await _getExistingNodeNames(db);
-      final corrections = correctTypos(extNodes, existingNames);
+      final existingEdgeCounts = await _getExistingNodeEdgeCounts(db);
+      final corrections = correctTypos(extNodes, existingEdgeCounts);
       for (final (orig, corrected) in corrections) {
         result.typosCorrected.add((orig, corrected));
         // Fix edges too
@@ -304,8 +288,8 @@ Future<void> _savePlainText(
 
   // Typo correction
   if (extNodes.isNotEmpty || extEdges.isNotEmpty) {
-    final existingNames = await _getExistingNodeNames(db);
-    final corrections = correctTypos(extNodes, existingNames);
+    final existingEdgeCounts = await _getExistingNodeEdgeCounts(db);
+    final corrections = correctTypos(extNodes, existingEdgeCounts);
     for (final (orig, corrected) in corrections) {
       result.typosCorrected.add((orig, corrected));
       for (final e in extEdges) {
@@ -352,20 +336,31 @@ Future<void> _savePlainText(
 
 // ── Shared helpers ───────────────────────────────────────
 
-Future<Set<String>> _getExistingNodeNames(Database db) async {
+/// Returns map of lowercase name → edge count for active nodes + aliases.
+Future<Map<String, int>> _getExistingNodeEdgeCounts(Database db) async {
   final rows = await db.rawQuery(
-    "SELECT name FROM nodes WHERE status='active'",
+    '''SELECT n.name, COUNT(e.id) AS cnt FROM nodes n
+       LEFT JOIN edges e ON (e.source_node_id = n.id OR e.target_node_id = n.id)
+       WHERE n.status='active'
+       GROUP BY n.name''',
   );
-  final names = rows.map((r) => (r['name'] as String).toLowerCase()).toSet();
+  final result = <String, int>{};
+  for (final r in rows) {
+    result[(r['name'] as String).toLowerCase()] = (r['cnt'] as int?) ?? 0;
+  }
 
   final aliasRows = await db.rawQuery(
-    '''SELECT a.alias FROM aliases a
+    '''SELECT a.alias, COUNT(e.id) AS cnt FROM aliases a
        JOIN nodes n ON n.id = a.node_id
-       WHERE n.status = 'active' ''',
+       LEFT JOIN edges e ON (e.source_node_id = n.id OR e.target_node_id = n.id)
+       WHERE n.status = 'active'
+       GROUP BY a.alias''',
   );
-  names.addAll(aliasRows.map((r) => (r['alias'] as String).toLowerCase()));
+  for (final r in aliasRows) {
+    result[(r['alias'] as String).toLowerCase()] = (r['cnt'] as int?) ?? 0;
+  }
 
-  return names;
+  return result;
 }
 
 Future<void> _upsertNodesAndEdges(
@@ -381,9 +376,8 @@ Future<void> _upsertNodesAndEdges(
   for (final node in extNodes) {
     final name = node['name'] as String;
     final cat = node['category'] as String?;
-    final nid = await upsertNode(db, name, category: cat);
-    final isNew = !result.nodeIdsAdded.contains(nid) &&
-        !(await _nodeExisted(db, nid));
+    final (nid, isNew) = await upsertNode(db, name);
+    await addNodeCategory(db, nid, cat);
     nameToId[name] = nid;
     if (isNew) {
       result.nodesAdded.add(name);
@@ -397,9 +391,10 @@ Future<void> _upsertNodesAndEdges(
     final tgt = edge['target'] as String;
     for (final nm in [src, tgt]) {
       if (!nameToId.containsKey(nm)) {
-        final nid = await upsertNode(db, nm, category: categoryPath);
+        final (nid, isNew) = await upsertNode(db, nm);
+        await addNodeCategory(db, nid, categoryPath);
         nameToId[nm] = nid;
-        if (!(await _nodeExisted(db, nid))) {
+        if (isNew) {
           result.nodesAdded.add(nm);
           result.nodeIdsAdded.add(nid);
           if (nm == '나') await _registerFirstPersonAliases(db, nid);
@@ -428,13 +423,6 @@ Future<void> _upsertNodesAndEdges(
   }
 }
 
-Future<bool> _nodeExisted(Database db, int nodeId) async {
-  final count = await db.rawQuery(
-    'SELECT COUNT(*) as cnt FROM edges WHERE source_node_id=? OR target_node_id=?',
-    [nodeId, nodeId],
-  );
-  return (Sqflite.firstIntValue(count) ?? 0) > 0;
-}
 
 Future<void> _suggestAliases(
   Database db,

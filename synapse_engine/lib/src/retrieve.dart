@@ -11,7 +11,6 @@
 import 'package:sqflite/sqflite.dart';
 
 import 'inference.dart';
-import 'models/engine_config.dart';
 import 'models/retrieve_result.dart';
 import 'models/triple.dart';
 
@@ -225,7 +224,7 @@ Future<Set<int>> _getCategorySupplementNodes(
   final adjMap = adjacencyMap ?? _defaultAdjacentMap;
   final ph = List.filled(startNodeIds.length, '?').join(',');
   final rows = await db.rawQuery(
-    'SELECT category FROM nodes WHERE id IN ($ph) AND category IS NOT NULL',
+    'SELECT nc.category FROM node_categories nc WHERE nc.node_id IN ($ph)',
     startNodeIds.toList(),
   );
 
@@ -246,11 +245,13 @@ Future<Set<int>> _getCategorySupplementNodes(
   final result = <int>{};
   for (final sub in adjacent) {
     final catRows = await db.rawQuery(
-      "SELECT id FROM nodes WHERE category = ? AND status='active' LIMIT 20",
+      "SELECT nc.node_id FROM node_categories nc "
+      "JOIN nodes n ON n.id = nc.node_id "
+      "WHERE nc.category = ? AND n.status='active' LIMIT 20",
       [sub],
     );
     for (final r in catRows) {
-      final id = r['id'] as int;
+      final id = r['node_id'] as int;
       if (!visitedIds.contains(id)) result.add(id);
     }
   }
