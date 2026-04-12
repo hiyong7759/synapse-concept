@@ -29,3 +29,8 @@ scripts/simulate_threshold.py
 
 # MLX 모델 (대용량)
 archive/finetune/models/
+
+# Flutter/Dart build artifacts
+synapse_engine/.dart_tool/
+synapse_engine/.flutter-plugins-dependencies
+synapse_engine/pubspec.lock
