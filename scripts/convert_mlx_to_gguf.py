@@ -176,15 +176,18 @@ def mlx_to_peft(task: str) -> Path:
     return peft_dir
 
 
-def peft_to_gguf(task: str, base_model: str) -> Path:
-    """HF PEFT → GGUF LoRA via llama.cpp convert_lora_to_gguf.py."""
+def peft_to_gguf(task: str, base_model: str, peft_dir_override: Path | None = None) -> Path:
+    """HF PEFT → GGUF LoRA via llama.cpp convert_lora_to_gguf.py.
+
+    peft_dir_override: RunPod 등 외부 PEFT 어댑터 경로 직접 지정.
+    """
     if not CONVERT_SCRIPT.exists():
         raise FileNotFoundError(
             f"llama.cpp not found at {LLAMA_CPP_DIR}\n"
             "→ git clone https://github.com/ggml-org/llama.cpp /tmp/llama.cpp"
         )
 
-    peft_dir = PEFT_OUTPUT_BASE / task
+    peft_dir = peft_dir_override or (PEFT_OUTPUT_BASE / task)
     gguf_dir = GGUF_OUTPUT_BASE
     gguf_dir.mkdir(parents=True, exist_ok=True)
     gguf_path = gguf_dir / f"{task}.gguf"
@@ -250,9 +253,45 @@ def main():
         "--peft-only", action="store_true",
         help="Only do MLX→PEFT conversion, skip GGUF step.",
     )
+    parser.add_argument(
+        "--from-peft", type=str, default=None,
+        help="Convert existing PEFT adapters to GGUF (skip MLX→PEFT). "
+             "Path to directory containing task subdirectories with adapter_model.safetensors. "
+             "Example: --from-peft runpod_output/adapters",
+    )
 
     args = parser.parse_args()
 
+    # ── RunPod PEFT → GGUF 모드 ──
+    if args.from_peft:
+        peft_root = Path(args.from_peft)
+        if not peft_root.exists():
+            print(f"ERROR: {peft_root} not found")
+            sys.exit(1)
+        if args.base_model is None:
+            print("ERROR: --base-model required for GGUF conversion")
+            sys.exit(1)
+
+        # 하위 디렉토리에서 adapter_config.json 찾기
+        task_dirs = sorted(
+            d for d in peft_root.iterdir()
+            if d.is_dir() and (d / "adapter_config.json").exists()
+        )
+        if args.tasks:
+            task_dirs = [d for d in task_dirs if d.name in args.tasks]
+
+        print(f"PEFT → GGUF conversion: {len(task_dirs)} adapters from {peft_root}")
+        for d in task_dirs:
+            print(f"\n{'='*60}")
+            print(f"Converting: {d.name}")
+            print(f"{'='*60}")
+            peft_to_gguf(d.name, args.base_model, peft_dir_override=d)
+
+        print(f"\n{'='*60}")
+        print(f"Done. GGUF outputs: {GGUF_OUTPUT_BASE}")
+        sys.exit(0)
+
+    # ── 기존 MLX → PEFT → GGUF 모드 ──
     if args.all:
         tasks = ALL_ADAPTERS
     elif args.priority:

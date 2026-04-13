@@ -7,6 +7,8 @@ import 'dart:io';
 
 import 'package:llamadart/llamadart.dart';
 
+import '../lib/src/inference.dart' show stripThinking;
+
 Future<void> main(List<String> args) async {
   final modelPath = '/Volumes/macex/models/gemma-4-E2B-it-Q4_K_M.gguf';
   final adapterPath = '/Volumes/macex/workspace/claude-agentic-subagent-team/projects/synapse/archive/finetune/models/gguf/extract.gguf';
@@ -48,7 +50,7 @@ Future<void> main(List<String> args) async {
   var buf = StringBuffer();
   await for (final chunk in session.create(
     [LlamaTextContent(testInput)],
-    params: const GenerationParams(maxTokens: 512, temp: 0.0, topK: 1),
+    params: const GenerationParams(maxTokens: 4096, temp: 0.0, topK: 1),
     enableThinking: false,
   )) {
     for (final choice in chunk.choices) {
@@ -56,8 +58,8 @@ Future<void> main(List<String> args) async {
     }
   }
   print('Time: ${sw.elapsedMilliseconds}ms');
-  print('Output: ${buf.toString()}');
-  final outputWithout = buf.toString();
+  final outputWithout = stripThinking(buf.toString());
+  print('Output: $outputWithout');
 
   // ── Apply LoRA ──
   print('\n=== Applying LoRA: $adapterPath ===');
@@ -79,7 +81,7 @@ Future<void> main(List<String> args) async {
   buf = StringBuffer();
   await for (final chunk in session.create(
     [LlamaTextContent(testInput)],
-    params: const GenerationParams(maxTokens: 512, temp: 0.0, topK: 1),
+    params: const GenerationParams(maxTokens: 4096, temp: 0.0, topK: 1),
     enableThinking: false,
   )) {
     for (final choice in chunk.choices) {
@@ -87,8 +89,8 @@ Future<void> main(List<String> args) async {
     }
   }
   print('Time: ${sw.elapsedMilliseconds}ms');
-  print('Output: ${buf.toString()}');
-  final outputWith = buf.toString();
+  final outputWith = stripThinking(buf.toString());
+  print('Output: $outputWith');
 
   // ── Compare ──
   print('\n=== Comparison ===');
