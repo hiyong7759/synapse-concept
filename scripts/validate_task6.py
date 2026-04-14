@@ -21,7 +21,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 BASE = Path(__file__).parent.parent
-DATA_DIR = BASE / "archive/finetune/data"
+DATA_DIR = BASE / "data/finetune"
 
 GROUPS = {
     "a": "task6_v2_a.jsonl",

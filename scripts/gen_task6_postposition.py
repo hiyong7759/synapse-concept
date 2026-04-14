@@ -7,8 +7,8 @@ Claude Opus로 새 라벨링 규칙(조사 라벨) 적용해 출력 재생성.
   python3 scripts/gen_task6_postposition.py
 
 출력:
-  archive/finetune/data/task6_postposition.jsonl  (완성본)
-  archive/finetune/data/task6_postposition.progress  (중단 시 재개용)
+  data/finetune/task6_postposition.jsonl  (완성본)
+  data/finetune/task6_postposition.progress  (중단 시 재개용)
 """
 
 import json
@@ -20,7 +20,7 @@ import anthropic
 
 # ── 경로 ──────────────────────────────────────────────────────
 BASE = pathlib.Path(__file__).parent.parent
-DATA_DIR = BASE / "archive/finetune/data"
+DATA_DIR = BASE / "data/finetune"
 OUT_FILE = DATA_DIR / "task6_postposition.jsonl"
 PROGRESS_FILE = DATA_DIR / "task6_postposition.progress"
 

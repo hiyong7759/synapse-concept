@@ -321,7 +321,7 @@ while True:
 
 > `synapse/save-state-personal` 제거 — synapse/extract의 `deactivate` 필드로 통합됨.
 
-**task6 데이터**: `archive/finetune/data/task6_*.jsonl` — 1,677건 (카테고리별 40~236건, 17개 대분류 전체 커버)
+**task6 데이터**: `data/finetune/task6_*.jsonl` — 1,677건 (카테고리별 40~236건, 17개 대분류 전체 커버)
 → `deactivate` 필드 추가로 재학습 필요.
 
 ---

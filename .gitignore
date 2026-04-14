@@ -27,8 +27,9 @@ scripts/find_threshold.py
 scripts/simulate_threshold.py
 .gstack/
 
-# MLX 모델 (대용량)
-archive/finetune/models/
+# 학습 모델 (대용량)
+data/finetune/models/
+runpod_output/
 
 # Flutter/Dart build artifacts
 synapse_engine/.dart_tool/

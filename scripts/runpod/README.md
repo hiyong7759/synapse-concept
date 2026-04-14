@@ -21,7 +21,7 @@ git clone https://github.com/ggml-org/llama.cpp /tmp/llama.cpp  # GGUF 변환용
 
 ```bash
 # 시냅스 데이터
-scp -r archive/finetune/data/ runpod:/workspace/synapse/data/
+scp -r data/finetune/ runpod:/workspace/synapse/data/
 
 # gabjil 데이터
 scp -r ../gabjil/finetune/datasets/ runpod:/workspace/synapse/gabjil-data/

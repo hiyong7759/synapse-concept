@@ -1,0 +1,19 @@
+# 아카이브 (과거 코드 — 에이전트 탐색 제외)
+archive/
+
+# 학습 산출물 (대용량)
+runpod_output/
+data/finetune/models/
+
+# 과거 프로토타입
+docs/archive/
+
+# 빌드/의존성
+app/node_modules/
+synapse_engine/.dart_tool/
+
+# 바이너리/DB
+*.db
+*.db-shm
+*.db-wal
+*.png

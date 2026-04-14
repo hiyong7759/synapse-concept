@@ -4,8 +4,8 @@
 
 VENV="/tmp/mlx-venv/bin/python"
 MODEL="unsloth/gemma-4-E2B-it-UD-MLX-4bit"
-DATA_BASE="archive/finetune/data/tasks"
-ADAPTER_BASE="archive/finetune/models/tasks"
+DATA_BASE="data/finetune/tasks"
+ADAPTER_BASE="data/finetune/models/tasks"
 
 mkdir -p "$ADAPTER_BASE"
 
@@ -29,6 +29,7 @@ run_task() {
     --adapter-path "$ADAPTER_PATH" \
     --iters "$ITERS_N" \
     --batch-size 2 \
+    --num-layers 8 \
     --grad-checkpoint \
     --save-every 200 2>&1 | tee "$LOG_PATH"
 

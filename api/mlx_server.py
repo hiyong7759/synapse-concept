@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 # ── 경로 설정 ──────────────────────────────────────────────
 BASE_MODEL = os.getenv("SYNAPSE_BASE_MODEL", "unsloth/gemma-4-E2B-it-UD-MLX-4bit")
 ADAPTER_BASE = Path(os.getenv("SYNAPSE_ADAPTER_BASE",
-    str(Path(__file__).parent.parent / "archive/finetune/models/tasks")))
+    str(Path(__file__).parent.parent / "data/finetune/models/tasks")))
 HOST = os.getenv("SYNAPSE_HOST", "127.0.0.1")
 PORT = int(os.getenv("SYNAPSE_PORT", "8765"))
 

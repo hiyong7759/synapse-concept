@@ -15,7 +15,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 BASE = pathlib.Path(__file__).parent.parent
-DATA_DIR = BASE / "archive/finetune/data"
+DATA_DIR = BASE / "data/finetune"
 
 SYSTEM = (
     "한국어 문장에서 지식 그래프의 노드와 엣지를 추출하라.\n"

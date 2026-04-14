@@ -535,5 +535,5 @@ ORDER BY edge_count DESC;
 
 - 스키마: `docs/DESIGN_GRAPH.md` — `nodes.category` 컬럼
 - 인출 파이프라인: `docs/DESIGN_PIPELINE.md` — 카테고리 보완 조회
-- 파인튜닝 데이터: `archive/finetune/data/task6_*.jsonl` — 1,677건
+- 파인튜닝 데이터: `data/finetune/task6_*.jsonl` — 1,677건
 - 구현: `engine/retrieve.py` — `_get_category_supplement_nodes()`

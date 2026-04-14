@@ -12,11 +12,11 @@
   python3 scripts/gen_task6_v2.py --group a   # 그룹 하나만
 
 출력:
-  archive/finetune/data/task6_v2_a.jsonl  (PER, BOD, MND)
-  archive/finetune/data/task6_v2_b.jsonl  (WRK, MON, TEC, EDU)
-  archive/finetune/data/task6_v2_c.jsonl  (FOD, LIV, HOB, TRV, CUL)
-  archive/finetune/data/task6_v2_d.jsonl  (LAW, NAT, SOC, REL, REG)
-  archive/finetune/data/task6_v2_e.jsonl  (doc_mode — 조직 문서)
+  data/finetune/task6_v2_a.jsonl  (PER, BOD, MND)
+  data/finetune/task6_v2_b.jsonl  (WRK, MON, TEC, EDU)
+  data/finetune/task6_v2_c.jsonl  (FOD, LIV, HOB, TRV, CUL)
+  data/finetune/task6_v2_d.jsonl  (LAW, NAT, SOC, REL, REG)
+  data/finetune/task6_v2_e.jsonl  (doc_mode — 조직 문서)
 """
 
 import argparse
@@ -26,7 +26,7 @@ import re
 import subprocess
 
 BASE = pathlib.Path(__file__).parent.parent
-DATA_DIR = BASE / "archive/finetune/data"
+DATA_DIR = BASE / "data/finetune"
 
 # ──────────────────────────────────────────────
 # 시스템 프롬프트 (v2.1 — 문장 컨텍스트)

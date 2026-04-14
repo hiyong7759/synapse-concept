@@ -273,4 +273,4 @@ C(배치화/통합)는 재학습+검증 통과 후에만 추가 적용.
 - `engine/llm.py` (256줄) — 시스템 프롬프트 14개, thinking 블록 제거 regex
 - `engine/db.py` (124줄) — v9 스키마 DDL, WAL, FK
 - `api/mlx_server.py` (166줄) — ModelState 어댑터 스왑 패턴 → inference.dart로 대체
-- `archive/finetune/models/tasks/extract/adapter_config.json` — LoRA 설정 (rank=8, scale=20.0)
+- `data/finetune/models/tasks/extract/adapter_config.json` — LoRA 설정 (rank=8, scale=20.0)
