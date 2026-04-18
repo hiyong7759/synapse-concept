@@ -1,5 +1,7 @@
 # Synapse Engine — 범용 온디바이스 지식 그래프 패키지 설계
 
+**최종 업데이트**: 2026-04-17 — 엔진 MVP 포팅 기준이 v11 스키마(node_mentions, unresolved_tokens, edges 의미 재정의)로 바뀜. 조사 엣지 관련 구현(negation, edge label = 조사)은 제거. `/review` 런타임 제안 도출기(`suggestions.dart`)가 신규 추가. 자세한 배경은 `docs/DESIGN_PIPELINE.md` 참고.
+
 ## Context
 
 Synapse를 모바일 앱이 아닌 **재사용 가능한 엔진 패키지**로 먼저 분리한다.
@@ -14,22 +16,23 @@ synapse_engine/               ← pub.dev 패키지 (또는 private)
 │   ├── synapse_engine.dart   ← 단일 진입점. export만
 │   ├── src/
 │   │   ├── engine.dart       ← SynapseEngine 클래스 (유일한 공개 API)
-│   │   ├── db.dart           ← SQLite 스키마 + CRUD (sqflite)
+│   │   ├── db.dart           ← SQLite 스키마 + CRUD (sqflite). v11
 │   │   ├── inference.dart    ← llamadart 래퍼. 모델 로딩 + 어댑터 스왑
-│   │   ├── save.dart         ← 저장 파이프라인
-│   │   ├── retrieve.dart     ← BFS 인출 파이프라인
+│   │   ├── save.dart         ← 자동 저장 파이프라인 (sentence + node + node_mentions + unresolved_tokens)
+│   │   ├── retrieve.dart     ← BFS 인출 파이프라인 (node_mentions JOIN 기반)
+│   │   ├── suggestions.dart  ← /review 런타임 제안 도출기 (쿼리 + LLM 호출, 저장 없음)
 │   │   ├── pipeline.dart     ← 오케스트레이터 (retrieve→save→respond)
-│   │   ├── typo.dart         ← 자모 거리 오타 교정
+│   │   ├── typo.dart         ← 자모 거리 오타 의심 쌍 판정 (자동 교정 없음)
 │   │   ├── markdown.dart     ← 마크다운 파싱 (heading 경로 + 항목 분리)
 │   │   └── models/
-│   │       ├── triple.dart
+│   │       ├── mention.dart          ← Mention(node_id, sentence_id) 모델
 │   │       ├── save_result.dart
 │   │       ├── retrieve_result.dart
+│   │       ├── suggestion.dart       ← /review 섹션별 DTO
 │   │       ├── engine_config.dart
 │   │       └── engine_event.dart
 │   └── src/internal/         ← 소비자에게 비공개
-│       ├── negation.dart     ← 부정부사 후처리
-│       ├── regex_patterns.dart ← 날짜/대명사/나이 패턴
+│       ├── regex_patterns.dart ← 날짜/대명사/부정부사 패턴
 │       └── thinking_strip.dart ← gemma thinking 블록 제거
 ├── assets/                   ← 기본 어댑터 (선택적 번들)
 ├── test/
@@ -37,6 +40,8 @@ synapse_engine/               ← pub.dev 패키지 (또는 private)
 ├── pubspec.yaml
 └── README.md
 ```
+
+> v11 변경: 조사 기반 엣지가 폐기되어 `negation.dart`와 "엣지 자동 생성" 로직 제거. 대신 `node_mentions` 채우기가 저장 파이프라인의 핵심이 된다. 의미 엣지는 `/review` 승인으로만 `edges`에 들어간다.
 
 핵심 원칙: `lib/src/` 아래는 전부 `src/` 내부. 소비자는 `synapse_engine.dart`를 통해서만 접근.
 
@@ -353,15 +358,17 @@ EngineConfig(
 ### 필수 (엔진 MVP)
 | 기능 | 원본 | 포팅 | gabjil |
 |------|------|------|--------|
-| 그래프 저장 (nodes/edges/aliases) | db.py, save.py | db.dart, save.dart | ★★★ |
-| extract 어댑터 | llm.py extract | inference.dart | ★★★ |
-| save-pronoun 어댑터 | llm.py save-pronoun | inference.dart | ★★★ |
-| BFS 인출 + retrieve-filter | retrieve.py | retrieve.dart | ★★★ |
+| 그래프 저장 (nodes/node_mentions/node_categories/sentences/unresolved_tokens) | db.py, save.py | db.dart, save.dart | ★★★ |
+| extract 어댑터 (edges·category 필드 드롭) | llm.py extract | inference.dart | ★★★ |
+| save-pronoun 어댑터 (tokens + unresolved 분리 반환) | llm.py save-pronoun | inference.dart | ★★★ |
+| structure-suggest 어댑터 (평문 → 마크다운 초안) | llm.py | inference.dart | ★★ |
+| BFS 인출 (node_mentions JOIN) + retrieve-filter | retrieve.py | retrieve.dart | ★★★ |
 | retrieve-expand | retrieve.py | retrieve.dart | ★★★ |
-| 부정부사 후처리 | save.py | negation.dart | ★★★ |
-| 자모 오타 교정 | save.py | typo.dart | ★ |
+| 부정부사 규칙 감지(노드화, 엣지 아님) | save.py | save.dart 내 규칙 | ★★★ |
+| 자모 오타 의심 쌍 판정 (자동 교정 없음) | save.py | typo.dart | ★ |
 | 마크다운 파싱 | markdown.py | markdown.dart | ★★ |
 | 문장 삭제/수정 | save.py | save.dart | ★★ |
+| /review 런타임 제안 도출기 | suggestions.py | suggestions.dart | ★★ |
 
 ### 확장점 (엔진 v1)
 | 기능 | 설명 |
@@ -418,9 +425,10 @@ DESIGN_MOBILE.md Phase 0과 동일. MLX→GGUF 변환 + 품질 검증.
 - synapse-app: 기존 웹앱의 모바일 버전
 
 ## 13. 핵심 파일 참조 (포팅 원본)
-- `engine/save.py` (663줄) → save.dart (저장 + 문장 CRUD + 롤백 + split_node)
-- `engine/retrieve.py` (464줄) → retrieve.dart
-- `engine/llm.py` (256줄) → inference.dart + 시스템 프롬프트
-- `engine/db.py` (124줄) → db.dart
-- `engine/markdown.py` (89줄) → markdown.dart
-- `api/mlx_server.py` (166줄) → inference.dart (어댑터 스왑 패턴)
+- `engine/save.py` → save.dart (자동 저장 + 문장 CRUD + split_node + merge_nodes). 조사 엣지 생성 코드와 `_correct_typos` 자동 교정 코드는 포팅 대상 아님
+- `engine/retrieve.py` → retrieve.dart (`node_mentions` JOIN 기반)
+- `engine/suggestions.py` → suggestions.dart (/review 런타임 도출기)
+- `engine/llm.py` → inference.dart + 시스템 프롬프트
+- `engine/db.py` → db.dart (v11 스키마)
+- `engine/markdown.py` → markdown.dart
+- `api/mlx_server.py` → inference.dart (어댑터 스왑 패턴)

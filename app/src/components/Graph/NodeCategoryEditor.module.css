@@ -1,0 +1,119 @@
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+  border-top: 1px dashed var(--border-2);
+  margin-top: 8px;
+}
+
+.label {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.08em;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.empty {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.chip,
+.chipEditing {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+  padding: 2px 4px 2px 8px;
+  font-size: 11px;
+  color: var(--accent);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.chipText {
+  cursor: pointer;
+  padding: 2px 0;
+}
+.chipText:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.chipRemove,
+.chipBtn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.chipRemove:hover,
+.chipBtn:hover { color: var(--accent); }
+
+.chipInput {
+  background: var(--surface-1);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--accent);
+  padding: 2px 6px;
+  outline: none;
+  width: 140px;
+}
+
+.addBtn {
+  background: none;
+  border: 1px dashed var(--border-2);
+  border-radius: 12px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-family: 'Noto Sans KR', sans-serif;
+}
+.addBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.addRow {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-top: 4px;
+}
+.addInput {
+  flex: 1;
+  background: var(--surface-1);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-primary);
+  outline: none;
+}
+.addOk,
+.addCancel {
+  background: none;
+  border: none;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 2px 6px;
+}
+.addOk:hover { color: var(--accent); }
+.addCancel:hover { color: var(--danger); }

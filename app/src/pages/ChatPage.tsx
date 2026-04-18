@@ -6,6 +6,8 @@ import { uid } from '../utils';
 import { BubbleAI } from '../components/Chat/BubbleAI';
 import { BubbleUser } from '../components/Chat/BubbleUser';
 import { ChangeNotice } from '../components/Chat/ChangeNotice';
+import { MarkdownDraftCard } from '../components/Chat/MarkdownDraftCard';
+import { ReviewBadge } from '../components/ReviewBadge';
 import { BFSLoader } from '../components/Chat/BFSLoader';
 import { ResultCard } from '../components/Chat/ResultCard';
 import { InputArea } from '../components/Chat/InputArea';
@@ -58,6 +60,19 @@ export function ChatPage() {
       if (res.question) {
         // 모호성 되물음
         setMessages(prev => [...prev, { id: uid(), type: 'clarify', question: res.question!, createdAt: responseTime }]);
+      } else if (res.markdown_draft) {
+        // v12: structure-suggest 초안 반환 → 사용자 확정 대기
+        setMessages(prev => [
+          ...prev,
+          {
+            id: uid(),
+            type: 'markdown_draft',
+            draft: res.markdown_draft!,
+            originalText: text,
+            images,
+            createdAt: responseTime,
+          },
+        ]);
       } else {
         const newMsgs: Message[] = [];
 
@@ -66,8 +81,13 @@ export function ChatPage() {
           newMsgs.push({ id: uid(), type: 'retrieve_result', retrieve: res.retrieve, createdAt: responseTime });
         }
 
-        // 저장 변경 알림
-        if (res.save && (res.save.triples_added.length > 0 || res.save.edges_deactivated.length > 0)) {
+        // 저장 변경 알림 (v12: nodes_added / mentions_added / edges_deactivated 중 하나라도 있으면)
+        if (
+          res.save &&
+          (res.save.nodes_added.length > 0 ||
+            res.save.mentions_added > 0 ||
+            res.save.edges_deactivated.length > 0)
+        ) {
           newMsgs.push({ id: uid(), type: 'change_notice', save: res.save, createdAt: responseTime });
         }
 
@@ -97,6 +117,7 @@ export function ChatPage() {
         <button className={styles.topbarBtn} onClick={() => navigate('/')}>← 탐색</button>
         <div className={styles.topbarLogo}>SYNAPSE</div>
         <div className={styles.topbarActions}>
+          <ReviewBadge />
           <button className={styles.topbarBtn} onClick={() => navigate('/graph')}>그래프</button>
         </div>
       </div>
@@ -115,6 +136,20 @@ export function ChatPage() {
               return <ResultCard key={msg.id} retrieve={msg.retrieve} />;
             case 'clarify':
               return <BubbleAI key={msg.id} text={msg.question} createdAt={msg.createdAt} />;
+            case 'markdown_draft':
+              return (
+                <MarkdownDraftCard
+                  key={msg.id}
+                  draft={msg.draft}
+                  originalText={msg.originalText}
+                  images={msg.images}
+                  onDismiss={() => dismissMessage(msg.id)}
+                  onConfirm={(md, imgs) => {
+                    dismissMessage(msg.id);
+                    handleSend(md, imgs);
+                  }}
+                />
+              );
             case 'searching':
               return <BFSLoader key={msg.id} mode={msg.loaderMode} />;
           }

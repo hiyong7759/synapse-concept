@@ -29,10 +29,13 @@ def _fmt_triple(src, label, tgt) -> str:
 def cmd_stats() -> None:
     stats = get_stats()
     print(f"DB: {DB_PATH}")
+    print(f"  문장 {stats['sentences_total']} (user={stats['sentences_user']}, assistant={stats['sentences_assistant']})")
     print(f"  노드 {stats['nodes_active']}/{stats['nodes_total']} (활성/전체)")
-    print(f"  엣지 {stats['edges_total']}")
+    print(f"  언급 {stats['node_mentions_total']} (node_mentions)")
+    print(f"  엣지 {stats['edges_total']} (의미 관계, 승인된 것만)")
     print(f"  카테고리 {stats['categories_total']}")
     print(f"  별칭 {stats['aliases_total']}")
+    print(f"  미해결 토큰 {stats['unresolved_total']}")
 
 
 def cmd_reset() -> None:
@@ -51,7 +54,7 @@ def cmd_typos() -> None:
     print(f"오타 의심 쌍 {len(pairs)}개:")
     for p in pairs:
         a, b = p["node_a"], p["node_b"]
-        print(f"  {a['name']} (id={a['id']}, edges={a['edge_count']}) ↔ {b['name']} (id={b['id']}, edges={b['edge_count']})")
+        print(f"  {a['name']} (id={a['id']}, mentions={a['mention_count']}) ↔ {b['name']} (id={b['id']}, mentions={b['mention_count']})")
 
 
 def cmd_interactive(use_llm: bool) -> None:
@@ -78,9 +81,10 @@ def cmd_interactive(use_llm: bool) -> None:
             raw = text[9:]
             result = llm_extract(raw)
             for n in result.get("nodes", []):
-                print(f"  [노드] {n['name']} ({n.get('category', '?')})")
-            for e in result.get("edges", []):
-                print(f"  [엣지] {_fmt_triple(e['source'], e.get('label'), e['target'])}")
+                print(f"  [노드] {n['name']}")
+            print(f"  [retention] {result.get('retention', 'memory')}")
+            if result.get("deactivate"):
+                print(f"  [deactivate] {result['deactivate']}")
             continue
         if text.startswith("/reset"):
             confirm = input("  DB를 초기화합니다. 계속? (y/N) ").strip().lower()
@@ -122,15 +126,13 @@ def cmd_interactive(use_llm: bool) -> None:
 
 
 def _print_save_result(r) -> None:
-    for src, label, tgt in r.triples_added:
-        print(f"  [저장] {_fmt_triple(src, label, tgt)}")
+    if r.nodes_added:
+        print(f"  [노드 신규] {', '.join(r.nodes_added)}")
+    if r.mentions_added:
+        print(f"  [언급 기록] {r.mentions_added}건")
     for src, label, tgt in r.edges_deactivated:
         print(f"  [비활성] {_fmt_triple(src, label, tgt)}")
-    for typo, canonical in r.typos_corrected:
-        print(f"  [오타교정] {typo} → {canonical}")
-    for alias, node in r.aliases_added:
-        print(f"  [별칭] {alias} → {node}")
-    if not r.triples_added and not r.edges_deactivated:
+    if not r.nodes_added and not r.mentions_added and not r.edges_deactivated:
         print("  (변경 없음)")
 
 

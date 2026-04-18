@@ -31,35 +31,29 @@ _MLX_SYSTEM: dict[str, str] = {
     ),
     "save-pronoun": (
         "당신은 지식 그래프 저장 엔진입니다. 텍스트에서 지시대명사와 부사를 구체적인 값으로 치환하세요. "
-        "주어/목적어/장소가 생략되었으면 직전 대화를 참고하여 복원하세요. "
+        "주어/목적어/장소가 생략되었으면 같은 게시물의 다른 문장을 참고하여 복원하세요. "
         "인칭대명사(나/내/저/제)는 치환하지 마세요. "
-        '대화 맥락이 제공되면 활용하세요. 치환 불가능하면 {"question": "질문 내용"}을 반환하세요. '
-        '출력 형식: {"text": "치환된 텍스트"} 또는 {"question": "..."}'
+        '맥락이 제공되면 활용하세요. '
+        '치환 불가능한 지시어가 있으면 그대로 두고 unresolved 배열에 원형을 담으세요. '
+        '치환 결과는 항상 text로, 미해결 토큰이 있으면 unresolved 배열에 추가. '
+        '출력 형식: {"text": "치환된 텍스트", "unresolved": ["원형토큰", ...]}'
     ),
+    # structure-suggest는 base 모델 사용 (engine/llm.py:structure_suggest 함수)
     "extract": (
-        "한국어 문장에서 지식 그래프의 노드, 엣지, 카테고리, 상태변경, 보관 유형을 추출하라.\n"
+        "한국어 문장에서 지식 그래프의 노드, 상태변경, 보관 유형을 추출하라.\n"
         "JSON만 출력. 다른 텍스트 금지.\n\n"
         "출력 형식:\n"
-        '{"retention":"memory|daily","nodes":[{"name":"노드명","category":"대분류.소분류"}],'
-        '"edges":[{"source":"노드명","label":"조사","target":"노드명"}],'
+        '{"retention":"memory|daily","nodes":[{"name":"노드명"}],'
         '"deactivate":[sentence_id, ...]}\n\n'
         "규칙:\n"
         "- 노드는 원자. 하나의 개념 = 하나의 노드.\n"
         "- 1인칭(나/내/저/제)이 문장에 명시된 경우 \"나\" 노드로 추출. 문장에 없는 1인칭 추가 금지.\n"
         "- 3인칭 주어는 원문 그대로 노드 추출.\n"
-        "- 엣지 label = 원문의 조사 그대로 (에서, 으로, 의, 에, 를/을, 와/과, 고, 이/가 등). 조사 없으면 null.\n"
-        "- 부정부사(안, 못)는 독립 노드다. 예: \"스타벅스 안 좋아\" → 스타벅스→안→좋아 (3노드, 2엣지 null).\n"
-        "- 엣지의 source와 target은 반드시 nodes 배열에 있는 노드명과 정확히 일치해야 한다.\n"
+        "- 부정부사(안, 못)는 독립 노드다. 예: \"스타벅스 안 좋아\" → 노드 [스타벅스, 안, 좋아].\n"
+        "- 엣지는 저장하지 않는다. 노드 간의 의미 관계는 사용자 승인을 거쳐 사후에 편입된다.\n"
         "- \"알려진 사실:\"이 제공된 경우: 각 문장에 [번호]가 붙어 있다. 현재 입력과 상충되는 문장의 번호를 deactivate에 포함. 없으면 [].\n"
         "- retention: 잘 변하지 않는 사실/상태/이력 → \"memory\". 순간적 활동/감정/일상 → \"daily\".\n"
-        "- 추출할 노드/엣지가 없는 대화 → {\"retention\":\"daily\",\"nodes\":[],\"edges\":[],\"deactivate\":[]}\n\n"
-        "카테고리는 반드시 '대분류.소분류' 형식 (예: PER.individual, WRK.role). 약어 금지.\n"
-        "대분류(17개): PER BOD MND FOD LIV MON WRK TEC EDU LAW TRV NAT CUL HOB SOC REL REG\n"
-        "소분류 예시: PER(individual,family,friend,colleague,public) BOD(disease,medical,part,sleep,exercise,nutrition) "
-        "MND(mental,emotion,coping) WRK(workplace,role,jobchange) MON(income,spending,saving) "
-        "LIV(housing,moving) TEC(device,software,infra) EDU(school,cert,study) LAW(statute,contract,rights,admin) "
-        "TRV(domestic,abroad) FOD(ingredient,recipe,restaurant) HOB(sport,social) CUL(music,movie,book) "
-        "SOC(issue,volunteer) REL(romance,comm) REG(practice,other,catholic) NAT(weather,animal,plant)"
+        "- 추출할 노드가 없는 대화 → {\"retention\":\"daily\",\"nodes\":[],\"deactivate\":[]}\n"
     ),
 }
 
@@ -94,13 +88,23 @@ def mlx_chat(task: str, user: str, max_tokens: int = 32768) -> str:
     """MLX 서버에 태스크별 추론 요청. 응답 텍스트 반환.
 
     task: _MLX_SYSTEM 키 (예: "retrieve-filter", "save-pronoun")
+
+    어댑터 미학습 환경 fallback: 어댑터 404 시 base 모델(synapse/chat)에
+    동일한 system prompt + user 메시지로 재시도. 정확도는 어댑터보다 떨어지지만
+    빈 결과 대신 base 모델이 system prompt 따라 답변하게 됨.
     """
     system = _MLX_SYSTEM.get(task, "")
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": user},
     ]
-    return _mlx_post(f"synapse/{task}", messages, max_tokens)
+    try:
+        return _mlx_post(f"synapse/{task}", messages, max_tokens)
+    except LLMError as e:
+        # 어댑터 파일이 디스크에 없으면 mlx_server가 404 반환
+        if "404" in str(e):
+            return _mlx_post("synapse/chat", messages, max_tokens)
+        raise
 
 
 def chat(
@@ -159,27 +163,80 @@ def retrieve_filter_sentence(question: str, sentence: str) -> bool:
 
 
 def save_pronoun(text: str, context: str = "", today: str = "") -> dict:
-    """대명사/부사 치환. {"text": ...} 또는 {"question": ...} 반환."""
+    """대명사/부사 치환. v12 반환 구조:
+    - {"text": ..., "unresolved": [...]}  (정상)
+    - {"question": ...}  (모호성 → 즉시 되묻기)
+
+    context는 "직전 대화"가 아니라 "같은 게시물의 다른 sentences".
+    """
     import re
     try:
         parts = []
         if today:
             parts.append(f"날짜: {today}")
         if context:
-            parts.append(f"직전 대화 - {context}")
+            parts.append(f"같은 게시물의 다른 문장들 - {context}")
         parts.append(f"입력: {text}")
         raw = mlx_chat("save-pronoun", "\n".join(parts))
         match = re.search(r"\{.*\}", raw, re.DOTALL)
-        return json.loads(match.group()) if match else {"text": text}
+        if not match:
+            return {"text": text, "unresolved": []}
+        data = json.loads(match.group())
+        if "question" in data:
+            return data
+        # text + unresolved 정규화
+        return {
+            "text": data.get("text", text),
+            "unresolved": [t for t in data.get("unresolved", []) if isinstance(t, str)],
+        }
     except Exception:
-        return {"text": text}
+        return {"text": text, "unresolved": []}
+
+
+_STRUCTURE_SUGGEST_SYSTEM = (
+    "한국어 평문을 마크다운 구조화된 게시물로 바꿔라.\n"
+    "규칙:\n"
+    "- 본문(사용자가 쓴 텍스트의 줄바꿈)은 절대 건드리지 마라. 줄을 합치거나 추가 쪼개기 금지.\n"
+    "- 맨 앞에 heading 한 줄(`# 경로`)만 추가한다.\n"
+    "- 가능하면 기존 사용자 카테고리 경로를 재사용. 알맞은 게 없으면 새 경로 제안 (예: `병원.2026-04-18`).\n"
+    "- 형식은 '대분류' 또는 '대분류.소분류' 점 구분 경로.\n"
+    "- 다른 설명 없이 마크다운 텍스트만 출력."
+)
+
+
+def structure_suggest(text: str, known_paths: Optional[list[str]] = None) -> str:
+    """평문을 마크다운 구조화 초안으로 변환 (heading만 추가).
+
+    PLAN Phase 2-2: 초기엔 base 모델(synapse/chat) + 프롬프트로 동작.
+    정확도 낮으면 후속 WI에서 파인튜닝 어댑터 학습.
+    """
+    try:
+        parts = []
+        if known_paths:
+            parts.append("기존 경로 목록: " + ", ".join(known_paths[:20]))
+        parts.append("본문:\n" + text)
+        raw = chat(
+            _STRUCTURE_SUGGEST_SYSTEM,
+            "\n\n".join(parts),
+            temperature=0,
+            max_tokens=1024,
+        )
+        # LLM 응답에서 마크다운 텍스트 추출 (backtick 블록 제거)
+        cleaned = re.sub(r"^```(?:markdown)?\s*", "", raw.strip())
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+        return cleaned.strip() or text
+    except Exception:
+        return text
 
 
 def llm_extract(text: str, context_sentences: Optional[list[tuple[int, str]]] = None) -> dict:
-    """LLM으로 노드/엣지/카테고리/상태변경/보관유형 추출 (task6 파인튜닝 모델).
+    """LLM으로 노드/상태변경/보관유형 추출.
+
+    v11: edges·category 필드는 어댑터 출력에 있어도 무시한다.
+    조사 기반 엣지는 폐기되었고, LLM 추론 카테고리는 저장 대상이 아니다.
 
     context_sentences: retrieve에서 가져온 (sentence_id, text) 쌍. deactivate 판단에 사용.
-    반환: {"retention": "memory|daily", "nodes": [...], "edges": [...], "deactivate": [sentence_id, ...]}
+    반환: {"retention": "memory|daily", "nodes": [...], "deactivate": [sentence_id, ...]}
     """
     try:
         # ()[] 가 포함되면 2B 모델이 반복 루프에 빠짐 — 공백으로 치환
@@ -192,15 +249,22 @@ def llm_extract(text: str, context_sentences: Optional[list[tuple[int, str]]] = 
         raw = mlx_chat("extract", input_text)
         match = re.search(r"\{.*\}", raw, re.DOTALL)
         if not match:
-            return {"retention": "memory", "nodes": [], "edges": [], "deactivate": []}
+            return {"retention": "memory", "nodes": [], "deactivate": []}
         result = json.loads(match.group())
-        result.setdefault("retention", "memory")
-        result.setdefault("nodes", [])
-        result.setdefault("edges", [])
-        result.setdefault("deactivate", [])
-        return result
+        # v11: edges·category 필드는 드롭. 노드 이름만 남김.
+        nodes = []
+        for n in result.get("nodes", []):
+            if isinstance(n, dict) and n.get("name"):
+                nodes.append({"name": n["name"]})
+            elif isinstance(n, str):
+                nodes.append({"name": n})
+        return {
+            "retention": result.get("retention", "memory"),
+            "nodes": nodes,
+            "deactivate": result.get("deactivate", []),
+        }
     except Exception:
-        return {"retention": "memory", "nodes": [], "edges": [], "deactivate": []}
+        return {"retention": "memory", "nodes": [], "deactivate": []}
 
 
 # 하위 호환을 위한 별칭

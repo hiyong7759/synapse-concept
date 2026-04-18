@@ -1,16 +1,17 @@
-"""Synapse 인출 파이프라인.
+"""Synapse 인출 파이프라인 (v12).
 
 흐름:
   질문
   → LLM 확장: 노드 후보 키워드 목록
   → DB 매칭: aliases 우선 → name 직접 → substring
-  → BFS 루프: 레이어마다 get_triples(+sentence JOIN) → LLM 트리플 필터
-  → 카테고리 보완: 시작 노드 소분류 → ADJACENT_SUBCATEGORIES 1-hop → 해당 소분류 노드만
-  → 최종 트리플 컨텍스트 + LLM 답변
+  → BFS 루프: 노드 → node_mentions JOIN → sentences → 함께 언급된 노드 → 반복
+  → 카테고리 보완: 시작 노드 카테고리 → 인접 카테고리 노드 추가 → 재필터
+  → 최종 sentences 컨텍스트 + LLM 답변
+
+v12 변경: 조사 엣지 폐기로 edges 기반 BFS 폐기. node_mentions JOIN 단일 경로.
 """
 
 from __future__ import annotations
-import json
 import re
 from dataclasses import dataclass, field
 from typing import Optional
@@ -23,25 +24,38 @@ from .llm import (
 
 
 @dataclass
+class Mention:
+    """노드↔문장 역참조 한 건. BFS의 단위 데이터."""
+    node_id: int
+    node_name: str
+    sentence_id: int
+    sentence_text: str
+
+    def __str__(self) -> str:
+        return f"{self.node_name} ▸ {self.sentence_text}"
+
+
+@dataclass
 class Triple:
+    """하위 호환용 — 같은 sentence에 함께 언급된 두 노드를 트리플처럼 표현.
+    label은 항상 None (조사 엣지 폐기). API 응답 모양 보존용."""
     src: str
     label: Optional[str]
     tgt: str
-    edge_id: int
+    edge_id: int = 0
     src_id: int = 0
     tgt_id: int = 0
     sentence_id: Optional[int] = None
     sentence_text: Optional[str] = None
 
     def __str__(self) -> str:
-        if self.label:
-            return f"{self.src} —({self.label})→ {self.tgt}"
-        return f"{self.src} → {self.tgt}"
+        return f"{self.src} ↔ {self.tgt}" if self.tgt else self.src
 
 
 @dataclass
 class RetrieveResult:
     context_triples: list[Triple] = field(default_factory=list)
+    context_sentences: list[tuple[int, str]] = field(default_factory=list)
     answer: Optional[str] = None
     start_nodes: list[str] = field(default_factory=list)
 
@@ -49,17 +63,14 @@ class RetrieveResult:
 # ─── DB 헬퍼 ──────────────────────────────────────────────
 
 def _match_start_nodes(conn, keywords: list[str], question: str = "") -> dict[str, int]:
-    """키워드 → 노드 ID 매핑 (별칭 스캔 → name 직접 → substring).
-    별칭으로 특정된 name은 name/substring 매칭에서 제외 (동명 노드 오매칭 방지).
-    반환: {display_key: node_id}
-    """
+    """키워드 → 노드 ID 매핑 (별칭 → name 정확 → name substring)."""
     matched: dict[str, int] = {}
     alias_resolved_names: set[str] = set()
 
-    # 0. 질문 문자열 안에 포함된 별칭 스캔 (공백 포함 별칭 대응)
     if question:
         rows = conn.execute(
-            "SELECT a.alias, n.id, n.name FROM aliases a JOIN nodes n ON n.id = a.node_id WHERE n.status = 'active'"
+            "SELECT a.alias, n.id, n.name FROM aliases a "
+            "JOIN nodes n ON n.id = a.node_id WHERE n.status = 'active'"
         ).fetchall()
         for r in rows:
             if r["alias"] in question:
@@ -67,7 +78,6 @@ def _match_start_nodes(conn, keywords: list[str], question: str = "") -> dict[st
                 alias_resolved_names.add(r["name"])
 
     for kw in keywords:
-        # 1. aliases 정확 매칭
         if kw not in alias_resolved_names:
             row = conn.execute(
                 """SELECT n.id, n.name FROM aliases a
@@ -80,7 +90,6 @@ def _match_start_nodes(conn, keywords: list[str], question: str = "") -> dict[st
                 alias_resolved_names.add(row["name"])
                 continue
 
-        # 2. name 정확 매칭 (별칭 특정된 name 제외)
         if kw in alias_resolved_names:
             continue
         rows = conn.execute(
@@ -92,7 +101,6 @@ def _match_start_nodes(conn, keywords: list[str], question: str = "") -> dict[st
                     matched[f"{r['name']}#{r['id']}"] = r["id"]
             continue
 
-        # 3. name substring 매칭
         rows = conn.execute(
             "SELECT id, name FROM nodes WHERE name LIKE ? AND status = 'active' LIMIT 5",
             (f"%{kw}%",),
@@ -104,15 +112,41 @@ def _match_start_nodes(conn, keywords: list[str], question: str = "") -> dict[st
     return matched
 
 
-def _get_triples(conn, node_ids: set[int]) -> list[Triple]:
-    """노드 ID 집합의 모든 연결 트리플 조회 (양방향). sentences 테이블 LEFT JOIN.
+def _get_mentions_for_nodes(conn, node_ids: set[int]) -> list[Mention]:
+    """노드 ID 집합이 언급된 모든 sentences 조회 (node_mentions JOIN sentences)."""
+    if not node_ids:
+        return []
+    ph = ",".join("?" * len(node_ids))
+    rows = conn.execute(
+        f"""
+        SELECT m.node_id, n.name AS node_name, m.sentence_id, s.text AS sentence_text
+        FROM node_mentions m
+        JOIN nodes n     ON n.id = m.node_id
+        JOIN sentences s ON s.id = m.sentence_id
+        WHERE m.node_id IN ({ph}) AND n.status='active'
+        """,
+        list(node_ids),
+    ).fetchall()
+    return [
+        Mention(
+            node_id=r["node_id"],
+            node_name=r["node_name"],
+            sentence_id=r["sentence_id"],
+            sentence_text=r["sentence_text"],
+        )
+        for r in rows
+    ]
 
-    last_used 업데이트는 하지 않음 — 호출자(retrieve)가 BFS 완료 후 배치 처리.
+
+def _get_edges_for_nodes(conn, node_ids: set[int]) -> list[Triple]:
+    """노드 집합과 의미 관계 엣지로 직접 연결된 인접 노드 조회 (양방향).
+
+    /review 승인된 엣지가 BFS 확장에 기여하도록.
+    sentence_id가 있으면 근거 문장도 함께 반환 (답변 컨텍스트 보강용).
     """
     if not node_ids:
         return []
-    placeholders = ",".join("?" * len(node_ids))
-    ids = list(node_ids)
+    ph = ",".join("?" * len(node_ids))
     rows = conn.execute(
         f"""
         SELECT e.id AS edge_id,
@@ -123,9 +157,10 @@ def _get_triples(conn, node_ids: set[int]) -> list[Triple]:
         JOIN nodes n1 ON n1.id = e.source_node_id
         JOIN nodes n2 ON n2.id = e.target_node_id
         LEFT JOIN sentences s ON s.id = e.sentence_id
-        WHERE (e.source_node_id IN ({placeholders}) OR e.target_node_id IN ({placeholders}))
+        WHERE (e.source_node_id IN ({ph}) OR e.target_node_id IN ({ph}))
+          AND n1.status='active' AND n2.status='active'
         """,
-        ids + ids,
+        list(node_ids) + list(node_ids),
     ).fetchall()
     return [
         Triple(
@@ -142,10 +177,28 @@ def _get_triples(conn, node_ids: set[int]) -> list[Triple]:
     ]
 
 
+def _get_co_mentioned_node_ids(conn, sentence_ids: set[int]) -> dict[int, list[tuple[int, str]]]:
+    """sentence_id 집합 → {sentence_id: [(node_id, node_name), ...]} 매핑.
+    인출 컨텍스트로 보여줄 '같은 문장의 다른 노드들' 수집용."""
+    if not sentence_ids:
+        return {}
+    ph = ",".join("?" * len(sentence_ids))
+    rows = conn.execute(
+        f"""
+        SELECT m.sentence_id, m.node_id, n.name
+        FROM node_mentions m
+        JOIN nodes n ON n.id = m.node_id
+        WHERE m.sentence_id IN ({ph}) AND n.status='active'
+        """,
+        list(sentence_ids),
+    ).fetchall()
+    result: dict[int, list[tuple[int, str]]] = {}
+    for r in rows:
+        result.setdefault(r["sentence_id"], []).append((r["node_id"], r["name"]))
+    return result
+
+
 # ─── 카테고리 인접 맵 ─────────────────────────────────────────
-# 소분류 레벨 1-hop 인접. 단방향 정의 → _build_adjacent_map으로 양방향 전개.
-# 인접에 인접은 허용하지 않음 (1-hop only).
-# 전체 설계 근거: docs/DESIGN_CATEGORY.md
 
 def _build_adjacent_map(pairs: list[tuple[str, str]]) -> dict[str, list[str]]:
     result: dict[str, list[str]] = {}
@@ -155,7 +208,6 @@ def _build_adjacent_map(pairs: list[tuple[str, str]]) -> dict[str, list[str]]:
     return result
 
 _ADJACENT_PAIRS: list[tuple[str, str]] = [
-    # BOD
     ("BOD.disease",    "MND.mental"),
     ("BOD.sleep",      "MND.mental"),
     ("BOD.sleep",      "MND.coping"),
@@ -163,7 +215,6 @@ _ADJACENT_PAIRS: list[tuple[str, str]] = [
     ("BOD.nutrition",  "FOD.ingredient"),
     ("BOD.nutrition",  "FOD.product"),
     ("BOD.medical",    "MON.insurance"),
-    # MND
     ("MND.emotion",    "REL.romance"),
     ("MND.emotion",    "REL.conflict"),
     ("MND.motivation", "WRK.jobchange"),
@@ -171,7 +222,6 @@ _ADJACENT_PAIRS: list[tuple[str, str]] = [
     ("MND.coping",     "HOB.sport"),
     ("MND.coping",     "HOB.outdoor"),
     ("MND.coping",     "REG.practice"),
-    # HOB
     ("HOB.sing",       "CUL.music"),
     ("HOB.outdoor",    "TRV.domestic"),
     ("HOB.outdoor",    "NAT.terrain"),
@@ -183,12 +233,10 @@ _ADJACENT_PAIRS: list[tuple[str, str]] = [
     ("HOB.collect",    "MON.spending"),
     ("HOB.social",     "REL.comm"),
     ("HOB.social",     "TRV.place"),
-    # CUL
     ("CUL.book",       "EDU.reading"),
     ("CUL.book",       "EDU.academic"),
     ("CUL.media",      "TEC.sw"),
     ("CUL.show",       "TRV.place"),
-    # WRK
     ("WRK.workplace",  "PER.colleague"),
     ("WRK.workplace",  "MON.income"),
     ("WRK.workplace",  "LAW.rights"),
@@ -199,52 +247,41 @@ _ADJACENT_PAIRS: list[tuple[str, str]] = [
     ("WRK.business",   "LAW.contract"),
     ("WRK.tool",       "TEC.sw"),
     ("WRK.tool",       "TEC.ai"),
-    # MON
     ("MON.income",     "LAW.tax"),
     ("MON.payment",    "LAW.tax"),
     ("MON.loan",       "LIV.housing"),
     ("MON.loan",       "LAW.contract"),
     ("MON.insurance",  "LAW.contract"),
     ("MON.invest",     "SOC.economy"),
-    # LAW
     ("LAW.contract",   "LIV.housing"),
     ("LAW.rights",     "TEC.security"),
     ("LAW.statute",    "WRK.workplace"),
     ("LAW.admin",      "LIV.moving"),
-    # EDU
     ("EDU.school",     "WRK.cert"),
     ("EDU.online",     "TEC.sw"),
     ("EDU.language",   "TRV.abroad"),
-    # TRV
     ("TRV.domestic",   "FOD.restaurant"),
     ("TRV.domestic",   "HOB.outdoor"),
     ("TRV.domestic",   "NAT.weather"),
     ("TRV.abroad",     "FOD.restaurant"),
     ("TRV.abroad",     "SOC.international"),
     ("TRV.place",      "NAT.terrain"),
-    # NAT
     ("NAT.animal",     "LIV.supply"),
     ("NAT.ecology",    "SOC.issue"),
-    # LIV
     ("LIV.housing",    "MON.loan"),
     ("LIV.housing",    "LAW.contract"),
     ("LIV.appliance",  "TEC.hw"),
     ("LIV.appliance",  "TEC.sw"),
     ("LIV.moving",     "TRV.place"),
-    # TEC
     ("TEC.ai",         "SOC.issue"),
-    # PER
     ("PER.colleague",  "WRK.workplace"),
     ("PER.org",        "WRK.workplace"),
     ("PER.family",     "REL.romance"),
     ("PER.friend",     "REL.comm"),
-    # REL
     ("REL.conflict",   "WRK.workplace"),
     ("REL.online",     "SOC.issue"),
-    # SOC
     ("SOC.international", "TRV.abroad"),
     ("SOC.politics",   "LAW.statute"),
-    # REG
     ("REG.practice",   "MND.coping"),
 ]
 
@@ -254,40 +291,31 @@ ADJACENT_SUBCATEGORIES: dict[str, list[str]] = _build_adjacent_map(_ADJACENT_PAI
 def _get_category_supplement_nodes(
     conn, start_node_ids: set[int], visited_ids: set[int]
 ) -> set[int]:
-    """시작 노드 소분류의 인접 소분류(1-hop)에 해당하는 미방문 노드 ID 집합 반환.
-
-    대분류 전체 조회 없음. ADJACENT_SUBCATEGORIES에 없는 소분류는 보완 조회 안 함.
-    인접의 인접은 탐색하지 않음 (1-hop only).
-    """
+    """시작 노드 소분류의 인접 소분류 노드 ID 집합 (미방문)."""
     if not start_node_ids:
         return set()
 
-    # 시작 노드들의 소분류 수집 (node_categories JOIN)
     ph = ",".join("?" * len(start_node_ids))
     rows = conn.execute(
         f"SELECT nc.category FROM node_categories nc WHERE nc.node_id IN ({ph})",
         list(start_node_ids),
     ).fetchall()
 
-    # 사용자 지정 category(대문자3글자.소분류 패턴이 아닌 것)는 보완 대상에서 제외
-    import re as _re
     subcats: set[str] = {
         r["category"] for r in rows
-        if r["category"] and _re.match(r"^[A-Z]{3}\.", r["category"])
+        if r["category"] and re.match(r"^[A-Z]{3}\.", r["category"])
     }
     if not subcats:
         return set()
 
-    # 인접 소분류 목록 수집 (1-hop, 중복 제거)
     adjacent: set[str] = set()
     for sub in subcats:
         adjacent.update(ADJACENT_SUBCATEGORIES.get(sub, []))
-    adjacent -= subcats  # 시작 소분류 자신은 제외
+    adjacent -= subcats
 
     if not adjacent:
         return set()
 
-    # 인접 소분류별 활성 노드 조회 (미방문, 소분류당 최대 20개)
     result: set[int] = set()
     for sub in adjacent:
         cat_rows = conn.execute(
@@ -306,37 +334,58 @@ def _get_category_supplement_nodes(
 # ─── LLM 헬퍼 ─────────────────────────────────────────────
 
 def _llm_expand_keywords(question: str) -> list[str]:
-    """질문 → 노드 후보 키워드 목록."""
     return retrieve_expand(question)
 
 
-def _llm_filter_sentences(question: str, triples: list[Triple]) -> list[Triple]:
-    """문장(sentence_text) 단위 LLM 필터. sentence_text 없으면 트리플 문자열로 대체."""
-    if not triples:
+def _llm_filter_mentions(question: str, mentions: list[Mention]) -> list[Mention]:
+    """sentence 단위 LLM 필터. 같은 sentence는 한 번만 판정."""
+    if not mentions:
         return []
-    return [
-        t for t in triples
-        if retrieve_filter_sentence(
-            question,
-            t.sentence_text if t.sentence_text else str(t),
+    decided: dict[int, bool] = {}
+    result: list[Mention] = []
+    for m in mentions:
+        if m.sentence_id not in decided:
+            decided[m.sentence_id] = retrieve_filter_sentence(question, m.sentence_text)
+        if decided[m.sentence_id]:
+            result.append(m)
+    return result
+
+
+def _llm_filter_edges(question: str, edges: list[Triple]) -> list[Triple]:
+    """의미 엣지 필터. 근거 sentence가 있으면 그걸 기준으로,
+    없으면 'src ─(label)→ tgt' 텍스트로 판정."""
+    if not edges:
+        return []
+    result: list[Triple] = []
+    for t in edges:
+        criterion = t.sentence_text or (
+            f"{t.src} —({t.label})→ {t.tgt}" if t.label else f"{t.src} ↔ {t.tgt}"
         )
-    ]
+        if retrieve_filter_sentence(question, criterion):
+            result.append(t)
+    return result
 
 
 def _llm_answer(
     question: str,
-    context_triples: list[Triple],
+    sentences: list[tuple[int, str]],
+    edges: list[Triple],
     images: Optional[list[str]] = None,
     history: Optional[list[dict]] = None,
 ) -> str:
-    """최종 컨텍스트로 자연어 답변 생성. sentence_text(원본 문장) 기준으로 모델에 전달."""
-    seen: set[str] = set()
+    """sentence 원문 + 사용자 승인 의미 엣지를 컨텍스트로 자연어 답변."""
     lines: list[str] = []
-    for t in context_triples:
-        txt = t.sentence_text if t.sentence_text else str(t)
-        if txt not in seen:
-            seen.add(txt)
-            lines.append(f"- {txt}")
+    seen: set[str] = set()
+    for _, text in sentences:
+        if text and text not in seen:
+            seen.add(text)
+            lines.append(f"- {text}")
+    # 의미 엣지: 근거 sentence가 컨텍스트에 이미 있으면 중복 표시 안 함
+    for t in edges:
+        if t.sentence_text and t.sentence_text in seen:
+            continue
+        rel = f"({t.label})" if t.label else "관련"
+        lines.append(f"- {t.src} ─{rel}→ {t.tgt}")
     context = "\n".join(lines)
     user_msg = f"알려진 사실:\n{context}\n\n질문: {question}"
     try:
@@ -359,20 +408,17 @@ def retrieve(
     images: Optional[list[str]] = None,
     history: Optional[list[dict]] = None,
 ) -> RetrieveResult:
-    """질문에 대한 BFS 인출 + LLM 답변. RetrieveResult 반환."""
+    """질문에 대한 BFS 인출 + LLM 답변. v12: node_mentions JOIN 기반."""
     result = RetrieveResult()
 
     conn = get_connection(db_path)
     try:
-        # 1. LLM 확장 (또는 단순 단어 분리)
+        # 1. 키워드 확장
         if use_llm:
             keywords = _llm_expand_keywords(question)
         else:
             keywords = question.split()
-
-        # 2. 질문 원문 토큰을 keywords에 추가 → aliases 매칭으로 1인칭 등 자동 처리
-        raw_tokens = question.split()
-        keywords = list(dict.fromkeys(keywords + raw_tokens))
+        keywords = list(dict.fromkeys(keywords + question.split()))
 
         start_nodes = _match_start_nodes(conn, keywords, question=question)
         if not start_nodes:
@@ -381,78 +427,157 @@ def retrieve(
 
         result.start_nodes = list(start_nodes.keys())
 
-        # 3. BFS
+        # 2. BFS — node_mentions JOIN + edges 보조
         visited_node_ids: set[int] = set(start_nodes.values())
+        visited_sentence_ids: set[int] = set()
         visited_edge_ids: set[int] = set()
-        visited_sentence_ids: set[int] = set()  # 문장 단위 중복 방지
-        all_visited_edge_ids: list[int] = []  # last_used 배치 업데이트용
-        context_triples: list[Triple] = []
+        all_mentions: list[Mention] = []
+        all_edges: list[Triple] = []
         current_node_ids = set(start_nodes.values())
 
         for _ in range(max_layers):
-            layer_triples = [
-                t for t in _get_triples(conn, current_node_ids)
-                if t.edge_id not in visited_edge_ids
-                and (t.sentence_id is None or t.sentence_id not in visited_sentence_ids)
+            # 2-1) 같은 sentence 공출현 경로
+            mentions = [
+                m for m in _get_mentions_for_nodes(conn, current_node_ids)
+                if m.sentence_id not in visited_sentence_ids
             ]
-            if not layer_triples:
+            # 2-2) 사용자 승인된 의미 엣지 경로
+            edge_triples = [
+                t for t in _get_edges_for_nodes(conn, current_node_ids)
+                if t.edge_id not in visited_edge_ids
+            ]
+
+            if not mentions and not edge_triples:
                 break
 
-            # LLM 필터 (sentence_text 기준)
             if use_llm:
-                filtered = _llm_filter_sentences(question, layer_triples)
+                filtered_m = _llm_filter_mentions(question, mentions)
+                filtered_e = _llm_filter_edges(question, edge_triples)
             else:
-                filtered = layer_triples
+                filtered_m = mentions
+                filtered_e = edge_triples
 
-            context_triples.extend(filtered)
-            for t in filtered:
+            if not filtered_m and not filtered_e:
+                break
+
+            all_mentions.extend(filtered_m)
+            all_edges.extend(filtered_e)
+            for m in filtered_m:
+                visited_sentence_ids.add(m.sentence_id)
+            for t in filtered_e:
                 visited_edge_ids.add(t.edge_id)
-                all_visited_edge_ids.append(t.edge_id)
                 if t.sentence_id is not None:
                     visited_sentence_ids.add(t.sentence_id)
 
-            # 다음 레이어: 통과 트리플의 새 노드 (Triple에서 직접 추출)
-            new_ids = (
-                {t.src_id for t in filtered} | {t.tgt_id for t in filtered}
-            ) - visited_node_ids
+            # 다음 레이어: 공출현 노드 + 엣지 인접 노드
+            new_ids: set[int] = set()
+            co_map = _get_co_mentioned_node_ids(
+                conn, {m.sentence_id for m in filtered_m}
+            )
+            for nodes_in_sentence in co_map.values():
+                for nid, _name in nodes_in_sentence:
+                    if nid not in visited_node_ids:
+                        new_ids.add(nid)
+            for t in filtered_e:
+                for nid in (t.src_id, t.tgt_id):
+                    if nid not in visited_node_ids:
+                        new_ids.add(nid)
+
             if not new_ids:
                 break
             visited_node_ids.update(new_ids)
             current_node_ids = new_ids
 
-        # 4. 카테고리 보완: BFS 미도달 동카테고리 노드 추가 탐색
+        # 3. 카테고리 보완 (mentions + edges 양쪽 모두 시도)
         if use_llm:
             cat_node_ids = _get_category_supplement_nodes(
                 conn, set(start_nodes.values()), visited_node_ids
             )
             if cat_node_ids:
-                cat_triples = [
-                    t for t in _get_triples(conn, cat_node_ids)
+                cat_mentions = [
+                    m for m in _get_mentions_for_nodes(conn, cat_node_ids)
+                    if m.sentence_id not in visited_sentence_ids
+                ]
+                cat_edges = [
+                    t for t in _get_edges_for_nodes(conn, cat_node_ids)
                     if t.edge_id not in visited_edge_ids
                 ]
-                if cat_triples:
-                    filtered_cat = _llm_filter_sentences(question, cat_triples)
-                    context_triples.extend(filtered_cat)
-                    for t in filtered_cat:
+                if cat_mentions:
+                    fm = _llm_filter_mentions(question, cat_mentions)
+                    all_mentions.extend(fm)
+                    for m in fm:
+                        visited_sentence_ids.add(m.sentence_id)
+                if cat_edges:
+                    fe = _llm_filter_edges(question, cat_edges)
+                    all_edges.extend(fe)
+                    for t in fe:
                         visited_edge_ids.add(t.edge_id)
-                        all_visited_edge_ids.append(t.edge_id)
+                        if t.sentence_id is not None:
+                            visited_sentence_ids.add(t.sentence_id)
 
-        result.context_triples = context_triples
+        # 4. 결과 정리: sentence 단위 dedup
+        seen_sids: set[int] = set()
+        context_sentences: list[tuple[int, str]] = []
+        for m in all_mentions:
+            if m.sentence_id not in seen_sids:
+                seen_sids.add(m.sentence_id)
+                context_sentences.append((m.sentence_id, m.sentence_text))
+        # 의미 엣지의 근거 sentence도 컨텍스트에 포함
+        for t in all_edges:
+            if t.sentence_id and t.sentence_id not in seen_sids and t.sentence_text:
+                seen_sids.add(t.sentence_id)
+                context_sentences.append((t.sentence_id, t.sentence_text))
+        result.context_sentences = context_sentences
 
-        # last_used 배치 업데이트 (BFS 완료 후 1회)
-        if all_visited_edge_ids:
-            ph = ",".join("?" * len(all_visited_edge_ids))
+        # 하위 호환: sentence 공출현은 트리플로 펼치고 + 의미 엣지는 그대로 추가
+        co_map = _get_co_mentioned_node_ids(conn, {sid for sid, _ in context_sentences})
+        triples: list[Triple] = []
+        for sid, text in context_sentences:
+            nodes_in_s = co_map.get(sid, [])
+            if not nodes_in_s:
+                continue
+            if len(nodes_in_s) == 1:
+                nid, name = nodes_in_s[0]
+                triples.append(Triple(
+                    src=name, label=None, tgt="",
+                    src_id=nid, tgt_id=0,
+                    sentence_id=sid, sentence_text=text,
+                ))
+            else:
+                for i in range(len(nodes_in_s) - 1):
+                    s_nid, s_name = nodes_in_s[i]
+                    t_nid, t_name = nodes_in_s[i + 1]
+                    triples.append(Triple(
+                        src=s_name, label=None, tgt=t_name,
+                        src_id=s_nid, tgt_id=t_nid,
+                        sentence_id=sid, sentence_text=text,
+                    ))
+        # 의미 엣지는 label과 함께 그대로 추가 (시각화·근거 표시용)
+        triples.extend(all_edges)
+        result.context_triples = triples
+
+        # 5. last_used 배치 업데이트 (의미 엣지 사용 통계)
+        if visited_edge_ids:
+            ph = ",".join("?" * len(visited_edge_ids))
             conn.execute(
                 f"UPDATE edges SET last_used=datetime('now') WHERE id IN ({ph})",
-                all_visited_edge_ids,
+                list(visited_edge_ids),
             )
             conn.commit()
 
-        # 4. LLM 답변
+        # 6. LLM 답변 (sentence + 의미 엣지 모두 컨텍스트로)
         if use_llm:
-            result.answer = _llm_answer(question, context_triples, images=images, history=history)
+            result.answer = _llm_answer(
+                question, context_sentences, all_edges,
+                images=images, history=history,
+            )
         else:
-            result.answer = "\n".join(str(t) for t in context_triples) or "관련 정보 없음"
+            lines = [t for _, t in context_sentences]
+            for t in all_edges:
+                if not (t.sentence_text and t.sentence_text in {s for _, s in context_sentences}):
+                    rel = f"({t.label})" if t.label else "관련"
+                    lines.append(f"{t.src} ─{rel}→ {t.tgt}")
+            result.answer = "\n".join(lines) or "관련 정보 없음"
 
     finally:
         conn.close()
@@ -466,6 +591,6 @@ if __name__ == "__main__":
         print(f"\n질문: {q}")
         r = retrieve(q, use_llm=False)
         print(f"시작 노드: {r.start_nodes}")
-        for t in r.context_triples:
-            print(f"  {t}  (sentence: {t.sentence_text!r})")
+        for sid, text in r.context_sentences:
+            print(f"  [{sid}] {text}")
         print(f"답변: {r.answer}")

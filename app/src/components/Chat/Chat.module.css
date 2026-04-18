@@ -284,6 +284,41 @@
 }
 .changeBtn:hover { color: var(--accent); }
 
+/* v12: 자동 저장 결과 요약 (노드 N개 / 언급 N건) */
+.changeSummary {
+  font-size: 12px;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+}
+.changeHint {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-family: 'Noto Sans KR', sans-serif;
+}
+.changeNodes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+/* v12: structure-suggest 초안 편집 */
+.draftTextarea {
+  background: var(--surface-1);
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  resize: vertical;
+  min-height: 80px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.draftTextarea:focus { border-color: var(--accent); }
+
 /* BFS 탐색 중 */
 .bfsBubble {
   background: var(--surface-2);

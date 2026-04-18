@@ -198,6 +198,23 @@
   transition: opacity 0.15s;
 }
 .primaryBtn:hover { opacity: 0.85; }
+.primaryBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* StepSimulation 입력 textarea */
+.simTextarea {
+  background: var(--surface-1);
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.simTextarea:focus { border-color: var(--accent); }
 .skipBtn {
   text-align: center;
   font-size: 11px;

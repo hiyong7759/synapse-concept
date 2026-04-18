@@ -1,15 +1,13 @@
-"""Synapse 저장 파이프라인.
+"""Synapse 자동 저장 파이프라인 (v12).
 
-흐름:
-  입력 텍스트
-  → sentences 테이블에 문장 저장
-  → LLM 전처리: 대명사/날짜 치환, 모호성 감지
-  → LLM 추출 (task6): retention + 노드 + 엣지 + 카테고리 + deactivate 한 번에
-  → 오타 교정: 추출된 노드 이름을 기존 노드+별칭과 자모 거리 비교 (distance 1)
-  → extract deactivate 필드로 기존 엣지 비활성화
-  → sentences.retention 업데이트
-  → DB 저장 (nodes with category + edges with sentence_id)
-  → LLM 별칭 제안 (새 노드 시에만)
+원칙:
+- 입력 단위 = 마크다운 구조화된 게시물 (posts 1건 = 저장 호출 1건)
+- 자동 저장 범위: post + sentences + nodes + node_mentions (+ heading 경로 카테고리)
+- edges 자동 생성 없음. LLM 추론 카테고리 저장 없음. 자동 별칭 없음 (인칭대명사만 예외)
+- 평문 입력 → structure-suggest 게이트 → SaveResult.markdown_draft 반환 (저장 보류)
+
+맥락 공유:
+- save-pronoun context = 같은 게시물의 다른 sentences (직전 대화 주입 폐기)
 """
 
 from __future__ import annotations
@@ -20,38 +18,52 @@ from datetime import date
 from typing import Optional
 
 from .db import get_connection, DB_PATH
-from .llm import chat, LLMError, save_pronoun, llm_extract
-from .markdown import parse_markdown
+from .llm import chat, LLMError, save_pronoun, llm_extract, structure_suggest
+from .markdown import parse_markdown, has_heading
 
 
 @dataclass
 class SaveResult:
+    post_id: Optional[int] = None
     sentence_ids: list[int] = field(default_factory=list)
-    triples_added: list[tuple[str, Optional[str], str]] = field(default_factory=list)
-    edge_ids_added: list[int] = field(default_factory=list)
     nodes_added: list[str] = field(default_factory=list)
     node_ids_added: list[int] = field(default_factory=list)
+    mentions_added: int = 0
+    unresolved_added: list[tuple[int, str]] = field(default_factory=list)  # (sentence_id, token)
     edges_deactivated: list[tuple[str, Optional[str], str]] = field(default_factory=list)
+    markdown_draft: Optional[str] = None  # structure-suggest 초안 (저장 보류 시)
+    question: Optional[str] = None
+    # 하위 호환용 (항상 빈 값)
+    triples_added: list[tuple[str, Optional[str], str]] = field(default_factory=list)
+    edge_ids_added: list[int] = field(default_factory=list)
     aliases_added: list[tuple[str, str]] = field(default_factory=list)
     typos_corrected: list[tuple[str, str]] = field(default_factory=list)
-    question: Optional[str] = None
 
 
 # ─── DB 헬퍼 ──────────────────────────────────────────────
 
+def _insert_post(conn, markdown: str) -> int:
+    cur = conn.execute("INSERT INTO posts (markdown) VALUES (?)", (markdown,))
+    return cur.lastrowid
+
+
 def _insert_sentence(
-    conn, text: str, role: str = "user", retention: str = "memory"
+    conn,
+    text: str,
+    post_id: Optional[int] = None,
+    position: int = 0,
+    role: str = "user",
+    retention: str = "memory",
 ) -> int:
     cur = conn.execute(
-        "INSERT INTO sentences (text, role, retention) VALUES (?,?,?)",
-        (text, role, retention),
+        "INSERT INTO sentences (post_id, position, text, role, retention) VALUES (?,?,?,?,?)",
+        (post_id, position, text, role, retention),
     )
     return cur.lastrowid
 
 
 def _upsert_node(conn, name: str) -> tuple[int, bool]:
-    """노드 삽입 또는 기존 ID 반환. 대소문자 무시, active 노드만 매칭.
-    동명 노드가 여러 개면 가장 최근 업데이트된 노드 사용. (id, is_new) 반환."""
+    """노드 삽입 또는 기존 ID 반환. 대소문자 무시, active 노드만 매칭."""
     row = conn.execute(
         "SELECT id FROM nodes WHERE name=? COLLATE NOCASE AND status='active' "
         "ORDER BY updated_at DESC LIMIT 1",
@@ -64,7 +76,6 @@ def _upsert_node(conn, name: str) -> tuple[int, bool]:
 
 
 def _add_node_category(conn, node_id: int, category: Optional[str]) -> None:
-    """노드에 카테고리 추가 (중복 무시)."""
     if not category:
         return
     conn.execute(
@@ -73,30 +84,25 @@ def _add_node_category(conn, node_id: int, category: Optional[str]) -> None:
     )
 
 
-def _insert_edge(
-    conn, src_id: int, tgt_id: int, label: Optional[str], sentence_id: Optional[int]
-) -> int:
+def _add_mention(conn, node_id: int, sentence_id: int) -> bool:
     cur = conn.execute(
-        "INSERT INTO edges (source_node_id, target_node_id, label, sentence_id) VALUES (?,?,?,?)",
-        (src_id, tgt_id, label, sentence_id),
+        "INSERT OR IGNORE INTO node_mentions (node_id, sentence_id) VALUES (?,?)",
+        (node_id, sentence_id),
     )
-    return cur.lastrowid
+    return cur.rowcount > 0
 
 
-
-def _deactivate_edge(conn, edge_id: int) -> None:
-    conn.execute("UPDATE edges SET last_used=datetime('now') WHERE id=?", (edge_id,))
-    conn.execute(
-        """
-        UPDATE nodes SET status='inactive', updated_at=datetime('now')
-        WHERE id = (SELECT target_node_id FROM edges WHERE id=?)
-        """,
-        (edge_id,),
+def _add_unresolved(conn, sentence_id: int, token: str) -> bool:
+    """치환 실패 토큰을 unresolved_tokens에 기록. 새 레코드면 True."""
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO unresolved_tokens (sentence_id, token) VALUES (?,?)",
+        (sentence_id, token),
     )
+    return cur.rowcount > 0
 
 
 def _deactivate_by_sentence_ids(conn, sentence_ids: list[int]) -> list[tuple[str, Optional[str], str]]:
-    """sentence_id 목록에 해당하는 엣지를 비활성화. 비활성화된 (src, label, tgt) 리스트 반환."""
+    """승인된 의미 엣지를 sentence_id 기준으로 비활성화."""
     if not sentence_ids:
         return []
     deactivated = []
@@ -112,283 +118,113 @@ def _deactivate_by_sentence_ids(conn, sentence_ids: list[int]) -> list[tuple[str
         sentence_ids,
     ).fetchall()
     for r in rows:
-        _deactivate_edge(conn, r["edge_id"])
+        conn.execute("UPDATE edges SET last_used=datetime('now') WHERE id=?", (r["edge_id"],))
+        conn.execute(
+            "UPDATE nodes SET status='inactive', updated_at=datetime('now') WHERE id = "
+            "(SELECT target_node_id FROM edges WHERE id=?)",
+            (r["edge_id"],),
+        )
         deactivated.append((r["src"], r["label"], r["tgt"]))
     return deactivated
 
 
-# ─── LLM 전처리 ───────────────────────────────────────────
+# ─── 토큰 감지 ────────────────────────────────────────────
 
 _DATE_WORDS = (
-    # 일 — 과거
     '어제', '그저께', '그제', '엊그제', '그끄제',
-    # 일 — 현재/미래
     '오늘', '내일', '모레', '글피', '그글피',
-    # 주
     '이번주', '이번 주', '지난주', '저번주', '다음주', '다음 주',
-    # 월
     '이번달', '지난달', '다음달',
-    # 연
     '올해', '작년', '내년', '재작년', '내후년',
 )
-_PRONOUN_WORDS = (
-    # 사물
-    '이거', '그거', '저거', '이것', '그것', '저것',
-    # 장소
-    '거기', '여기', '저기', '이곳', '그곳', '저곳',
-    # 방향
-    '이쪽', '그쪽', '저쪽', '이리', '저리',
-    # 인물 — 존대
-    '이분', '그분', '저분',
-    # 인물 — 비존대
-    '걔', '쟤', '얘', '그사람', '그 사람', '그애', '그 애', '그녀',
-    # 지시형용사/부사
-    '이런', '그런', '저런', '이러한', '그러한', '저러한',
-    '이렇게', '그렇게', '저렇게',
-    # 모호 시간 (LLM 판단)
-    '방금', '아까', '지금', '요즘', '최근', '이번에',
-    '그날', '그때', '당시', '주말',
-    # 요일 (맥락 판단 — "다음 목요일" vs "목요일마다")
-    '월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일',
-)
 _AGE_PATTERN = re.compile(r'\d{1,3}(살|세)|[0-9]0대')
-_NEG_WORDS = ('안', '못')
 _NEG_PATTERN = re.compile(r'(?:^|\s)(안|못)\s')
 
-_NEG_2PASS_PROMPT = (
-    '이 문장에서 부정부사(안/못)의 대상을 찾아라.\n'
-    'JSON만 출력: {"negation": "안|못", "subject": "주어노드", "object": "대상노드"}\n'
-    '대상을 특정할 수 없으면: {"negation": null}'
-)
 
+def _preprocess(text: str, post_context: str = "") -> dict:
+    """지시대명사/날짜 치환. 모호하면 {"question": ...}.
 
-def _postprocess_negation(
-    text: str, nodes: list[dict], edges: list[dict], use_llm: bool = True
-) -> tuple[list[dict], list[dict]]:
-    """부정부사(안/못) 후처리.
-
-    1차: 엣지 label에 안/못이 있으면 노드+엣지로 변환.
-    2차: 문장에 안/못이 있는데 1차에서도 감지 안 되면 LLM 2-pass 호출.
-    """
-    neg_match = _NEG_PATTERN.search(f' {text} ')
-    if not neg_match:
-        return nodes, edges
-
-    neg_word = neg_match.group(1)  # "안" or "못"
-    node_names = {n['name'] for n in nodes}
-
-    # 이미 노드에 있으면 패스
-    if neg_word in node_names:
-        return nodes, edges
-
-    # 1차: label에 안/못이 있으면 → 노드+엣지 변환
-    new_edges = []
-    converted = False
-    for e in edges:
-        if e.get('label') in _NEG_WORDS:
-            neg = e['label']
-            src = e.get('source', '')
-            tgt = e.get('target', '')
-            # 노드 추가
-            if neg not in node_names:
-                nodes.append({'name': neg})
-                node_names.add(neg)
-            # 엣지 변환: src→neg(null), neg→tgt(null)
-            new_edges.append({'source': src, 'label': None, 'target': neg})
-            new_edges.append({'source': neg, 'label': None, 'target': tgt})
-            converted = True
-        else:
-            new_edges.append(e)
-
-    if converted:
-        return nodes, new_edges
-
-    # 2차: 완전 누락 → LLM 2-pass
-    if use_llm:
-        try:
-            from .llm import mlx_chat
-            raw = mlx_chat('extract', f'{_NEG_2PASS_PROMPT}\n\n문장: {text}', max_tokens=128)
-            match = re.search(r'\{.*\}', raw, re.DOTALL)
-            if match:
-                d2 = json.loads(match.group())
-                if d2.get('negation'):
-                    neg = d2['negation']
-                    subj = d2.get('subject', '')
-                    obj = d2.get('object', '')
-                    if neg not in node_names:
-                        nodes.append({'name': neg})
-                    if subj and subj in node_names:
-                        edges.append({'source': subj, 'label': None, 'target': neg})
-                    if obj and obj in node_names and obj != neg:
-                        edges.append({'source': neg, 'label': None, 'target': obj})
-        except Exception:
-            pass
-
-    return nodes, edges
-
-
-def _preprocess(text: str, context: str = "") -> dict:
-    """지시대명사/날짜 치환 + 생략 복원. 모호하면 {"question": ...}, 정상이면 {"text": ...} 반환.
-
-    항상 save-pronoun을 호출. 생략 복원은 직전 대화 context가 있어야 동작.
+    v12: post_context = 같은 게시물의 다른 sentences (개행 구분 문자열).
     """
     needs_today = any(w in text for w in _DATE_WORDS)
     needs_age = bool(_AGE_PATTERN.search(text))
     today = date.today().isoformat() if (needs_today or needs_age) else ""
-    return save_pronoun(text, context=context, today=today)
+    return save_pronoun(text, context=post_context, today=today)
 
 
+def _detect_negation_tokens(text: str) -> list[str]:
+    """부정부사 '안'/'못' 감지해 노드 후보로 반환."""
+    tokens: list[str] = []
+    for m in _NEG_PATTERN.finditer(f' {text} '):
+        neg = m.group(1)
+        if neg not in tokens:
+            tokens.append(neg)
+    return tokens
 
-# ─── 오타 교정 ────────────────────────────────────────────
 
-def _correct_typos(
-    conn,
-    ext_nodes: list[dict],
-    ext_edges: list[dict],
-    ext_deactivate: list[dict],
-) -> tuple[list[dict], list[dict], list[dict], list[tuple[str, str]]]:
-    """추출된 노드/엣지 이름을 기존 노드+별칭과 대조하여 오타 교정.
+# ─── 날짜 정규화·분할 ────────────────────────────────────
 
-    Returns: (ext_nodes, ext_edges, ext_deactivate, corrections)
-    corrections: [(typo_name, canonical_name), ...]
+def _normalize_dates_to_korean(text: str) -> str:
+    """ISO 날짜를 한국어 표기로 변환. sentence 저장 직전 적용.
+
+    예: '2026-04-18' → '2026년 4월 18일', '2026-04' → '2026년 4월'
+    한글 조사 뒤에서도 매칭되도록 \\b 대신 negative lookbehind/lookahead 사용.
     """
-    from .jamo import decompose, levenshtein, is_typo_candidate
-
-    # 1. DB에서 활성 노드 이름 + 별칭 로드
-    rows = conn.execute(
-        "SELECT id, name FROM nodes WHERE status='active'"
-    ).fetchall()
-    alias_rows = conn.execute(
-        """SELECT a.alias, n.name FROM aliases a
-           JOIN nodes n ON n.id = a.node_id
-           WHERE n.status = 'active'"""
-    ).fetchall()
-
-    # canonical 이름 → (이름, 엣지 수) 맵
-    canonical: dict[str, str] = {}  # lookup_key → node_name
-    for r in rows:
-        canonical[r["name"]] = r["name"]
-    for r in alias_rows:
-        canonical[r["alias"]] = r["name"]
-
-    # 자모 분해 캐시 (기존 노드 이름만, 별칭은 정확매칭용)
-    node_names = list({r["name"] for r in rows})
-    jamo_cache: dict[str, str] = {n: decompose(n) for n in node_names}
-
-    # 엣지 수 캐시 (tiebreaker용) — 단일 쿼리로 수집
-    edge_counts: dict[str, int] = {}
-    if node_names:
-        ph = ",".join("?" * len(node_names))
-        ec_rows = conn.execute(
-            f"""SELECT n.name, COUNT(e.id) AS cnt FROM nodes n
-                LEFT JOIN edges e ON (e.source_node_id = n.id OR e.target_node_id = n.id)
-                WHERE n.name IN ({ph}) AND n.status='active'
-                GROUP BY n.name""",
-            node_names,
-        ).fetchall()
-        for r in ec_rows:
-            edge_counts[r["name"]] = r["cnt"]
-
-    # 2. 추출된 이름 수집
-    extracted_names: set[str] = set()
-    for n in ext_nodes:
-        extracted_names.add(n["name"])
-    for e in ext_edges:
-        extracted_names.add(e["source"])
-        extracted_names.add(e["target"])
-    for d in ext_deactivate:
-        if d.get("source"):
-            extracted_names.add(d["source"])
-        if d.get("target"):
-            extracted_names.add(d["target"])
-
-    # 3. 오타 감지
-    corrections: dict[str, str] = {}  # typo → canonical
-    for name in extracted_names:
-        if name in canonical:
-            continue  # 정확매칭 → 교정 불필요
-        jamo_name = decompose(name)
-        if len(jamo_name) < 6:
-            continue
-        best_match: str | None = None
-        best_edges = -1
-        for node_name, jamo_node in jamo_cache.items():
-            if abs(len(jamo_name) - len(jamo_node)) > 1:
-                continue
-            if levenshtein(jamo_name, jamo_node) == 1:
-                ec = edge_counts.get(node_name, 0)
-                if ec > best_edges:
-                    best_match = node_name
-                    best_edges = ec
-        if best_match:
-            corrections[name] = best_match
-
-    if not corrections:
-        return ext_nodes, ext_edges, ext_deactivate, []
-
-    # 4. 치환 적용
-    def fix(name: str) -> str:
-        return corrections.get(name, name)
-
-    ext_nodes = [
-        {**n, "name": fix(n["name"])} for n in ext_nodes
-    ]
-    ext_edges = [
-        {**e, "source": fix(e["source"]), "target": fix(e["target"])}
-        for e in ext_edges
-    ]
-    ext_deactivate = [
-        {**d,
-         "source": fix(d["source"]) if d.get("source") else d.get("source"),
-         "target": fix(d["target"]) if d.get("target") else d.get("target")}
-        for d in ext_deactivate
-    ]
-
-    # 5. 오타를 별칭으로 등록 (재발 방지)
-    for typo_name, canonical_name in corrections.items():
-        node_row = conn.execute(
-            "SELECT id FROM nodes WHERE name=? AND status='active' ORDER BY updated_at DESC LIMIT 1",
-            (canonical_name,),
-        ).fetchone()
-        if node_row:
-            conn.execute(
-                "INSERT OR IGNORE INTO aliases (alias, node_id) VALUES (?,?)",
-                (typo_name, node_row["id"]),
-            )
-
-    return ext_nodes, ext_edges, ext_deactivate, list(corrections.items())
+    text = re.sub(
+        r'(?<!\d)(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)',
+        lambda m: f"{m.group(1)}년 {int(m.group(2))}월 {int(m.group(3))}일",
+        text,
+    )
+    text = re.sub(
+        r'(?<!\d)(\d{4})-(\d{1,2})(?!\d)(?!-)',
+        lambda m: f"{m.group(1)}년 {int(m.group(2))}월",
+        text,
+    )
+    return text
 
 
-# ─── 별칭 ─────────────────────────────────────────────────
+def _expand_date_tokens(text: str) -> list[str]:
+    """본문에서 날짜 패턴 발견 시 (년·월·일) 단위로 노드 후보 반환.
 
-_ALIAS_SYSTEM = """당신은 한국어 지식 그래프 별칭 추출기입니다.
-주어진 노드 이름의 별칭(줄임말, 영어 원문, 다국어 표기, 흔한 오타)을 JSON 배열로만 출력하세요. 다른 텍스트 금지.
+    한국어 표기('2026년 4월 18일')만 인식 — _normalize_dates_to_korean 이후
+    호출되므로 ISO는 이미 변환된 상태.
+    한 sentence에 발견된 모든 단위(년/월/일)가 같은 sentence에 mention된다:
+      "2026년 4월 18일 병원 갔어" → ['2026년', '4월', '18일']
+    """
+    out: list[str] = []
+    seen: set[str] = set()
 
-규칙:
-- 100% 확실한 동의어만 포함 (추측 금지)
-- 노드 이름 자체는 제외
-- 없으면 반드시 [] 반환
+    def add(*tokens: str) -> None:
+        for t in tokens:
+            if t and t not in seen:
+                seen.add(t)
+                out.append(t)
 
-예시:
-"스타벅스" → ["Starbucks", "스벅"]
-"리액트 네이티브" → ["React Native", "RN"]
-"허리디스크" → ["요추디스크", "추간판탈출증"]
-"맥북프로" → ["MacBook Pro", "맥프로"]
-"김민수" → []"""
+    # 가장 구체적인 패턴부터: YYYY년 M월 D일
+    for m in re.finditer(r'(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일', text):
+        add(f"{m.group(1)}년", f"{int(m.group(2))}월", f"{int(m.group(3))}일")
+    # YYYY년 M월
+    for m in re.finditer(r'(\d{4})년\s*(\d{1,2})월(?!\s*\d{1,2}일)', text):
+        add(f"{m.group(1)}년", f"{int(m.group(2))}월")
+    # YYYY년 단독
+    for m in re.finditer(r'(\d{4})년(?!\s*\d{1,2}월)', text):
+        add(f"{m.group(1)}년")
+    # M월 D일 (년 미상)
+    for m in re.finditer(r'(?<![년\d])(\d{1,2})월\s*(\d{1,2})일', text):
+        add(f"{int(m.group(1))}월", f"{int(m.group(2))}일")
+    # M월 단독 (년 미상)
+    for m in re.finditer(r'(?<![년\d])(\d{1,2})월(?!\s*\d{1,2}일)', text):
+        add(f"{int(m.group(1))}월")
 
-_FIRST_PERSON_ALIASES = ("내", "저", "제", "나의", "저의", "제가", "나는", "저는", "내가", "제가", "나한테", "저한테")
+    return out
 
 
-def _suggest_aliases(node_name: str) -> list[str]:
-    try:
-        raw = chat(_ALIAS_SYSTEM, node_name, temperature=0, max_tokens=64)
-        match = re.search(r"\[.*?\]", raw, re.DOTALL)
-        if not match:
-            return []
-        candidates = json.loads(match.group())
-        return [a for a in candidates if isinstance(a, str) and a != node_name]
-    except Exception:
-        return []
+# ─── 별칭 — 자동 등록 금지, 인칭대명사만 예외 ──────────────
+
+_FIRST_PERSON_ALIASES = (
+    "내", "저", "제", "나의", "저의", "제가", "나는", "저는",
+    "내가", "제가", "나한테", "저한테",
+)
 
 
 def _register_first_person_aliases(conn, node_id: int) -> None:
@@ -399,133 +235,116 @@ def _register_first_person_aliases(conn, node_id: int) -> None:
         )
 
 
-# ─── 메인 API ─────────────────────────────────────────────
+# ─── 기존 카테고리 경로 수집 (structure-suggest 컨텍스트) ─
 
-def _match_category_from_db(conn, node_names: list[str]) -> Optional[str]:
-    """추출된 노드 이름으로 DB category를 검색하여 사용자 지정 경로 매칭.
-
-    17개 기본 분류(대문자 3글자.소분류)가 아닌 사용자 지정 category만 대상.
-    여러 노드 이름이 같은 category에 매칭되면 그 category 반환.
-    """
-    if not node_names:
-        return None
-    # DB에 존재하는 사용자 지정 category 수집
-    cats_per_name: list[set[str]] = []
-    for name in node_names:
-        rows = conn.execute(
-            "SELECT DISTINCT nc.category FROM node_categories nc "
-            "JOIN nodes n ON n.id = nc.node_id "
-            "WHERE nc.category LIKE ? AND n.status='active'",
-            (f"%{name}%",),
-        ).fetchall()
-        cats = {r[0] for r in rows if r[0] and not re.match(r"^[A-Z]{3}\.", r[0])}
-        if cats:
-            cats_per_name.append(cats)
-    if not cats_per_name:
-        return None
-    # 모든 매칭 이름에서 겹치는 category
-    common = cats_per_name[0]
-    for cats in cats_per_name[1:]:
-        common &= cats
-    return common.pop() if common else (cats_per_name[0].pop() if cats_per_name else None)
+def _collect_known_paths(conn, limit: int = 30) -> list[str]:
+    """사용자 정의 카테고리 경로 목록 (최근 사용 순)."""
+    rows = conn.execute(
+        """SELECT category, MAX(created_at) AS latest
+           FROM node_categories
+           GROUP BY category
+           ORDER BY latest DESC
+           LIMIT ?""",
+        (limit,),
+    ).fetchall()
+    return [r["category"] for r in rows]
 
 
-def _save_items(
-    conn,
-    items: list[tuple[Optional[str], str]],
-    result: SaveResult,
-    use_llm: bool,
-    context_sentences: Optional[list[str]],
-) -> None:
-    """(경로, 항목) 리스트를 처리하여 노드/엣지 저장. 마크다운 모드용."""
-    for category_path, item_text in items:
-        # sentence 저장
-        sid = _insert_sentence(conn, item_text)
-        result.sentence_ids.append(sid)
+# ─── 메인 저장 로직 ───────────────────────────────────────
 
-        # extract
-        if use_llm:
-            try:
-                extracted = llm_extract(item_text, context_sentences=context_sentences)
-            except LLMError:
-                extracted = {"nodes": [], "edges": []}
-        else:
-            extracted = {"nodes": [], "edges": []}
-
-        ext_nodes = extracted.get("nodes", [])
-        ext_edges = extracted.get("edges", [])
-        ext_deactivate = extracted.get("deactivate", [])  # [sentence_id, ...]
-        retention = extracted.get("retention", "memory")
-
-        # 부정부사 후처리
-        ext_nodes, ext_edges = _postprocess_negation(
-            item_text, ext_nodes, ext_edges, use_llm=use_llm
-        )
-
-        # target 없는 엣지 필터
-        ext_edges = [e for e in ext_edges if e.get("source") and e.get("target")]
-
-        # 오타 교정
-        if ext_nodes or ext_edges:
-            ext_nodes, ext_edges, _, corrections = _correct_typos(
-                conn, ext_nodes, ext_edges, []
-            )
-            result.typos_corrected.extend(corrections)
-
-        # deactivate: sentence_id 기준 비활성화
-        if ext_deactivate:
-            deact_sids = [s for s in ext_deactivate if isinstance(s, int)]
-            deactivated = _deactivate_by_sentence_ids(conn, deact_sids)
-            result.edges_deactivated.extend(deactivated)
-
-        # retention 업데이트
-        conn.execute(
-            "UPDATE sentences SET retention=? WHERE id=?", (retention, sid)
-        )
-
-        if not ext_nodes and not ext_edges:
+def _merge_nodes_extracted(extracted_nodes: list[dict], extra_names: list[str]) -> list[dict]:
+    seen = set()
+    result: list[dict] = []
+    for n in extracted_nodes:
+        name = n.get("name") if isinstance(n, dict) else None
+        if not name or name in seen:
             continue
+        seen.add(name)
+        result.append({"name": name})
+    for name in extra_names:
+        if name and name not in seen:
+            seen.add(name)
+            result.append({"name": name})
+    return result
 
-        # heading 경로가 있으면 category 덮어쓰기
+
+def _save_one_item(
+    conn,
+    item_text: str,
+    category_path: Optional[str],
+    post_id: int,
+    position: int,
+    post_context: str,
+    use_llm: bool,
+    retrieve_context_sentences: Optional[list[tuple[int, str]]],
+    result: SaveResult,
+) -> None:
+    """게시물 내 항목 하나 저장."""
+    # 1. 지시어 치환 (같은 게시물의 다른 문장들 context)
+    effective_text = item_text
+    unresolved_tokens: list[str] = []
+    if use_llm:
+        try:
+            pre = _preprocess(item_text, post_context=post_context)
+            if pre.get("question"):
+                result.question = pre["question"]
+                return
+            effective_text = pre.get("text", item_text)
+            unresolved_tokens = pre.get("unresolved", []) or []
+        except LLMError:
+            pass
+
+    # 1-1. ISO 날짜 → 한국어 정규화 (사용자 언급 공간 = 한국어)
+    effective_text = _normalize_dates_to_korean(effective_text)
+
+    # 2. sentence 저장 (post_id + position)
+    sid = _insert_sentence(conn, effective_text, post_id=post_id, position=position)
+    result.sentence_ids.append(sid)
+
+    # 2-1. 치환 실패 토큰을 unresolved_tokens에 기록
+    for token in unresolved_tokens:
+        if _add_unresolved(conn, sid, token):
+            result.unresolved_added.append((sid, token))
+
+    # 3. extract (edges·category 필드는 엔진에서 드롭됨)
+    if use_llm:
+        try:
+            extracted = llm_extract(effective_text, context_sentences=retrieve_context_sentences)
+        except LLMError:
+            extracted = {"retention": "memory", "nodes": [], "deactivate": []}
+    else:
+        extracted = {"retention": "memory", "nodes": [], "deactivate": []}
+
+    ext_nodes = extracted.get("nodes", [])
+    ext_deactivate = extracted.get("deactivate", [])
+    retention = extracted.get("retention", "memory")
+
+    # 4. 규칙 기반 토큰 감지 (부정부사 + 날짜 분할)
+    neg_tokens = _detect_negation_tokens(effective_text)
+    date_tokens = _expand_date_tokens(effective_text)
+    ext_nodes = _merge_nodes_extracted(ext_nodes, neg_tokens + date_tokens)
+
+    # 5. deactivate
+    if ext_deactivate:
+        deact_sids = [s for s in ext_deactivate if isinstance(s, int)]
+        result.edges_deactivated.extend(_deactivate_by_sentence_ids(conn, deact_sids))
+
+    # 6. retention
+    conn.execute("UPDATE sentences SET retention=? WHERE id=?", (retention, sid))
+
+    # 7. 노드 upsert + mentions + (heading 경로) category
+    for node in ext_nodes:
+        name = node["name"]
+        nid, is_new = _upsert_node(conn, name)
+        if _add_mention(conn, nid, sid):
+            result.mentions_added += 1
         if category_path:
-            for node in ext_nodes:
-                node["category"] = category_path
-
-        # 노드 upsert
-        name_to_id: dict[str, int] = {}
-        for node in ext_nodes:
-            nid, is_new = _upsert_node(conn, node["name"])
-            _add_node_category(conn, nid, node.get("category"))
-            name_to_id[node["name"]] = nid
-            if is_new:
-                result.nodes_added.append(node["name"])
-                result.node_ids_added.append(nid)
-                if node["name"] == "나":
-                    _register_first_person_aliases(conn, nid)
-
-        for edge in ext_edges:
-            for nm in (edge["source"], edge["target"]):
-                if nm not in name_to_id:
-                    nid, is_new = _upsert_node(conn, nm)
-                    _add_node_category(conn, nid, category_path)
-                    name_to_id[nm] = nid
-                    if is_new:
-                        result.nodes_added.append(nm)
-                        result.node_ids_added.append(nid)
-                        if nm == "나":
-                            _register_first_person_aliases(conn, nid)
-
-        # 엣지 insert — 각 항목의 sentence_id 연결
-        for edge in ext_edges:
-            src_id = name_to_id.get(edge["source"])
-            tgt_id = name_to_id.get(edge["target"])
-            if src_id is None or tgt_id is None:
-                continue
-            edge_id = _insert_edge(conn, src_id, tgt_id, edge.get("label"), sid)
-            result.triples_added.append((edge["source"], edge.get("label"), edge["target"]))
-            result.edge_ids_added.append(edge_id)
-
-    conn.commit()
+            _add_node_category(conn, nid, category_path)
+        if is_new:
+            result.nodes_added.append(name)
+            result.node_ids_added.append(nid)
+            if name == "나":
+                _register_first_person_aliases(conn, nid)
 
 
 def save(
@@ -533,192 +352,80 @@ def save(
     db_path: str = DB_PATH,
     use_llm: bool = True,
     images: Optional[list[str]] = None,
-    context_sentences: Optional[list[str]] = None,
+    context_sentences: Optional[list[tuple[int, str]]] = None,
 ) -> SaveResult:
-    """텍스트를 그래프에 저장. SaveResult 반환.
+    """텍스트를 게시물 단위로 저장. SaveResult 반환.
 
-    마크다운(heading 있음) → 항목별 extract, heading 경로를 category로 설정.
-    평문(heading 없음) → 기존 파이프라인 (preprocess → extract → category DB 매칭 or LLM 폴백).
-    use_llm=False이면 LLM 단계를 건너뜀 (서버 없이 구조 테스트 시 사용).
+    v12:
+    - 매 save() 호출 = posts 1건 INSERT (게시물 단위)
+    - heading 없으면 structure-suggest 호출 → markdown_draft 반환 (저장 보류)
+    - 마크다운 모드에서는 markdown.py가 돌려준 항목들을 순서대로 저장
+
+    context_sentences: 인출에서 가져온 (sentence_id, text) 쌍. extract의 deactivate 판단용.
     """
     result = SaveResult()
 
-    # 마크다운 파싱
-    parsed = parse_markdown(text)
-    is_markdown = any(path is not None for path, _ in parsed)
-
     conn = get_connection(db_path)
     try:
-        if is_markdown:
-            # ── 마크다운 모드: 항목별 extract ──
-            _save_items(conn, parsed, result, use_llm, context_sentences)
-
-            # 새 노드 별칭 제안
-            if use_llm and result.nodes_added:
-                name_to_id_map = dict(zip(result.nodes_added, result.node_ids_added))
-                for node_name in result.nodes_added:
-                    aliases = _suggest_aliases(node_name)
-                    node_id = name_to_id_map.get(node_name)
-                    if node_id is None:
-                        continue
-                    for alias in aliases:
-                        try:
-                            conn.execute(
-                                "INSERT OR IGNORE INTO aliases (alias, node_id) VALUES (?,?)",
-                                (alias, node_id),
-                            )
-                            result.aliases_added.append((alias, node_name))
-                        except Exception:
-                            pass
-                conn.commit()
-        else:
-            # ── 평문 모드: 기존 파이프라인 ──
-
-            # 1. 문단 분리 → sentences 저장
-            paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()] or [text]
-            sentence_ids: list[int] = []
-            for paragraph in paragraphs:
-                sid = _insert_sentence(conn, paragraph)
-                sentence_ids.append(sid)
-            result.sentence_ids = sentence_ids
-
-            # 2. LLM 전처리: 치환 / 생략 복원 / 모호성 감지
-            #    직��� 대화를 DB에서 가져와 context로 전달
-            effective_text = text
+        # heading 없으면 평문 → structure-suggest 게이트
+        if not has_heading(text):
             if use_llm:
                 try:
-                    recent = conn.execute(
-                        "SELECT text FROM sentences ORDER BY id DESC LIMIT 2"
-                    ).fetchall()
-                    context = "\n".join(
-                        f"사용자: {r['text']}" for r in reversed(recent)
-                    ) if recent else ""
-                    pre = _preprocess(text, context=context)
-                    if pre.get("question"):
-                        result.question = pre["question"]
-                        conn.commit()
+                    known = _collect_known_paths(conn)
+                    draft = structure_suggest(text, known_paths=known)
+                    # 초안이 여전히 heading 없으면 실패로 간주하고 그대로 저장
+                    if has_heading(draft):
+                        result.markdown_draft = draft
                         return result
-                    effective_text = pre.get("text", text)
                 except LLMError:
                     pass
+            # use_llm=False 또는 structure-suggest 실패 → heading 없이 저장 진행
+            # (운영상 이 경로는 거의 타지 않음)
 
-            # 3. LLM 추출
-            if use_llm:
-                try:
-                    extracted = llm_extract(effective_text, context_sentences=context_sentences)
-                except LLMError:
-                    extracted = {"nodes": [], "edges": []}
-            else:
-                extracted = {"nodes": [], "edges": []}
-
-            ext_nodes = extracted.get("nodes", [])
-            ext_edges = extracted.get("edges", [])
-            ext_deactivate = extracted.get("deactivate", [])
-            retention = extracted.get("retention", "memory")
-
-            # 부정부사 후처리
-            ext_nodes, ext_edges = _postprocess_negation(
-                effective_text, ext_nodes, ext_edges, use_llm=use_llm
-            )
-
-            # 오타 교정
-            if ext_nodes or ext_edges:
-                ext_nodes, ext_edges, _, corrections = _correct_typos(
-                    conn, ext_nodes, ext_edges, []
-                )
-                result.typos_corrected = corrections
-
-            ext_edges = [e for e in ext_edges if e.get("source") and e.get("target")]
-
-            # deactivate: sentence_id 기준 비활성화
-            if ext_deactivate:
-                deact_sids = [s for s in ext_deactivate if isinstance(s, int)]
-                deactivated = _deactivate_by_sentence_ids(conn, deact_sids)
-                result.edges_deactivated.extend(deactivated)
-
-            if sentence_ids:
-                ph = ",".join("?" * len(sentence_ids))
-                conn.execute(
-                    f"UPDATE sentences SET retention=? WHERE id IN ({ph})",
-                    [retention] + sentence_ids,
-                )
-
-            if not ext_nodes and not ext_edges:
-                conn.commit()
-                return result
-
-            # category 매칭: 추출된 노드 이름으로 DB의 사용자 지정 category 검색
-            matched_category = _match_category_from_db(
-                conn, [n["name"] for n in ext_nodes]
-            )
-
-            # 7. DB 저장
-            sentence_id = sentence_ids[0] if sentence_ids else None
-            name_to_id: dict[str, int] = {}
-
-            for node in ext_nodes:
-                # 사용자 지정 category 매칭되면 적용, 아니면 LLM 분류 유지
-                cat = node.get("category")
-                if matched_category:
-                    cat = matched_category
-                nid, is_new = _upsert_node(conn, node["name"])
-                _add_node_category(conn, nid, cat)
-                name_to_id[node["name"]] = nid
-                if is_new:
-                    result.nodes_added.append(node["name"])
-                    result.node_ids_added.append(nid)
-                    if node["name"] == "나":
-                        _register_first_person_aliases(conn, nid)
-
-            for edge in ext_edges:
-                for nm in (edge["source"], edge["target"]):
-                    if nm not in name_to_id:
-                        nid, is_new = _upsert_node(conn, nm)
-                        name_to_id[nm] = nid
-                        if is_new:
-                            result.nodes_added.append(nm)
-                            result.node_ids_added.append(nid)
-                            if nm == "나":
-                                _register_first_person_aliases(conn, nid)
-
-            for edge in ext_edges:
-                src_id = name_to_id.get(edge["source"])
-                tgt_id = name_to_id.get(edge["target"])
-                if src_id is None or tgt_id is None:
-                    continue
-                edge_id = _insert_edge(conn, src_id, tgt_id, edge.get("label"), sentence_id)
-                result.triples_added.append((edge["source"], edge.get("label"), edge["target"]))
-                result.edge_ids_added.append(edge_id)
-
+        parsed = parse_markdown(text)
+        if not parsed:
             conn.commit()
+            return result
 
-            # 8. 새 노드 별칭 제안
-            if use_llm and result.nodes_added:
-                name_to_id_map = dict(zip(result.nodes_added, result.node_ids_added))
-                for node_name in result.nodes_added:
-                    aliases = _suggest_aliases(node_name)
-                    node_id = name_to_id_map.get(node_name)
-                    if node_id is None:
-                        continue
-                    for alias in aliases:
-                        try:
-                            conn.execute(
-                                "INSERT OR IGNORE INTO aliases (alias, node_id) VALUES (?,?)",
-                                (alias, node_id),
-                            )
-                            result.aliases_added.append((alias, node_name))
-                        except Exception:
-                            pass
-                conn.commit()
+        # posts 1건 INSERT (원본 마크다운 보관)
+        post_id = _insert_post(conn, text)
+        result.post_id = post_id
 
+        # 같은 게시물 내 모든 문장을 context 문자열로 준비
+        all_items_text = "\n".join(item for _, item in parsed)
+
+        # 항목별 저장
+        for position, (category_path, item_text) in enumerate(parsed):
+            # 현재 항목을 제외한 나머지 게시물 문장들을 context로
+            others = [item for i, (_, item) in enumerate(parsed) if i != position]
+            post_context = "\n".join(others)
+
+            _save_one_item(
+                conn,
+                item_text,
+                category_path,
+                post_id=post_id,
+                position=position,
+                post_context=post_context,
+                use_llm=use_llm,
+                retrieve_context_sentences=context_sentences,
+                result=result,
+            )
+            if result.question:
+                # 모호성 감지 → 현재 항목까지만 커밋 후 중단
+                break
+
+        conn.commit()
     finally:
         conn.close()
 
     return result
 
 
+# ─── 문장/노드 관리 ───────────────────────────────────────
+
 def rollback(edge_ids: list[int], node_ids: list[int], db_path: str = DB_PATH) -> dict:
-    """저장된 엣지/노드를 삭제해 롤백. [취소] 버튼용."""
+    """엣지/노드 삭제. /review 승인된 엣지 회수용."""
     conn = get_connection(db_path)
     edges_deleted = 0
     nodes_deleted = 0
@@ -733,6 +440,7 @@ def rollback(edge_ids: list[int], node_ids: list[int], db_path: str = DB_PATH) -
             orphan_ids = [
                 r[0] for r in conn.execute(
                     f"""SELECT id FROM nodes WHERE id IN ({ph})
+                        AND id NOT IN (SELECT node_id FROM node_mentions)
                         AND id NOT IN (SELECT source_node_id FROM edges)
                         AND id NOT IN (SELECT target_node_id FROM edges)""",
                     node_ids,
@@ -757,19 +465,12 @@ def split_node(
     edge_ids_to_move: list[int],
     db_path: str = DB_PATH,
 ) -> dict:
-    """동명 노드 분리. 기존 노드에서 지정된 엣지를 새 노드로 이동.
-
-    - 기존 노드의 name으로 새 노드 생성 (동명, 다른 id)
-    - edge_ids_to_move의 엣지를 새 노드로 이동 (source 또는 target)
-    - 양쪽 별칭 등록
-    """
     conn = get_connection(db_path)
     try:
         orig = conn.execute("SELECT id, name FROM nodes WHERE id=?", (node_id,)).fetchone()
         if not orig:
             return {"error": "node not found"}
 
-        # 새 노드 생성 (같은 name) + 카테고리 복사
         cur = conn.execute("INSERT INTO nodes (name) VALUES (?)", (orig["name"],))
         new_id = cur.lastrowid
         conn.execute(
@@ -778,7 +479,6 @@ def split_node(
             (new_id, node_id),
         )
 
-        # 엣지 이동
         moved = 0
         for eid in edge_ids_to_move:
             edge = conn.execute("SELECT source_node_id, target_node_id FROM edges WHERE id=?", (eid,)).fetchone()
@@ -791,7 +491,6 @@ def split_node(
                 conn.execute("UPDATE edges SET target_node_id=? WHERE id=?", (new_id, eid))
                 moved += 1
 
-        # 별칭 등록
         conn.execute("INSERT OR IGNORE INTO aliases (alias, node_id) VALUES (?,?)", (alias_for_original, node_id))
         conn.execute("INSERT OR IGNORE INTO aliases (alias, node_id) VALUES (?,?)", (alias_for_new, new_id))
 
@@ -812,10 +511,6 @@ def merge_nodes(
     remove_id: int,
     db_path: str = DB_PATH,
 ) -> dict:
-    """두 노드를 병합. remove_id의 엣지/별칭을 keep_id로 이동, 비활성화.
-
-    split_node()의 반대 동작. 오타 노드 정리용.
-    """
     conn = get_connection(db_path)
     try:
         keep = conn.execute("SELECT id, name FROM nodes WHERE id=?", (keep_id,)).fetchone()
@@ -823,31 +518,40 @@ def merge_nodes(
         if not keep or not remove:
             return {"error": "node not found"}
 
-        # 엣지 이동: source
         cur1 = conn.execute(
             "UPDATE edges SET source_node_id=? WHERE source_node_id=?",
             (keep_id, remove_id),
         )
-        # 엣지 이동: target
         cur2 = conn.execute(
             "UPDATE edges SET target_node_id=? WHERE target_node_id=?",
             (keep_id, remove_id),
         )
         edges_moved = cur1.rowcount + cur2.rowcount
 
-        # 별칭 이동
+        conn.execute(
+            """INSERT OR IGNORE INTO node_mentions (node_id, sentence_id, created_at)
+               SELECT ?, sentence_id, created_at FROM node_mentions WHERE node_id=?""",
+            (keep_id, remove_id),
+        )
+        conn.execute("DELETE FROM node_mentions WHERE node_id=?", (remove_id,))
+
+        conn.execute(
+            """INSERT OR IGNORE INTO node_categories (node_id, category, created_at)
+               SELECT ?, category, created_at FROM node_categories WHERE node_id=?""",
+            (keep_id, remove_id),
+        )
+        conn.execute("DELETE FROM node_categories WHERE node_id=?", (remove_id,))
+
         aliases_moved = []
         for r in conn.execute("SELECT alias FROM aliases WHERE node_id=?", (remove_id,)).fetchall():
             aliases_moved.append(r["alias"])
         conn.execute("UPDATE aliases SET node_id=? WHERE node_id=?", (keep_id, remove_id))
 
-        # 제거 노드 이름을 별칭으로 등록 (재발 방지)
         conn.execute(
             "INSERT OR IGNORE INTO aliases (alias, node_id) VALUES (?,?)",
             (remove["name"], keep_id),
         )
 
-        # 제거 노드 비활성화
         conn.execute(
             "UPDATE nodes SET status='inactive', updated_at=datetime('now') WHERE id=?",
             (remove_id,),
@@ -868,21 +572,19 @@ def merge_nodes(
 
 
 def find_suspected_typos(db_path: str = DB_PATH) -> list[dict]:
-    """모든 활성 노드를 스캔하여 오타 의심 쌍 반환."""
     from .jamo import decompose, levenshtein
 
     conn = get_connection(db_path)
     try:
         rows = conn.execute(
             """SELECT n.id, n.name,
-                  (SELECT COUNT(*) FROM edges
-                   WHERE source_node_id=n.id OR target_node_id=n.id) AS edge_count
+                  (SELECT COUNT(*) FROM node_mentions WHERE node_id=n.id) AS mention_count
                FROM nodes n WHERE n.status='active'"""
         ).fetchall()
     finally:
         conn.close()
 
-    nodes = [{"id": r["id"], "name": r["name"], "edge_count": r["edge_count"]} for r in rows]
+    nodes = [{"id": r["id"], "name": r["name"], "mention_count": r["mention_count"]} for r in rows]
     jamo_cache = {n["name"]: decompose(n["name"]) for n in nodes}
 
     suspects = []
@@ -896,23 +598,25 @@ def find_suspected_typos(db_path: str = DB_PATH) -> list[dict]:
                 continue
             if abs(len(ja) - len(jb)) > 1:
                 continue
-            dist = levenshtein(ja, jb)
-            if dist == 1:
+            if levenshtein(ja, jb) == 1:
                 suspects.append({
                     "node_a": a,
                     "node_b": b,
-                    "jamo_distance": dist,
+                    "jamo_distance": 1,
                 })
 
-    suspects.sort(key=lambda s: max(s["node_a"]["edge_count"], s["node_b"]["edge_count"]), reverse=True)
+    suspects.sort(
+        key=lambda s: max(s["node_a"]["mention_count"], s["node_b"]["mention_count"]),
+        reverse=True,
+    )
     return suspects
 
 
 def save_response(text: str, db_path: str = DB_PATH) -> int:
-    """assistant 응답을 sentences에 저장. 그래프 추출 없음. sentence_id 반환."""
+    """assistant 응답 저장. post_id 없음 (대화 기록 전용)."""
     conn = get_connection(db_path)
     try:
-        sid = _insert_sentence(conn, text, role="assistant")
+        sid = _insert_sentence(conn, text, post_id=None, position=0, role="assistant")
         conn.commit()
     finally:
         conn.close()
@@ -931,7 +635,6 @@ def search_sentences(
     limit: int = 20,
     db_path: str = DB_PATH,
 ) -> dict:
-    """sentences 검색. 키워드·날짜·role 필터, 페이지네이션."""
     conn = get_connection(db_path)
     try:
         where: list[str] = []
@@ -957,7 +660,7 @@ def search_sentences(
         ).fetchone()[0]
 
         rows = conn.execute(
-            f"""SELECT s.id, s.text, s.role, s.retention, s.created_at
+            f"""SELECT s.id, s.post_id, s.position, s.text, s.role, s.retention, s.created_at
                 FROM sentences s {where_clause}
                 ORDER BY s.created_at DESC
                 LIMIT ? OFFSET ?""",
@@ -973,6 +676,8 @@ def search_sentences(
         "items": [
             {
                 "id": r["id"],
+                "post_id": r["post_id"],
+                "position": r["position"],
                 "text": r["text"],
                 "role": r["role"],
                 "retention": r["retention"],
@@ -984,9 +689,15 @@ def search_sentences(
 
 
 def get_sentence_impact(sentence_id: int, db_path: str = DB_PATH) -> dict:
-    """문장 삭제 시 영향 받는 그래프 관계 미리보기."""
     conn = get_connection(db_path)
     try:
+        mentions = conn.execute(
+            """SELECT n.id, n.name
+               FROM node_mentions m
+               JOIN nodes n ON n.id = m.node_id
+               WHERE m.sentence_id = ?""",
+            (sentence_id,),
+        ).fetchall()
         edges = conn.execute(
             """SELECT e.id, n1.name AS src, e.label, n2.name AS tgt
                FROM edges e
@@ -1000,6 +711,9 @@ def get_sentence_impact(sentence_id: int, db_path: str = DB_PATH) -> dict:
 
     return {
         "sentence_id": sentence_id,
+        "affected_mentions": [
+            {"node_id": m["id"], "node_name": m["name"]} for m in mentions
+        ],
         "affected_edges": [
             {"id": e["id"], "source": e["src"], "label": e["label"], "target": e["tgt"]}
             for e in edges
@@ -1013,12 +727,15 @@ def update_sentence(
     use_llm: bool = True,
     db_path: str = DB_PATH,
 ) -> SaveResult:
-    """문장 수정: 기존 엣지 삭제 → 새 텍스트 재분석 → 새 엣지 삽입."""
+    """문장 수정: 기존 mentions 끊고 텍스트 갱신. 새 mentions는 즉시 재추출하지 않음
+    (게시물 단위 재저장은 post 수정 API를 통해). Phase 2에서는 최소 인터페이스만."""
     conn = get_connection(db_path)
     try:
-        # 기존 엣지 삭제
-        conn.execute("DELETE FROM edges WHERE sentence_id = ?", (sentence_id,))
-        # 문장 텍스트 업데이트
+        conn.execute("DELETE FROM node_mentions WHERE sentence_id = ?", (sentence_id,))
+        conn.execute(
+            "UPDATE edges SET sentence_id = NULL WHERE sentence_id = ?",
+            (sentence_id,),
+        )
         conn.execute(
             "UPDATE sentences SET text = ? WHERE id = ?",
             (new_text, sentence_id),
@@ -1027,37 +744,33 @@ def update_sentence(
     finally:
         conn.close()
 
-    # 새 텍스트로 재분석 (save 파이프라인 재실행)
-    return save(new_text, db_path=db_path, use_llm=use_llm)
+    return SaveResult()
 
 
 def delete_sentence(sentence_id: int, db_path: str = DB_PATH) -> dict:
-    """문장 삭제: 연결된 엣지 삭제 → 고아 노드 보존 → 문장 삭제."""
     conn = get_connection(db_path)
     try:
-        edges_deleted = conn.execute(
-            "DELETE FROM edges WHERE sentence_id = ?", (sentence_id,)
-        ).rowcount
+        mentions_deleted = conn.execute(
+            "SELECT COUNT(*) FROM node_mentions WHERE sentence_id = ?",
+            (sentence_id,),
+        ).fetchone()[0]
         conn.execute("DELETE FROM sentences WHERE id = ?", (sentence_id,))
         conn.commit()
     finally:
         conn.close()
 
-    return {"sentence_id": sentence_id, "edges_deleted": edges_deleted}
+    return {"sentence_id": sentence_id, "mentions_deleted": mentions_deleted}
 
 
 if __name__ == "__main__":
     tests = [
-        "오늘 병원 다녀왔어",
-        "세레콕시브 처방 받았어. 허리디스크 L4-L5 진단이야.",
-        "나는 조용희고 웹기획자야.",
+        "# 병원.2026-04-18\n오늘 병원 다녀왔어\n세레콕시브 처방받았어\n허리디스크 L4-L5 진단",
+        "# 직장.더나은\n## 개발팀\n- 팀장 박지수\n- 프론트엔드 김민수",
     ]
     for text in tests:
         r = save(text, use_llm=False)
-        print(f"\n입력: {text!r}")
+        print(f"\n입력:\n{text}")
+        print(f"  post_id: {r.post_id}")
         print(f"  sentence_ids: {r.sentence_ids}")
-        for src, label, tgt in r.triples_added:
-            lbl = f" —({label})→ " if label else " → "
-            print(f"  [저장] {src}{lbl}{tgt}")
-        if r.nodes_added:
-            print(f"  [신규 노드] {r.nodes_added}")
+        print(f"  nodes_added: {r.nodes_added}")
+        print(f"  mentions_added: {r.mentions_added}")

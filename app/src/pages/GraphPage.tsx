@@ -4,6 +4,7 @@ import { Network, DataSet } from 'vis-network/standalone';
 import type { NodeItem, EdgeItem } from '../types';
 import { api } from '../api';
 import styles from './GraphPage.module.css';
+import { NodeCategoryEditor } from '../components/Graph/NodeCategoryEditor';
 
 // ── 타입 ──────────────────────────────────────────────────────
 interface VNode {
@@ -520,7 +521,8 @@ export function GraphPage() {
               {isHub(detailNode) ? '  ·  허브 노드' : ''}
             </div>
 
-            <div className={styles.nodeEditGuide}>수정하려면 비서에게 말해주세요</div>
+            <NodeCategoryEditor nodeId={detailNode.id} />
+
             <button className={styles.nodeDetailChatBtn} onClick={() => navigate('/chat/new')}>채팅으로 이동</button>
           </>
         )}

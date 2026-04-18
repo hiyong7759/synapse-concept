@@ -4,11 +4,15 @@ export interface HistoryItem {
 }
 
 export interface SaveResponse {
-  triples_added: [string, string | null, string][];
-  edge_ids_added: number[];
+  // v12: 게시물 단위 저장 (post_id). 엣지·별칭 자동 생성 없음
+  post_id: number | null;
   nodes_added: string[];
   node_ids_added: number[];
+  mentions_added: number;
   edges_deactivated: [string, string | null, string][];
+  // 하위 호환 필드 (항상 빈 배열)
+  triples_added: [string, string | null, string][];
+  edge_ids_added: number[];
   aliases_added: [string, string][];
 }
 
@@ -22,6 +26,7 @@ export interface ChatResponse {
   retrieve?: RetrieveResponse;
   answer?: string;
   question?: string;
+  markdown_draft?: string;  // v12: structure-suggest 초안 (저장 보류)
 }
 
 export interface NodeItem {
@@ -53,4 +58,5 @@ export type Message =
   | { id: string; type: 'change_notice'; save: SaveResponse; createdAt: string }
   | { id: string; type: 'retrieve_result'; retrieve: RetrieveResponse; createdAt: string }
   | { id: string; type: 'clarify'; question: string; createdAt: string }
+  | { id: string; type: 'markdown_draft'; draft: string; originalText: string; images?: string[]; createdAt: string }
   | { id: string; type: 'searching'; loaderMode?: 'save' | 'retrieve' };
