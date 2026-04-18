@@ -182,9 +182,6 @@ export function ExplorerPage() {
                     <>
                       <div className={styles.sentenceText}>{s.text}</div>
                       <div className={styles.sentenceMeta}>
-                        <span className={[styles.retentionBadge, s.retention === 'memory' ? styles.retentionMemory : styles.retentionDaily].join(' ')}>
-                          {s.retention === 'memory' ? '기억' : '일상'}
-                        </span>
                         <span className={styles.sentenceTime}>{formatTime(s.created_at)}</span>
                       </div>
                     </>

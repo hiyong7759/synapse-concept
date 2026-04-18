@@ -38,7 +38,6 @@ export interface SentenceItem {
   id: number;
   text: string;
   role: 'user' | 'assistant';
-  retention: string;
   created_at: string;
 }
 
