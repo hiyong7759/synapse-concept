@@ -220,7 +220,7 @@ def _train_with_unsloth(config: TaskConfig):
     )
 
     # 마지막 N개 레이어만 LoRA 적용
-    num_layers = model.config.num_hidden_layers  # gemma-4-E2B: 35
+    num_layers = getattr(model.config, 'num_hidden_layers', None) or model.config.text_config.num_hidden_layers  # gemma-4-E2B: 35
     layers = list(range(num_layers - config.layers_to_transform, num_layers))
 
     model = FastLanguageModel.get_peft_model(
@@ -247,6 +247,14 @@ def _train_with_unsloth(config: TaskConfig):
     dataset = dataset.map(format_chat)
 
     from transformers import EarlyStoppingCallback
+    from trl import DataCollatorForCompletionOnlyLM
+
+    # 응답 토큰에만 loss 적용 (프롬프트 마스킹 — MLX의 --mask-prompt와 동일)
+    response_template = "<|turn>model\n"
+    collator = DataCollatorForCompletionOnlyLM(
+        response_template=response_template,
+        tokenizer=tokenizer,
+    )
 
     has_eval = dataset.get("validation") is not None
 
@@ -255,6 +263,7 @@ def _train_with_unsloth(config: TaskConfig):
         tokenizer=tokenizer,
         train_dataset=dataset["train"],
         eval_dataset=dataset.get("validation"),
+        data_collator=collator,
         args=SFTConfig(
             output_dir=config.adapter_out,
             max_steps=config.iters,
@@ -306,7 +315,7 @@ def _train_with_peft(config: TaskConfig):
             if short_name in config.target_modules and short_name not in valid_modules:
                 valid_modules.append(short_name)
 
-    num_layers = model.config.num_hidden_layers
+    num_layers = getattr(model.config, 'num_hidden_layers', None) or model.config.text_config.num_hidden_layers
     layers = list(range(num_layers - config.layers_to_transform, num_layers))
 
     lora_config = LoraConfig(
