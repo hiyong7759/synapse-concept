@@ -554,30 +554,71 @@ PER BOD MND FOD LIV MON WRK TEC EDU LAW TRV NAT CUL HOB SOC REL REG
 
 ---
 
-## 학습 설정 (RunPod — 2026-04-14 정상화)
+## 학습 설정 (MLX — 2026-04-18 현행화)
+
+RunPod은 운영 불안정(디스크·드라이버·스케줄 문제)으로 폐기. 어댑터별 하이퍼파라미터를 MLX 기준으로 재조정한 뒤 아래 값으로 수렴.
+
+### 공통 하이퍼파라미터 (모든 어댑터 동일)
 
 | 파라미터 | 값 | 비고 |
 |---------|-----|------|
-| base model | google/gemma-4-E2B-it | FP16 |
-| rank | 8 | |
-| alpha | 8.0 (scale=1.0) | 기존 160→8 수정 |
+| base model | unsloth/gemma-4-E2B-it-UD-MLX-4bit | MLX 4bit QLoRA |
+| rank | 16 | |
+| scale (alpha/rank) | 32.0 | |
 | lora_dropout | 0.05 | |
-| weight_decay | 0.01 | |
-| batch_size | 2 | |
-| gradient_accumulation | 8 | effective batch=16 |
-| lr | 2e-4 | |
-| layers_to_transform | last 8 | 기존 전체 35→8 수정 |
-| early stopping | patience=3 | load_best_model_at_end |
-| eval/save_steps | 50 | |
+| keys | self_attn.{q,k,v,o}_proj | attention only |
+| num_layers | 8 | last 8 layers |
+| batch_size | 1 | |
+| grad_accumulation_steps | 4 | effective batch = 4 |
+| learning_rate | 2e-4 | |
+| max_seq_length | 2048 | |
+| grad_checkpoint | true | |
+| mask_prompt | true | 응답 토큰에만 loss |
+| val_batches | 25 | |
+| steps_per_report | 20 | |
+| steps_per_eval | 100 | |
+| save_every | 200 | |
 
-스크립트: `scripts/runpod/train_all.py`
+설정 파일: `configs/mlx/_base.yaml`
+
+### iters (어댑터별 자동 계산)
+
+```
+iters = max(150, (n_train × 3 epochs) // effective_batch)
+      = max(150, (n_train × 3) // 4)
+```
+
+`scripts/mlx/train_all.py`의 `compute_iters()`가 각 task의 `train.jsonl` 건수로 계산.
+
+| 어댑터 | n_train | iters |
+|---|---|---|
+| extract-core | 1798 | 1348 |
+| extract-state | 490 | 367 |
+| retrieve-filter | 1269 | 951 |
+| save-pronoun | 660 | 495 |
+| retrieve-expand | 468 | 351 |
+| routing | 265 | 198 |
+| save-state-personal | 438 | 328 |
+| security-personal | 495 | 371 |
+| security-context | 415 | 311 |
+| security-access | 319 | 239 |
+| ... | ... | ... |
+
+### LoRA 파라미터는 공통, iters만 어댑터별
+
+과거 실험(v1~v5)에서 rank·scale·dropout 조정 시 전반적으로 성능 차이가 작거나 오히려 악화. **iters를 데이터 크기에 맞춰 자동 계산**하는 것이 가장 단순하고 효과적이라고 판단.
+
+스크립트: `scripts/mlx/train_all.py`
+어댑터 출력: `runpod_output/mlx_adapters/<task>/`
+로그: `runpod_output/mlx_logs/<task>.log`
 
 ---
 
 ## 다음 세션 할 일
 
-1. RunPod 재학습 (A5000, extract-core/state 분리 + 정상화된 하이퍼파라미터)
-2. eval: extract-core 추출 정확도 + extract-state deactivate 정확도 측정
-3. save.py 파이프라인 수정 (extract 1회 → core + state 순차 호출)
-4. GGUF 변환 + lm_head 버그 확인
-5. Org 데이터셋 생성 스크립트 작성
+v12(조사 엣지 폐기 + node_mentions) 반영하여 3개 어댑터 재학습.
+
+1. extract-core 재학습 — edges 필드 드롭한 데이터로 재학습 (데이터 변환 완료)
+2. save-pronoun 재학습 — 신규 출력 스키마 `{text, tokens[{name, category?}], unresolved[string], question?}` 데이터 재생성 후 학습
+3. retrieve-filter 재학습 — 입력 단위 트리플 → sentence로 데이터 재생성 후 학습
+4. Org 데이터셋 생성 스크립트 작성 (후순위)
