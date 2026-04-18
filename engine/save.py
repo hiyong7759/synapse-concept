@@ -53,11 +53,10 @@ def _insert_sentence(
     post_id: Optional[int] = None,
     position: int = 0,
     role: str = "user",
-    retention: str = "memory",
 ) -> int:
     cur = conn.execute(
-        "INSERT INTO sentences (post_id, position, text, role, retention) VALUES (?,?,?,?,?)",
-        (post_id, position, text, role, retention),
+        "INSERT INTO sentences (post_id, position, text, role) VALUES (?,?,?,?)",
+        (post_id, position, text, role),
     )
     return cur.lastrowid
 

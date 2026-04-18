@@ -1,11 +1,16 @@
-"""Synapse DB — SQLite v12 스키마.
+"""Synapse DB — SQLite v13 스키마.
 
-v12 변경점 (Phase 2):
+v13 변경점:
+- sentences.retention 컬럼 폐기 (memory/daily 분류 제거)
+  → 모든 sentence는 동등하게 영구 보관. 자동 정리는 수동 or last_used 기반 별도 로직.
+  → retention 분류가 extract 어댑터의 노드 추출 태스크를 간섭하는 부작용 제거
+
+v12 변경점 (참고):
 - 신규 테이블 posts: 게시물 = 맥락 그룹 (원본 마크다운 보관)
 - sentences에 post_id, position 컬럼 추가
 - user sentences는 post_id 필수, assistant sentences는 NULL 허용
 
-v11 → v12: DB 날려도 됨 원칙으로 drop 후 재생성.
+구 스키마 → v13: DB 날려도 됨 원칙으로 drop 후 재생성.
 """
 
 import os
@@ -28,7 +33,6 @@ CREATE TABLE IF NOT EXISTS sentences (
     position        INTEGER NOT NULL DEFAULT 0,
     text            TEXT    NOT NULL,
     role            TEXT    NOT NULL DEFAULT 'user' CHECK(role IN ('user', 'assistant')),
-    retention       TEXT    NOT NULL DEFAULT 'memory' CHECK(retention IN ('memory', 'daily')),
     created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -114,9 +118,12 @@ def _is_current_schema(conn: sqlite3.Connection) -> bool:
     if "category" in _get_cols(conn, "nodes"):
         return False
     sent_cols = _get_cols(conn, "sentences")
-    for required_col in ("role", "retention", "post_id", "position"):
+    for required_col in ("role", "post_id", "position"):
         if required_col not in sent_cols:
             return False
+    # retention 컬럼이 남아있으면 구 스키마로 판정 (v13 이후 폐기)
+    if "retention" in sent_cols:
+        return False
     if "sentence_id" not in _get_cols(conn, "edges"):
         return False
     return True
