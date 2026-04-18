@@ -82,7 +82,6 @@ def cmd_interactive(use_llm: bool) -> None:
             result = llm_extract(raw)
             for n in result.get("nodes", []):
                 print(f"  [노드] {n['name']}")
-            print(f"  [retention] {result.get('retention', 'memory')}")
             if result.get("deactivate"):
                 print(f"  [deactivate] {result['deactivate']}")
             continue

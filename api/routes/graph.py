@@ -391,7 +391,6 @@ class SentenceItem(BaseModel):
     id: int
     text: str
     role: str
-    retention: str
     created_at: str
 
 
