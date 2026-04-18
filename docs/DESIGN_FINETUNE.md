@@ -110,10 +110,13 @@ Task 6은 저장 파이프라인의 핵심: Kiwi 형태소 분석 제거 → LLM
 
 ---
 
-### 태스크 3: 인출 필터
+### 태스크 3: 인출 필터 (v12)
 
-> **v2 변경**: 판단 단위가 트리플 문자열 → 원본 문장(sentence_text)으로 변경됨.
-> 트리플은 추적 구조. 판단은 엣지가 속한 실제 문장으로 한다.
+> **v12 변경**:
+> - 판단 단위: 트리플 문자열 → **원본 문장** (sentence_text)
+> - 조사 엣지 폐기에 따라 트리플 개념 자체가 인출 컨텍스트에서 제거됨
+> - 구 데이터(트리플 기계 변환)는 품질 불균형으로 전량 폐기, Claude CLI(opus)로 완전 재생성
+> - 노이즈 필터(조사 라벨 엣지 / 형태소 단편 노드) + `scripts/mlx/build_retrieve_filter_aug.py` 전체 재생성
 
 **시스템 프롬프트:**
 ```
@@ -574,13 +577,16 @@ PER BOD MND FOD LIV MON WRK TEC EDU LAW TRV NAT CUL HOB SOC REL REG
 
 ---
 
-## 전체 데이터셋 summary
+## 전체 데이터셋 summary (v12 기준)
 
 | 구분 | 태스크 | 총 건수 | 상태 |
 |------|--------|---------|------|
-| Personal | 2~4, 5A, 5B (Task 1 폐기) | ~2,600건 | 완료 |
-| Personal | Task 6A extract-core | 1,998건 (train 1,798 / valid 200) | 완료 |
-| Personal | Task 6B extract-state | 542건 (train 490 / valid 52) | 완료 |
+| Personal | Task 2 save-pronoun (v12) | 720건 (train 660 / valid 60) | ✅ 재생성 완료 |
+| Personal | Task 3 retrieve-filter (v12) | 1,400건 (train 1,269 / valid 131) | 🔄 Claude CLI 재생성 진행 |
+| Personal | Task 4 retrieve-expand | 468건 (train) | 완료 (변동 없음) |
+| Personal | Task 5A/5B security | ~900건 | 완료 (변동 없음) |
+| Personal | Task 6A extract-core (v12) | 1,998건 (train 1,798 / valid 200) | ✅ 재생성 완료 (edges 드롭) |
+| Personal | Task 6B extract-state | 542건 (train 490 / valid 52) | 완료 (변동 없음) |
 | Org | 0~4, 5A, 5B | 2,800건 | 예정 |
 
 ---
@@ -645,11 +651,31 @@ iters = max(150, (n_train × 3 epochs) // effective_batch)
 
 ---
 
+## v12 재학습 진행 현황 (2026-04-18)
+
+| # | 어댑터 | 데이터 전환 | 학습 | Val loss |
+|---|---|---|---|---|
+| M1 | extract-core | ✅ edges 필드 드롭 | ✅ iters=1348 완료 | **0.086** (1.606 → 0.086) |
+| M4/M4.1 | save-pronoun | ✅ 출력 `{text, tokens}` / question. 세션리스, 인칭 치환 금지, 규칙 기반 시간부사 치환 | 🔄 진행 중 (iters=495) | — |
+| M5/M5.1 | retrieve-filter | 🔄 Claude CLI 전체 재생성 (노이즈 필터 후 부족분 보충) | 대기 | — |
+
+### 백업된 pre-v12 어댑터
+- `runpod_output/mlx_adapters/extract-core_pre_v12/`
+- `runpod_output/mlx_adapters/save-pronoun_pre_v12/`
+- `runpod_output/mlx_adapters/extract_backup_20260418/` (구 통합 어댑터)
+- `runpod_output/mlx_adapters/save-pronoun_backup_20260418/`
+- `runpod_output/mlx_adapters/retrieve-filter_backup_20260418/`
+
+### 변환/생성 스크립트
+- `scripts/drop_edges_extract_core.py` — extract-core edges 드롭
+- `scripts/convert_save_pronoun_v12.py` — save-pronoun 스키마 전환 + 시간부사 규칙 치환
+- `scripts/convert_retrieve_filter_v12.py` — retrieve-filter 트리플→문장 + 노이즈 필터
+- `scripts/mlx/build_retrieve_filter_aug.py` — Claude CLI(opus) v12 완결형 문장 증강
+
+---
+
 ## 다음 세션 할 일
 
-v12(조사 엣지 폐기 + node_mentions) 반영하여 3개 어댑터 재학습.
-
-1. extract-core 재학습 — edges 필드 드롭한 데이터로 재학습 (데이터 변환 완료)
-2. save-pronoun 재학습 — 신규 출력 스키마 `{text, tokens[{name, category?}], unresolved[string], question?}` 데이터 재생성 후 학습
-3. retrieve-filter 재학습 — 입력 단위 트리플 → sentence로 데이터 재생성 후 학습
-4. Org 데이터셋 생성 스크립트 작성 (후순위)
+1. retrieve-filter 학습 (iters=951, Claude CLI 재생성 병합 후)
+2. 세 어댑터 추론 검증 — GGUF 변환 + MLX 서버 로딩 + 실제 프롬프트 반응
+3. Org 데이터셋 생성 (후순위)
