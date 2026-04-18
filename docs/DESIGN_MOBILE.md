@@ -128,7 +128,7 @@ GGUF 변환 후 아래 기준을 **반드시** 통과해야 다음 단계 진행
 
 | 태스크 | 품질 기준 | 측정 방법 |
 |--------|----------|----------|
-| extract | 노드 원자성 100%, 카테고리 코드 형식 100%, retention 정확도 95%+ | 기존 training.jsonl 테스트셋 50건 |
+| extract | 노드 원자성 100% (v13: retention·category 측정 폐기) | 기존 training.jsonl 테스트셋 50건 |
 | extract | deactivate 정확도 90%+ | 상충 입력 10건 |
 | save-pronoun | 치환 정확도 90%+ | 대명사/날짜 포함 입력 20건 |
 | retrieve-filter | pass/reject 일치율 95%+ | MLX 출력 대비 |
