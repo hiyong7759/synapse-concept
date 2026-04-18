@@ -6,6 +6,7 @@ import {
   labelOfCategory, descOfCategory,
   labelOfRelation, descOfRelation,
 } from '../categories';
+import { useToast } from '../components/Toast';
 import styles from './ReviewPage.module.css';
 
 type SectionKey =
@@ -27,6 +28,8 @@ const SECTION_LABEL: Record<SectionKey, string> = {
   gaps:               '📅 기록 공백',
 };
 
+const SUCCESS_FADE_MS = 420;
+
 /**
  * v12 Phase 5: /review 페이지.
  * 모든 제안은 /GET review로 런타임 도출.
@@ -34,9 +37,11 @@ const SECTION_LABEL: Record<SectionKey, string> = {
  */
 export function ReviewPage() {
   const navigate = useNavigate();
+  const toast = useToast();
   const [data, setData] = useState<ReviewAllResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [freeInputs, setFreeInputs] = useState<Record<string, string>>({});
+  const [successKeys, setSuccessKeys] = useState<Set<string>>(new Set());
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -50,13 +55,58 @@ export function ReviewPage() {
 
   useEffect(() => { reload(); }, [reload]);
 
-  async function apply(type: string, params: Record<string, unknown>) {
-    await api.reviewApply(type, params);
-    await reload();
+  async function apply(
+    key: string,
+    type: string,
+    params: Record<string, unknown>,
+    successMsg: string,
+  ) {
+    try {
+      await api.reviewApply(type, params);
+      toast.show(`✓ ${successMsg}`, 'success');
+      setSuccessKeys((prev) => {
+        const next = new Set(prev);
+        next.add(key);
+        return next;
+      });
+      setTimeout(() => {
+        setSuccessKeys((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+        reload();
+      }, SUCCESS_FADE_MS);
+    } catch {
+      toast.show('저장 실패', 'error');
+    }
+  }
+
+  function dismiss(key: string, message: string) {
+    toast.show(message, 'info');
+    setSuccessKeys((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      return next;
+    });
+    setTimeout(() => {
+      setSuccessKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+      reload();
+    }, SUCCESS_FADE_MS);
   }
 
   function setFree(key: string, value: string) {
     setFreeInputs((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function cardClass(key: string) {
+    return successKeys.has(key)
+      ? `${styles.card} ${styles.cardSuccess}`
+      : styles.card;
   }
 
   const sections: SectionKey[] = [
@@ -95,30 +145,26 @@ export function ReviewPage() {
 
         {data?.missing_basic_info?.map((item) => {
           const key = `b:${item.field}`;
+          const value = freeInputs[key] ?? '';
+          const submit = () => {
+            const v = value.trim();
+            if (!v) return;
+            apply(key, 'basic_info', { answer: v }, '기본 정보 저장됨');
+            setFree(key, '');
+          };
           return (
-            <div key={key} className={styles.card}>
+            <div key={key} className={cardClass(key)}>
               <div className={styles.section}>{SECTION_LABEL.missing_basic_info} <span className={styles.meta}>({item.label})</span></div>
               <div className={styles.question}>{item.question}</div>
               <div className={styles.options}>
                 <input
                   className={styles.freeInput}
                   placeholder="답변 입력"
-                  value={freeInputs[key] ?? ''}
+                  value={value}
                   onChange={(e) => setFree(key, e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && freeInputs[key]?.trim()) {
-                      apply('basic_info', { answer: freeInputs[key].trim() });
-                      setFree(key, '');
-                    }
-                  }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
                 />
-                <button className={styles.optBtn} onClick={() => {
-                  const v = (freeInputs[key] ?? '').trim();
-                  if (v) {
-                    apply('basic_info', { answer: v });
-                    setFree(key, '');
-                  }
-                }}>저장</button>
+                <button className={styles.optBtn} onClick={submit}>저장</button>
               </div>
             </div>
           );
@@ -126,11 +172,18 @@ export function ReviewPage() {
 
         {data?.unresolved?.map((item) => {
           const key = `u:${item.sentence_id}:${item.token}`;
+          const value = freeInputs[key] ?? '';
+          const submitFree = () => {
+            const v = value.trim();
+            if (!v) return;
+            apply(key, 'token', { sentence_id: item.sentence_id, token: item.token, value: v }, `"${item.token}" 해소됨`);
+            setFree(key, '');
+          };
           const postLabel = item.post_id != null
             ? `게시물 #${item.post_id} · ${item.post_created_at?.slice(0, 16) ?? ''}`
             : '대화';
           return (
-            <div key={key} className={styles.card}>
+            <div key={key} className={cardClass(key)}>
               <div className={styles.section}>
                 {SECTION_LABEL.unresolved}
                 <span className={styles.meta}>({postLabel})</span>
@@ -148,23 +201,19 @@ export function ReviewPage() {
               <div className={styles.options}>
                 {item.options.map((opt) => (
                   <button key={opt} className={styles.optBtn} onClick={() =>
-                    apply('token', { sentence_id: item.sentence_id, token: item.token, value: opt })
+                    apply(key, 'token', { sentence_id: item.sentence_id, token: item.token, value: opt }, `"${item.token}" → ${opt}`)
                   }>{opt}</button>
                 ))}
                 <input
                   className={styles.freeInput}
                   placeholder="직접 입력"
-                  value={freeInputs[key] ?? ''}
+                  value={value}
                   onChange={(e) => setFree(key, e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && freeInputs[key]?.trim()) {
-                      apply('token', { sentence_id: item.sentence_id, token: item.token, value: freeInputs[key].trim() });
-                      setFree(key, '');
-                    }
-                  }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') submitFree(); }}
                 />
+                <button className={styles.optBtn} onClick={submitFree}>저장</button>
                 <button className={styles.dismissBtn} onClick={() =>
-                  apply('token_dismiss', { sentence_id: item.sentence_id, token: item.token })
+                  apply(key, 'token_dismiss', { sentence_id: item.sentence_id, token: item.token }, `"${item.token}" 건너뜀`)
                 }>알 수 없음</button>
               </div>
             </div>
@@ -173,8 +222,15 @@ export function ReviewPage() {
 
         {data?.uncategorized?.map((item) => {
           const key = `c:${item.node_id}`;
+          const value = freeInputs[key] ?? '';
+          const submitFree = () => {
+            const v = value.trim();
+            if (!v) return;
+            apply(key, 'category', { node_id: item.node_id, category: v }, `카테고리 "${v}" 추가됨`);
+            setFree(key, '');
+          };
           return (
-            <div key={key} className={styles.card}>
+            <div key={key} className={cardClass(key)}>
               <div className={styles.section}>{SECTION_LABEL.uncategorized}</div>
               <div className={styles.question}>{item.question}</div>
               <div className={styles.options}>
@@ -185,7 +241,7 @@ export function ReviewPage() {
                       key={opt}
                       className={styles.optBtn}
                       title={desc ? `${opt} — ${desc}` : opt}
-                      onClick={() => apply('category', { node_id: item.node_id, category: opt })}
+                      onClick={() => apply(key, 'category', { node_id: item.node_id, category: opt }, `카테고리 "${labelOfCategory(opt)}" 추가됨`)}
                     >
                       {labelOfCategory(opt)}
                       <span className={styles.optCode}>{opt}</span>
@@ -195,15 +251,11 @@ export function ReviewPage() {
                 <input
                   className={styles.freeInput}
                   placeholder="직접 입력 (예: 병원.2026-04-18)"
-                  value={freeInputs[key] ?? ''}
+                  value={value}
                   onChange={(e) => setFree(key, e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && freeInputs[key]?.trim()) {
-                      apply('category', { node_id: item.node_id, category: freeInputs[key].trim() });
-                      setFree(key, '');
-                    }
-                  }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') submitFree(); }}
                 />
+                <button className={styles.optBtn} onClick={submitFree}>저장</button>
               </div>
             </div>
           );
@@ -212,7 +264,7 @@ export function ReviewPage() {
         {data?.cooccur_pairs?.map((item) => {
           const key = `co:${item.source_id}:${item.target_id}`;
           return (
-            <div key={key} className={styles.card}>
+            <div key={key} className={cardClass(key)}>
               <div className={styles.section}>{SECTION_LABEL.cooccur_pairs} <span className={styles.meta}>({item.cooccur_count}회 함께 등장)</span></div>
               <div className={styles.question}>{item.question}</div>
               {item.sample_sentence && <div className={styles.context}>{item.sample_sentence}</div>}
@@ -224,11 +276,11 @@ export function ReviewPage() {
                       key={opt}
                       className={styles.optBtn}
                       title={desc ? `${opt} — ${desc}` : opt}
-                      onClick={() => apply('edge', {
+                      onClick={() => apply(key, 'edge', {
                         source_id: item.source_id,
                         target_id: item.target_id,
                         label: opt,
-                      })}
+                      }, `"${labelOfRelation(opt)}" 관계 생성됨`)}
                     >
                       {labelOfRelation(opt)}
                       <span className={styles.optCode}>{opt}</span>
@@ -243,7 +295,7 @@ export function ReviewPage() {
         {data?.suspected_typos?.map((item) => {
           const key = `t:${item.node_a_id}:${item.node_b_id}`;
           return (
-            <div key={key} className={styles.card}>
+            <div key={key} className={cardClass(key)}>
               <div className={styles.section}>{SECTION_LABEL.suspected_typos}</div>
               <div className={styles.question}>{item.question}</div>
               <div className={styles.context}>
@@ -251,14 +303,13 @@ export function ReviewPage() {
               </div>
               <div className={styles.options}>
                 <button className={styles.optBtn} onClick={() => {
-                  // 언급 많은 쪽을 keep
                   const keep = item.mention_count_a >= item.mention_count_b ? item.node_a_id : item.node_b_id;
                   const remove = keep === item.node_a_id ? item.node_b_id : item.node_a_id;
-                  apply('merge', { keep_id: keep, remove_id: remove });
+                  const keepName = keep === item.node_a_id ? item.node_a_name : item.node_b_name;
+                  apply(key, 'merge', { keep_id: keep, remove_id: remove }, `"${keepName}"(으)로 병합됨`);
                 }}>같음 (병합)</button>
                 <button className={styles.dismissBtn} onClick={() =>
-                  // 무시 — 둘 다 그대로 두려면 별도 처리 필요. 현재는 그냥 reload (제안 사라지진 않음)
-                  reload()
+                  dismiss(key, '다름으로 표시')
                 }>다름 (무시)</button>
               </div>
             </div>
@@ -268,14 +319,14 @@ export function ReviewPage() {
         {data?.stale_nodes?.map((item) => {
           const key = `s:${item.node_id}`;
           return (
-            <div key={key} className={styles.card}>
+            <div key={key} className={cardClass(key)}>
               <div className={styles.section}>{SECTION_LABEL.stale_nodes}</div>
               <div className={styles.question}>{item.question}</div>
               <div className={styles.context}>마지막 갱신: {item.updated_at} · 언급 {item.mention_count}건</div>
               <div className={styles.options}>
-                <button className={styles.optBtn} onClick={reload}>유지</button>
+                <button className={styles.optBtn} onClick={() => dismiss(key, '유지됨')}>유지</button>
                 <button className={styles.dismissBtn} onClick={() =>
-                  apply('archive', { node_id: item.node_id })
+                  apply(key, 'archive', { node_id: item.node_id }, '아카이브됨')
                 }>아카이브</button>
               </div>
             </div>
@@ -285,13 +336,13 @@ export function ReviewPage() {
         {data?.gaps?.map((item, i) => {
           const key = `g:${i}`;
           return (
-            <div key={key} className={styles.card}>
+            <div key={key} className={cardClass(key)}>
               <div className={styles.section}>{SECTION_LABEL.gaps}</div>
               <div className={styles.question}>{item.question}</div>
               <div className={styles.context}>{item.from} ~ {item.to} · {item.days}일</div>
               <div className={styles.options}>
                 <button className={styles.optBtn} onClick={() => navigate('/chat/new')}>채팅으로 기록 추가</button>
-                <button className={styles.dismissBtn} onClick={reload}>특별한 일 없었음</button>
+                <button className={styles.dismissBtn} onClick={() => dismiss(key, '특별한 일 없었음')}>특별한 일 없었음</button>
               </div>
             </div>
           );

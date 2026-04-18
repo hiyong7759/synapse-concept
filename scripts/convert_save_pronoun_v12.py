@@ -5,8 +5,8 @@
 - 직전 대화/맥락 라인 제거 (세션리스)
 - 시간부사(오늘/어제/내일/그저께/모레/X요일)는 "날짜:" 기준으로 ISO 치환 → tokens
 - 맥락 의존 치환(인물·사물 등)은 폐기 → 원문 유지
-- 치환 불가 지시어는 unresolved에 원형 그대로
-- 기존 {question} 케이스는 지시어 있으면 unresolved로, 없으면 question 유지
+- 치환 불가 지시어는 LLM이 감지하지 않음 (save.py가 저장 시 정규식 매칭 → unresolved_tokens INSERT)
+- LLM 출력: {text, tokens} 또는 {question}. unresolved 필드 없음.
 - 시스템 프롬프트를 v12로 교체
 
 사용:
@@ -25,22 +25,23 @@ from pathlib import Path
 DATA_DIR = Path(__file__).resolve().parents[1] / "data" / "finetune" / "tasks" / "save-pronoun"
 
 NEW_SYSTEM_PROMPT = """당신은 지식 그래프 저장 엔진입니다.
-입력 문장에서 지시어(지시대명사·시간부사·장소/인물/사물 지시어·부정부사)를 치환합니다.
+입력 문장에서 치환 가능한 부분만 치환합니다.
 
 규칙:
 - 인칭대명사(나/내/저/제)는 절대 치환하지 않습니다.
 - 날짜 관련 부사(오늘/어제/내일/이번 주/지난달 등)는 "날짜:" 값 기준으로 계산하여 치환.
 - 치환 성공한 고정 토큰은 tokens[]에 {name, category?}로 담기. category는 규칙 기반 분명할 때만 (시간/장소/인물/사물/부정 등).
-- 치환할 수 없는 지시어(이거/그거/걔/그때/거기 등)는 원형 그대로 unresolved[]에 담기. text에서는 원문 유지.
+- 치환할 수 없는 지시어(이거/그거/걔/그때/거기 등)는 그대로 원문에 남깁니다. LLM이 따로 표기하지 않습니다.
 - 저장 자체가 불가능한 완전 모호 케이스만 {"question": "..."} 단독 반환.
 
 출력 형식:
-{"text": "...", "tokens": [...], "unresolved": [...]}
+{"text": "...", "tokens": [...]}
 또는 {"question": "..."}"""
 
-# 지시어 사전. 긴 패턴부터 매칭.
-DEMONSTRATIVES = [
-    # 2단어
+# 지시어·시간 모호 부사·지시부사·장소부사 사전. save.py가 저장 시 정규식 매칭해 unresolved_tokens에 INSERT.
+# 빈도/정도 부사(자주/많이 등)는 지시적 의미가 없어 제외.
+AMBIGUOUS_TOKENS = [
+    # 2단어 지시
     "그 양반", "이 양반", "저 양반",
     "그 사람", "이 사람", "저 사람",
     "그 친구", "이 친구", "저 친구",
@@ -51,14 +52,17 @@ DEMONSTRATIVES = [
     "이놈", "그놈", "저놈",
     "이분", "그분", "저분",
     "이쪽", "그쪽", "저쪽",
-    # 인물
+    # 지시부사
+    "이렇게", "그렇게", "저렇게",
+    # 인물 지시
     "걔", "얘", "쟤",
-    # 장소
+    # 장소부사
     "여기", "거기", "저기", "이곳", "그곳", "저곳",
-    # 시간 (ISO 환산 불가한 모호 부사)
-    "이때", "그때", "저때", "요즘", "최근", "예전", "얼마전", "언젠가",
+    # 시간 모호 부사 (ISO 환산 불가)
+    "이때", "그때", "저때",
+    "요즘", "최근", "예전", "옛날", "나중", "조만간", "방금", "얼마전", "언젠가",
 ]
-DEMONSTRATIVES_SORTED = sorted(DEMONSTRATIVES, key=len, reverse=True)
+AMBIGUOUS_SORTED = sorted(AMBIGUOUS_TOKENS, key=len, reverse=True)
 
 # 시간부사 치환표
 SIMPLE_TIME_DELTAS = {
@@ -70,30 +74,12 @@ ISO_DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 WEEK_PATTERN = re.compile(r"(이번\s?주|지난\s?주|다음\s?주)\s?(월|화|수|목|금|토|일)요일")
 
 
-def extract_demonstratives(text: str) -> list[str]:
-    """입력 본문에서 지시어 후보를 추출. 원문 출현 순서 유지, 중복 제거."""
-    found: list[tuple[int, str]] = []
-    used: list[tuple[int, int]] = []
-    for demo in DEMONSTRATIVES_SORTED:
-        start = 0
-        while True:
-            idx = text.find(demo, start)
-            if idx < 0:
-                break
-            if any(s <= idx < e or s < idx + len(demo) <= e for s, e in used):
-                start = idx + 1
-                continue
-            found.append((idx, demo))
-            used.append((idx, idx + len(demo)))
-            start = idx + len(demo)
-    found.sort()
-    seen = set()
-    result = []
-    for _, d in found:
-        if d not in seen:
-            seen.add(d)
-            result.append(d)
-    return result
+def has_ambiguous_token(text: str) -> bool:
+    """입력 본문에 모호 토큰(지시어·지시부사·시간모호·장소부사)이 있는지."""
+    for tok in AMBIGUOUS_SORTED:
+        if tok in text:
+            return True
+    return False
 
 
 def compute_time_subs(text: str, base: date) -> list[tuple[int, int, str]]:
@@ -176,9 +162,10 @@ def transform_record(record: dict) -> dict:
     base_date = parse_base_date(date_line)
 
     if "question" in asst:
-        unresolved = extract_demonstratives(input_text)
-        if unresolved:
-            new_asst: dict = {"text": input_text, "tokens": [], "unresolved": unresolved}
+        # 모호 토큰이 있으면 원문 그대로 반환 (save.py가 unresolved_tokens에 기록).
+        # 모호 토큰조차 없는 완전 모호 케이스만 question 유지.
+        if has_ambiguous_token(input_text):
+            new_asst: dict = {"text": input_text, "tokens": []}
         else:
             new_asst = {"question": asst["question"]}
     else:
@@ -188,8 +175,7 @@ def transform_record(record: dict) -> dict:
         else:
             new_text, isos = input_text, []
         tokens = [{"name": iso, "category": "시간"} for iso in isos]
-        unresolved = extract_demonstratives(new_text)
-        new_asst = {"text": new_text, "tokens": tokens, "unresolved": unresolved}
+        new_asst = {"text": new_text, "tokens": tokens}
 
     new_user = build_new_user(input_text, date_line)
     return {
@@ -202,8 +188,7 @@ def transform_record(record: dict) -> dict:
 
 
 def transform_file(src: Path, dst: Path) -> dict:
-    stats = {"total": 0, "question_kept": 0, "unresolved_only": 0,
-             "tokens_only": 0, "tokens_and_unresolved": 0, "empty": 0}
+    stats = {"total": 0, "question_kept": 0, "tokens_only": 0, "text_only": 0}
     with src.open() as fin, dst.open("w") as fout:
         for line in fin:
             line = line.strip()
@@ -215,17 +200,10 @@ def transform_file(src: Path, dst: Path) -> dict:
             stats["total"] += 1
             if "question" in payload:
                 stats["question_kept"] += 1
+            elif payload.get("tokens"):
+                stats["tokens_only"] += 1
             else:
-                has_tokens = bool(payload.get("tokens"))
-                has_unresolved = bool(payload.get("unresolved"))
-                if has_tokens and has_unresolved:
-                    stats["tokens_and_unresolved"] += 1
-                elif has_tokens:
-                    stats["tokens_only"] += 1
-                elif has_unresolved:
-                    stats["unresolved_only"] += 1
-                else:
-                    stats["empty"] += 1
+                stats["text_only"] += 1
             fout.write(json.dumps(new_record, ensure_ascii=False) + "\n")
     return stats
 
