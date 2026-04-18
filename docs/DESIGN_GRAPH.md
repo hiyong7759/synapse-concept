@@ -22,7 +22,6 @@ sentences:
   id         INTEGER PRIMARY KEY
   text       TEXT NOT NULL           -- 원본 문장 (사용자) 또는 응답 텍스트 (모델)
   role       TEXT DEFAULT 'user'     -- user | assistant
-  retention  TEXT DEFAULT 'memory'   -- memory | daily (role='user'만 적용)
   created_at TEXT DEFAULT (datetime('now'))
 
 nodes:
@@ -51,7 +50,7 @@ aliases:
 - **세션리스 아키텍처**: sessions 테이블 없음. 매 메시지마다 BFS가 그래프에서 독립적으로 맥락을 인출하므로, 대화 히스토리 누적이 불필요. 그래프가 영속 메모리, sentences가 대화 기록. 세션 경계 없이 동작.
 - `sentences`: 사용자 입력(`role='user'`)과 모델 응답(`role='assistant'`) 모두 저장.
 - `sentences.role`: `user` — 그래프 추출 대상. `assistant` — 대화 기록 + 메타 대화("계속해", "자세하게") 참조용. 그래프 추출 제외.
-- `sentences.retention`: `memory`(잘 변하지 않는 사실) / `daily`(일상·순간). `role='user'`에만 적용. LLM 저장 시 자동 분류.
+- `sentences.retention` 폐기 (v13): 모든 sentence 동등 보관. "daily → 빈 nodes" 과적합 + 오분류 시 중요 기억 소실 + 실제 미사용 — 세 가지 이유로 제거.
 - `edges`: 동일 출발노드+도착노드+조사 엣지가 여러 개 존재할 수 있음 (의도된 설계). 각 엣지는 서로 다른 출처문장(sentence_id)을 가리키며, BFS에서 노드/문장 단위로 중복 제거됨.
 - `edges.sentence_id`: 어느 문장에서 생성된 엣지인지 추적. 수정/삭제 시 같은 sentence_id 엣지 전체 rollback.
 - `edges.source_node_id` / `target_node_id`: 방향성 있음.
@@ -65,7 +64,7 @@ aliases:
 **미래 과제:**
 - **노드 동일성(identity)**: 구현 완료. `name`에 UNIQUE 없음. 동명 노드는 id로 구분. 일반 저장 시 `_upsert_node()`가 기존 노드 재사용 (동명 자동 생성 안 됨). 사용자가 분리 요청 시 `split_node()`로 새 노드 생성 + 별칭 등록. 별칭으로 인출 시 특정 노드만 탐색, 이름만으로 인출 시 전체 탐색.
 - **오타 교정**: 저장 파이프라인에서 자모 분해 + Levenshtein distance 1 기반 오타 자동 교정. 교정된 오타는 별칭으로 자동 등록 (재발 방지). `merge_nodes()`로 이미 생성된 오타 노드 병합 가능. `find_suspected_typos()`로 전체 노드 스캔하여 의심 쌍 발견. 상세 → `engine/jamo.py`, `engine/save.py`.
-- **콤팩팅**: 확정. retention='daily' + last_used IS NULL + N일 경과 조건. 앱 시작 시 체크, 사용자 설정(자동정리 ON/OFF, 보관기간, 확인). 상세 → `docs/DESIGN_PIPELINE.md`.
+- **콤팩팅**: v13에서 재설계 예정. 구 설계(retention='daily' 기반)는 retention 폐기와 함께 제거됨. 향후 `last_used IS NULL` + N일 경과 + 참조 노드 없음 등 별도 규칙으로 재정의.
 - **assistant 응답 그래프화**: 현재 로컬 2B 모델 응답은 가치 낮음. 모델 품질 향상 또는 도구 확장 시 재검토. 상세 → `docs/DESIGN_PIPELINE.md` "assistant 응답 그래프화" / "도구 라우팅" 섹션.
 
 ---

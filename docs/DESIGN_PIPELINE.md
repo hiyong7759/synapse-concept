@@ -8,10 +8,10 @@
 
 ---
 
-## DB 스키마 (v11 — 자동/수동 분리)
+## DB 스키마 (v13 — retention 폐기)
 
 ```sql
-sentences:         id, text, role('user'|'assistant'), retention('memory'|'daily'), created_at
+sentences:         id, text, role('user'|'assistant'), created_at
 nodes:             id, name, status('active'|'inactive'), created_at, updated_at
 node_mentions:     node_id, sentence_id, created_at                 — PK(node_id, sentence_id)
 node_categories:   node_id, category, created_at                    — PK(node_id, category)
@@ -28,7 +28,7 @@ unresolved_tokens: sentence_id, token, created_at                   — PK(sente
 
 **sentences.role**: `user`(그래프 추출 대상) / `assistant`(대화 기록).
 
-**sentences.retention**: `memory`(잘 변하지 않는 사실·상태·이력) / `daily`(순간적 활동·감정·일상). LLM이 저장 시 판단.
+**sentences.retention 폐기 (v13)**: 모든 sentence는 동등하게 영구 보관한다. 과거 memory/daily 분류는 (1) 2B 어댑터의 "daily → 빈 nodes" 과적합 원인, (2) 오분류 시 중요 기억 소실 위험, (3) 실제 인출·검색에서 쓰이지 않음 — 세 가지 이유로 제거. DB 경량화가 필요하면 별도 수동 관리 또는 `last_used` 기반 정책으로 대체.
 
 ---
 
@@ -84,8 +84,8 @@ heading 경로(`더나은.개발팀`)가 사용자 명시 카테고리 경로가
   ↓
   [synapse/extract]  temperature=0, max_tokens=32768
     입력: 정규화된 텍스트 + "알려진 사실:" (인출 원본 문장들, 있을 때)
-    출력: {nodes, retention, deactivate}
-    edges·category 필드는 엔진에서 드롭 (프롬프트 필터 수준에서 무시. 재학습 전까지 유예)
+    출력: {nodes, deactivate}
+    edges·category·retention 필드는 엔진에서 드롭 (v13에서 retention 추가 폐기)
     전처리: ()[] 공백 치환 (2B 모델 반복 루프 방지)
   ↓
   [규칙 — 부정부사 후처리]
@@ -106,7 +106,6 @@ heading 경로(`더나은.개발팀`)가 사용자 명시 카테고리 경로가
     node_mentions INSERT OR IGNORE (node_id, sentence_id)
     node_categories INSERT — heading 경로(사용자 명시) 또는 규칙 기반 분명 분류만
       LLM 추론 카테고리는 DB에 저장하지 않음
-    sentences.retention UPDATE
     deactivate 필드 → _deactivate_by_sentence_ids (선택, 사용자가 취소한 과거 기록 표시)
   ↓
   unresolved_tokens INSERT (치환 실패 토큰)
@@ -265,18 +264,11 @@ sentence_id
   → sentences 삭제
 ```
 
-### 콤팩팅
+### 콤팩팅 (v13에서 재설계 예정)
 
-sentence 단위 정리. 고아 노드는 보존 (재연결 가능성).
+v12 이전 설계는 `retention='daily'` 기반으로 자동 정리했으나, retention 폐기에 따라 해당 로직도 제거. 현재는 모든 sentence가 영구 보관된다.
 
-**대상 조건** (세 조건 모두 충족):
-- `retention='daily'`
-- `edges.last_used IS NULL` + 해당 sentence 참조 노드의 mentions도 한 번도 인출 안 됨
-- `created_at`이 N일 이상 경과
-
-**사용자 설정:** 자동 정리 ON/OFF, 보관 기간, 정리 전 확인. 기본 OFF + 확인 ON.
-
-구현: `compact()` 함수 — 앱 구현 시점에 `engine/db.py` 또는 `engine/save.py`에 추가. 현재 엔진에는 미구현.
+DB 경량화가 필요한 시점에 별도 정책 재설계 예정. 후보: `last_used IS NULL` + N일 경과 + 참조 노드 없음 + 사용자 수동 확인.
 
 ---
 
@@ -329,7 +321,7 @@ sentence 단위 정리. 고아 노드는 보존 (재연결 가능성).
 | `synapse/retrieve-filter` | 인출 관련성 판단 (pass/reject). 입력 단위를 트리플 → sentence로 변경 | 재학습 예정 |
 | `synapse/retrieve-expand` | 질문 → 노드 후보 키워드 확장 | 완료 |
 | `synapse/save-pronoun` | 지시어·시간부사·부정부사 치환. `tokens` + `unresolved` 분리 반환 | 재학습 예정 |
-| `synapse/extract` | nodes + retention + deactivate (edges·category 폐기) | **재학습 필요 — edges 제거** |
+| `synapse/extract` | nodes + deactivate (v13: edges·category·retention 폐기) | **재학습 필요 — v13 스키마** |
 | `synapse/structure-suggest` **[신규]** | 평문 → 마크다운 구조화 초안 | 초기 base 모델 |
 | `synapse/chat` | 응답 생성, `/review` LLM 섹션의 관계·카테고리·별칭 옵션 제시 | 베이스 모델 |
 
@@ -342,7 +334,7 @@ sentence 단위 정리. 고아 노드는 보존 (재연결 가능성).
 | 단계 | 어댑터 | temperature | max_tokens |
 |------|--------|-------------|------------|
 | 전처리 치환 | synapse/save-pronoun | 0 | 256 |
-| 노드/retention/deactivate 추출 | synapse/extract | 0 | 32768 |
+| 노드/deactivate 추출 | synapse/extract | 0 | 32768 |
 | 평문 → 마크다운 구조 제안 | synapse/structure-suggest | 0 | 1024 |
 | 인출 확장 | synapse/retrieve-expand | 0 | 256 |
 | 인출 필터 | synapse/retrieve-filter | 0 | 8 |
