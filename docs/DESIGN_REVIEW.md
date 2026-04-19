@@ -12,12 +12,8 @@
 
 ## 핵심 설계 원칙
 
-1. **승인 대기 전용 테이블을 만들지 않는다** — 유일한 예외 `unresolved_tokens` 하나
-2. **제안은 요청 시점에 런타임 도출** — `GET /review`가 호출될 때 `engine/suggestions.py`가 DB 쿼리 + 필요 시 LLM 호출로 리스트 생성. 결과를 DB에 쓰지 않음
-3. **승인 즉시 최종 테이블에 반영** — `edges / node_categories / aliases`에는 승인된 것만 존재
-4. **LLM 없이도 동작** — 규칙 기반 섹션은 LLM 의존 없이 쿼리만으로 채워짐
-
-이 설계는 "DB에 있는 것은 전부 승인된 것" 원칙을 `edges`, `node_categories`, `aliases` 전반에 일관되게 적용한 결과다. `status / origin / kind / action` 같은 중간 분류 컬럼은 모두 불필요하다.
+`/review` 검토 흐름의 4개 원칙은 **`docs/DESIGN_PRINCIPLES.md §3` /review 검토 원칙** 참고.
+(승인 대기 테이블 금지 · 런타임 도출 · 승인 즉시 반영 · LLM 없이도 동작)
 
 ---
 
