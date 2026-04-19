@@ -162,20 +162,6 @@
   gap: 8px;
   margin-top: 3px;
 }
-.retentionBadge {
-  font-size: 9px;
-  padding: 1px 5px;
-  border-radius: 3px;
-  font-family: 'Noto Sans KR', sans-serif;
-}
-.retentionMemory {
-  background: rgba(93, 171, 138, 0.15);
-  color: var(--success);
-}
-.retentionDaily {
-  background: rgba(200, 169, 110, 0.1);
-  color: var(--text-tertiary);
-}
 .sentenceTime {
   font-size: 10px;
   color: var(--text-tertiary);

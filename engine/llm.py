@@ -40,10 +40,10 @@ _MLX_SYSTEM: dict[str, str] = {
     ),
     # structure-suggest는 base 모델 사용 (engine/llm.py:structure_suggest 함수)
     "extract": (
-        "한국어 문장에서 지식 그래프의 노드, 상태변경, 보관 유형을 추출하라.\n"
+        "한국어 문장에서 지식 그래프의 노드와 상태변경을 추출하라.\n"
         "JSON만 출력. 다른 텍스트 금지.\n\n"
         "출력 형식:\n"
-        '{"retention":"memory|daily","nodes":[{"name":"노드명"}],'
+        '{"nodes":[{"name":"노드명"}],'
         '"deactivate":[sentence_id, ...]}\n\n'
         "규칙:\n"
         "- 노드는 원자. 하나의 개념 = 하나의 노드.\n"
@@ -52,8 +52,7 @@ _MLX_SYSTEM: dict[str, str] = {
         "- 부정부사(안, 못)는 독립 노드다. 예: \"스타벅스 안 좋아\" → 노드 [스타벅스, 안, 좋아].\n"
         "- 엣지는 저장하지 않는다. 노드 간의 의미 관계는 사용자 승인을 거쳐 사후에 편입된다.\n"
         "- \"알려진 사실:\"이 제공된 경우: 각 문장에 [번호]가 붙어 있다. 현재 입력과 상충되는 문장의 번호를 deactivate에 포함. 없으면 [].\n"
-        "- retention: 잘 변하지 않는 사실/상태/이력 → \"memory\". 순간적 활동/감정/일상 → \"daily\".\n"
-        "- 추출할 노드가 없는 대화 → {\"retention\":\"daily\",\"nodes\":[],\"deactivate\":[]}\n"
+        "- 추출할 노드가 없는 대화 → {\"nodes\":[],\"deactivate\":[]}\n"
     ),
 }
 
@@ -233,10 +232,10 @@ def llm_extract(text: str, context_sentences: Optional[list[tuple[int, str]]] = 
     """LLM으로 노드/상태변경/보관유형 추출.
 
     v11: edges·category 필드는 어댑터 출력에 있어도 무시한다.
-    조사 기반 엣지는 폐기되었고, LLM 추론 카테고리는 저장 대상이 아니다.
+    조사 기반 엣지는 폐기되었고, LLM 추론 카테고리·retention도 저장 대상이 아니다.
 
     context_sentences: retrieve에서 가져온 (sentence_id, text) 쌍. deactivate 판단에 사용.
-    반환: {"retention": "memory|daily", "nodes": [...], "deactivate": [sentence_id, ...]}
+    반환: {"nodes": [...], "deactivate": [sentence_id, ...]}
     """
     try:
         # ()[] 가 포함되면 2B 모델이 반복 루프에 빠짐 — 공백으로 치환
@@ -249,9 +248,9 @@ def llm_extract(text: str, context_sentences: Optional[list[tuple[int, str]]] = 
         raw = mlx_chat("extract", input_text)
         match = re.search(r"\{.*\}", raw, re.DOTALL)
         if not match:
-            return {"retention": "memory", "nodes": [], "deactivate": []}
+            return {"nodes": [], "deactivate": []}
         result = json.loads(match.group())
-        # v11: edges·category 필드는 드롭. 노드 이름만 남김.
+        # edges·category·retention 필드는 드롭. 노드 이름과 deactivate만 남김.
         nodes = []
         for n in result.get("nodes", []):
             if isinstance(n, dict) and n.get("name"):
@@ -259,12 +258,11 @@ def llm_extract(text: str, context_sentences: Optional[list[tuple[int, str]]] = 
             elif isinstance(n, str):
                 nodes.append({"name": n})
         return {
-            "retention": result.get("retention", "memory"),
             "nodes": nodes,
             "deactivate": result.get("deactivate", []),
         }
     except Exception:
-        return {"retention": "memory", "nodes": [], "deactivate": []}
+        return {"nodes": [], "deactivate": []}
 
 
 # 하위 호환을 위한 별칭

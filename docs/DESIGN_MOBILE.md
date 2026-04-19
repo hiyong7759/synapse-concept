@@ -28,12 +28,11 @@ DB: **sqflite** — 현재 SQLite 스키마 그대로 포팅
 | Samsung S22U | 7.3초/호출 | GPU, 베이스 모델(파인튜닝 없음), max_tokens=4000 |
 | iPhone 15 Pro | 5.3초/호출 | 동일 프롬프트 |
 
-테스트 프롬프트 (시스템 프롬프트 미사용, user 프롬프트에 규칙 포함):
+테스트 프롬프트 (시스템 프롬프트 미사용, user 프롬프트에 규칙 포함. **v13 기준**):
 ```
 아래 규칙대로 JSON만 출력. 다른 텍스트 금지.
-출력형식: {"retention":"memory|daily","nodes":[...],"edges":[...],"deactivate":[]}
-규칙: 노드는 원자 개념 하나씩. 1인칭은 "나" 노드. 엣지 label은 원문 조사, 없으면 null.
-카테고리: PER BOD MND FOD WRK TEC EDU MON LIV LAW TRV NAT CUL HOB SOC REL REG
+출력형식: {"nodes":[{"name":"..."}],"deactivate":[]}
+규칙: 노드는 원자 개념 하나씩. 1인칭은 "나" 노드.
 
 입력: 나 쿠팡에서 물류 기획 담당하고 있어
 알려진 사실: 없음
@@ -41,20 +40,18 @@ DB: **sqflite** — 현재 SQLite 스키마 그대로 포팅
 
 Edge Gallery 설정: Max tokens 4000, TopK 64, TopP 0.95, Temp 1.00, GPU, thinking OFF
 
-베이스 모델 출력 (S22U, 7.3초):
+베이스 모델 출력 예시 (S22U, 7.3초, v11 구 스키마 기준):
 ```json
 {
-  "retention": "daily",        // ❌ "memory"여야 함 (사실/이력)
   "nodes": [
-    {"name": "쿠팡", "category": "회사"},          // ❌ WRK.company 형식 미준수
-    {"name": "물류 기획 담당자", "category": "직업"} // ❌ 비원자 (물류, 기획, 담당 각각)
-  ],
-  "edges": [
-    {"source": "쿠팡", "label": "에서", "target": "물류 기획 담당자"}
+    {"name": "쿠팡"},
+    {"name": "물류 기획 담당자"}  // ❌ 비원자 (물류, 기획, 담당 각각이어야 함)
   ]
   // ❌ "나" 노드 누락
 }
 ```
+
+(v13에서 edges·retention·category 필드 모두 폐기됨)
 
 → 파인튜닝 필수. 파인튜닝 시 프롬프트 대폭 축소 → **3~5초/호출** 예상.
 
@@ -131,7 +128,7 @@ GGUF 변환 후 아래 기준을 **반드시** 통과해야 다음 단계 진행
 
 | 태스크 | 품질 기준 | 측정 방법 |
 |--------|----------|----------|
-| extract | 노드 원자성 100%, 카테고리 코드 형식 100%, retention 정확도 95%+ | 기존 training.jsonl 테스트셋 50건 |
+| extract | 노드 원자성 100% (v13: retention·category 측정 폐기) | 기존 training.jsonl 테스트셋 50건 |
 | extract | deactivate 정확도 90%+ | 상충 입력 10건 |
 | save-pronoun | 치환 정확도 90%+ | 대명사/날짜 포함 입력 20건 |
 | retrieve-filter | pass/reject 일치율 95%+ | MLX 출력 대비 |

@@ -53,11 +53,10 @@ def _insert_sentence(
     post_id: Optional[int] = None,
     position: int = 0,
     role: str = "user",
-    retention: str = "memory",
 ) -> int:
     cur = conn.execute(
-        "INSERT INTO sentences (post_id, position, text, role, retention) VALUES (?,?,?,?,?)",
-        (post_id, position, text, role, retention),
+        "INSERT INTO sentences (post_id, position, text, role) VALUES (?,?,?,?)",
+        (post_id, position, text, role),
     )
     return cur.lastrowid
 
@@ -306,18 +305,17 @@ def _save_one_item(
         if _add_unresolved(conn, sid, token):
             result.unresolved_added.append((sid, token))
 
-    # 3. extract (edges·category 필드는 엔진에서 드롭됨)
+    # 3. extract (edges·category·retention 필드는 엔진에서 드롭됨)
     if use_llm:
         try:
             extracted = llm_extract(effective_text, context_sentences=retrieve_context_sentences)
         except LLMError:
-            extracted = {"retention": "memory", "nodes": [], "deactivate": []}
+            extracted = {"nodes": [], "deactivate": []}
     else:
-        extracted = {"retention": "memory", "nodes": [], "deactivate": []}
+        extracted = {"nodes": [], "deactivate": []}
 
     ext_nodes = extracted.get("nodes", [])
     ext_deactivate = extracted.get("deactivate", [])
-    retention = extracted.get("retention", "memory")
 
     # 4. 규칙 기반 토큰 감지 (부정부사 + 날짜 분할)
     neg_tokens = _detect_negation_tokens(effective_text)
@@ -329,10 +327,7 @@ def _save_one_item(
         deact_sids = [s for s in ext_deactivate if isinstance(s, int)]
         result.edges_deactivated.extend(_deactivate_by_sentence_ids(conn, deact_sids))
 
-    # 6. retention
-    conn.execute("UPDATE sentences SET retention=? WHERE id=?", (retention, sid))
-
-    # 7. 노드 upsert + mentions + (heading 경로) category
+    # 6. 노드 upsert + mentions + (heading 경로) category
     for node in ext_nodes:
         name = node["name"]
         nid, is_new = _upsert_node(conn, name)
@@ -660,7 +655,7 @@ def search_sentences(
         ).fetchone()[0]
 
         rows = conn.execute(
-            f"""SELECT s.id, s.post_id, s.position, s.text, s.role, s.retention, s.created_at
+            f"""SELECT s.id, s.post_id, s.position, s.text, s.role, s.created_at
                 FROM sentences s {where_clause}
                 ORDER BY s.created_at DESC
                 LIMIT ? OFFSET ?""",
@@ -680,7 +675,6 @@ def search_sentences(
                 "position": r["position"],
                 "text": r["text"],
                 "role": r["role"],
-                "retention": r["retention"],
                 "created_at": r["created_at"],
             }
             for r in rows

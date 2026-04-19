@@ -20,7 +20,7 @@
 | 4 | 인출 확장 | 질문 | 관련 노드 후보 목록 | 400건 |
 | 5A | 관계 민감도 마킹 | 관계 하나 | safe / sensitive:\<카테고리\> | 500건 |
 | 5B | 컨텍스트 민감도 판단 | 질문 + 전체 관계(5A 마킹 포함) | safe / confirm:\<메시지\> | 400건 |
-| **6** | **노드/엣지/카테고리/상태변경/보관유형 추출** | **한국어 문장 + 인출 맥락** | **{"retention":"memory\|daily", "nodes":[...], "edges":[...], "deactivate":[...]}** | **재학습 필요** |
+| **6** | **노드/상태변경 추출 (v13)** | **한국어 문장 + 인출 맥락** | **{"nodes":[...], "deactivate":[...]}** | **재학습 필요** |
 
 Task 6은 저장 파이프라인의 핵심: Kiwi 형태소 분석 제거 → LLM 단독 추출 + 상태변경 통합.
 
@@ -47,42 +47,76 @@ Task 6은 저장 파이프라인의 핵심: Kiwi 형태소 분석 제거 → LLM
 
 ---
 
-### 태스크 2: 대명사/부사/지시어 구체화
+### 태스크 2: 대명사/부사/지시어 구체화 (v12)
+
+**핵심 변경**:
+- **세션리스** — 직전 대화 맥락 주입 제거
+- **인칭대명사 치환 금지** — "나/내/저/제"는 건드리지 않음
+- **출력 구조 단순화** — 치환 성공 토큰만 `tokens[]`에 담는다. 치환 실패한 지시어/부사는 원문에 그대로 두고 LLM은 따로 표기하지 않음 (save.py가 규칙 기반 정규식으로 감지 → `unresolved_tokens` INSERT)
+- **카테고리 규칙 기반 분명한 것만** — 시간/장소/인물/사물/부정 등 명확히 분류되는 것만 `category` 부여, 모호하면 생략
+
+**출력 스키마:**
+```json
+{"text": "치환된 문장",
+ "tokens": [{"name": "노드명", "category": "시간|장소|인물|사물|부정|..."}]}
+// 또는 — 저장 자체가 불가능한 완전 모호 케이스
+{"question": "되묻기 메시지"}
+```
 
 **시스템 프롬프트:**
 ```
 당신은 지식 그래프 저장 엔진입니다.
-텍스트에서 대명사와 부사를 구체적인 값으로 치환하세요.
-대화 맥락이 제공되면 활용하세요.
-치환 불가능하면 {"question": "질문 내용"}을 반환하세요.
-출력 형식: {"text": "치환된 텍스트"} 또는 {"question": "..."}
+입력 문장에서 치환 가능한 부분만 치환합니다.
+
+규칙:
+- 인칭대명사(나/내/저/제)는 절대 치환하지 않습니다.
+- 날짜 관련 부사(오늘/어제/내일/이번 주/지난달 등)는 "날짜:" 값 기준으로 계산하여 치환.
+- 치환 성공한 고정 토큰은 tokens[]에 {name, category?}로 담기. category는 규칙 기반 분명할 때만 (시간/장소/인물/사물/부정 등).
+- 치환할 수 없는 지시어(이거/그거/걔/그때/거기 등)는 그대로 원문에 남깁니다. LLM이 따로 표기하지 않습니다.
+- 저장 자체가 불가능한 완전 모호 케이스만 {"question": "..."} 단독 반환.
+
+출력 형식:
+{"text": "...", "tokens": [...]}
+또는 {"question": "..."}
 ```
 
 **예시 데이터:**
 ```jsonl
 {"messages": [
-  {"role": "system", "content": "당신은 지식 그래프 저장 엔진입니다. 텍스트에서 대명사와 부사를 구체적인 값으로 치환하세요. 출력 형식: {\"text\": \"치환된 텍스트\"} 또는 {\"question\": \"...\"}"},
+  {"role": "system", "content": "..."},
   {"role": "user", "content": "입력: 오늘 병원 갔어\n날짜: 2026-04-04"},
-  {"role": "assistant", "content": "{\"text\": \"2026-04-04 병원 갔어\"}"}
+  {"role": "assistant", "content": "{\"text\": \"2026-04-04 병원 갔어\", \"tokens\": [{\"name\": \"2026-04-04\", \"category\": \"시간\"}]}"}
 ]}
 {"messages": [
-  {"role": "system", "content": "당신은 지식 그래프 저장 엔진입니다. 텍스트에서 대명사와 부사를 구체적인 값으로 치환하세요. 출력 형식: {\"text\": \"치환된 텍스트\"} 또는 {\"question\": \"...\"}"},
-  {"role": "user", "content": "입력: 거기서 밥 먹었어\n맥락: 이전 발화 없음"},
-  {"role": "assistant", "content": "{\"question\": \"어디서 밥 드셨나요?\"}"}
+  {"role": "system", "content": "..."},
+  {"role": "user", "content": "입력: 그거 별로야\n날짜: 2026-04-04"},
+  {"role": "assistant", "content": "{\"text\": \"그거 별로야\", \"tokens\": []}"}
 ]}
 {"messages": [
-  {"role": "system", "content": "당신은 지식 그래프 저장 엔진입니다. 텍스트에서 대명사와 부사를 구체적인 값으로 치환하세요. 출력 형식: {\"text\": \"치환된 텍스트\"} 또는 {\"question\": \"...\"}"},
-  {"role": "user", "content": "입력: 그거 별로야\n맥락: 직전 대화 - 사용자: 스타벅스 신메뉴 먹어봤어?"},
-  {"role": "assistant", "content": "{\"text\": \"스타벅스 신메뉴 별로야\"}"}
+  {"role": "system", "content": "..."},
+  {"role": "user", "content": "입력: 나 오늘 이거 시작했어\n날짜: 2026-04-04"},
+  {"role": "assistant", "content": "{\"text\": \"나 2026-04-04 이거 시작했어\", \"tokens\": [{\"name\": \"2026-04-04\", \"category\": \"시간\"}]}"}
+]}
+{"messages": [
+  {"role": "system", "content": "..."},
+  {"role": "user", "content": "입력: 그 동네 살기 좋아\n날짜: 2026-04-04"},
+  {"role": "assistant", "content": "{\"question\": \"어떤 동네인가요?\"}"}
 ]}
 ```
 
+**엔진 측 unresolved 감지 (save.py 책임)**: 저장 파이프라인에서 LLM 출력의 `text`를 받은 후, 엔진이 한정된 사전(지시대명사·지시부사·시간 모호 부사·장소부사)을 정규식으로 스캔하여 치환되지 않은 지시어를 찾고 `unresolved_tokens`에 INSERT. 빈도/정도 부사(자주/많이 등)는 지시적 의미가 없어 제외한다.
+
+**맥락 의존 케이스 폐기**: v12 이전에는 "직전 대화 - 사용자: 스타벅스 신메뉴 먹어봤어?" 같은 맥락으로 "그거"를 "스타벅스 신메뉴"로 치환했으나, 세션리스 전환으로 **더 이상 맥락을 받지 않음**. 해당 케이스는 원문 `text`로 그대로 반환하고 `/review`에서 해소한다.
+
 ---
 
-### 태스크 3: 인출 필터
+### 태스크 3: 인출 필터 (v12)
 
-> **v2 변경**: 판단 단위가 트리플 문자열 → 원본 문장(sentence_text)으로 변경됨.
-> 트리플은 추적 구조. 판단은 엣지가 속한 실제 문장으로 한다.
+> **v12 변경**:
+> - 판단 단위: 트리플 문자열 → **원본 문장** (sentence_text)
+> - 조사 엣지 폐기에 따라 트리플 개념 자체가 인출 컨텍스트에서 제거됨
+> - 구 데이터(트리플 기계 변환)는 품질 불균형으로 전량 폐기, Claude CLI(opus)로 완전 재생성
+> - 노이즈 필터(조사 라벨 엣지 / 형태소 단편 노드) + `scripts/mlx/build_retrieve_filter_aug.py` 전체 재생성
 
 **시스템 프롬프트:**
 ```
@@ -439,34 +473,39 @@ admin       — 시스템 관리자 (전체)
 2B 모델이 한 어댑터에서 패턴 매칭과 추론을 동시에 수행하는 것은 무리.
 분리 비용(추론 시 LLM 호출 1→2회, ~0.5초 추가)은 미미.
 
+### v13 추가 정리 (2026-04-18)
+- edges 필드 폐기 (v12): 조사 기반 엣지는 사용자 승인 기반 의미 엣지로 전환
+- **retention 필드 폐기 (v13)**: "daily → 빈 nodes" 과적합 원인이라 제거. `{nodes, deactivate}`만.
+- category 필드: LLM 추론 결과는 저장 대상 아님 (규칙 기반 + heading 경로만). extract 어댑터에서 제거.
+- 결과: extract-core는 **순수 노드 이름 추출**에만 집중
+
 ---
 
-### Task 6A: extract-core (구조 추출)
+### Task 6A: extract-core (노드 추출, v13)
 
 **시스템 프롬프트:**
 ```
-한국어 문장에서 지식 그래프의 노드, 엣지, 카테고리, 보관 유형을 추출하라.
+한국어 문장에서 지식 그래프의 노드를 추출하라.
 JSON만 출력. 다른 텍스트 금지.
 
 출력 형식:
-{"retention":"memory|daily","nodes":[{"name":"노드명","category":"대분류.소분류"}],"edges":[{"source":"노드명","label":"조사","target":"노드명"}]}
+{"nodes":[{"name":"노드명"}]}
 
 규칙:
 - 노드는 원자. 하나의 개념 = 하나의 노드.
 - 1인칭(나/내/저/제)이 문장에 명시된 경우 "나" 노드로 추출. 문장에 없는 1인칭 추가 금지.
 - 3인칭 주어는 원문 그대로 노드 추출.
-- 엣지 label = 원문의 조사 그대로 (에서, 으로, 의, 에, 를/을, 와/과, 고, 이/가 등). 조사 없으면 null.
-- 부정부사(안, 못)는 독립 노드다. 예: "스타벅스 안 좋아" → 스타벅스→안→좋아 (3노드, 2엣지 null).
-- 엣지의 source와 target은 반드시 nodes 배열에 있는 노드명과 정확히 일치해야 한다.
-- retention: 잘 변하지 않는 사실/상태/이력 → "memory". 순간적 활동/감정/일상 → "daily".
-- 추출할 노드/엣지가 없는 대화 → {"retention":"daily","nodes":[],"edges":[]}
-
-카테고리는 반드시 '대분류.소분류' 형식. 약어 금지.
-PER BOD MND FOD LIV MON WRK TEC EDU LAW TRV NAT CUL HOB SOC REL REG
+- 부정부사(안, 못)는 독립 노드다. 예: "스타벅스 안 좋아" → 노드 [스타벅스, 안, 좋아].
+- 추출할 노드가 없는 대화도 {"nodes":[]} (비어있어도 반환)
 ```
 
 **입력**: 현재 발화 (알려진 사실 없음 — core는 구조 추출만 담당)
-**출력**: `{"retention":"...", "nodes":[...], "edges":[...]}`
+**출력**: `{"nodes":[...]}`
+
+v12 이전에는 edges/category/retention 필드를 함께 반환했으나 각각 폐기:
+- edges: 사용자 승인 기반 의미 엣지로 전환 (v12)
+- category: 규칙 기반 + heading 경로만 저장 (LLM 추론 결과 불채택)
+- retention: 분류 자체를 폐기, 모든 sentence 동등 보관 (v13)
 
 **조사 라벨 예시:**
 ```
@@ -543,41 +582,105 @@ PER BOD MND FOD LIV MON WRK TEC EDU LAW TRV NAT CUL HOB SOC REL REG
 
 ---
 
-## 전체 데이터셋 summary
+## 전체 데이터셋 summary (v12 기준)
 
 | 구분 | 태스크 | 총 건수 | 상태 |
 |------|--------|---------|------|
-| Personal | 2~4, 5A, 5B (Task 1 폐기) | ~2,600건 | 완료 |
-| Personal | Task 6A extract-core | 1,998건 (train 1,798 / valid 200) | 완료 |
-| Personal | Task 6B extract-state | 542건 (train 490 / valid 52) | 완료 |
+| Personal | Task 2 save-pronoun (v12) | 720건 (train 660 / valid 60) | ✅ 재생성 완료 |
+| Personal | Task 3 retrieve-filter (v12) | 1,400건 (train 1,269 / valid 131) | 🔄 Claude CLI 재생성 진행 |
+| Personal | Task 4 retrieve-expand | 468건 (train) | 완료 (변동 없음) |
+| Personal | Task 5A/5B security | ~900건 | 완료 (변동 없음) |
+| Personal | Task 6A extract-core (v12) | 1,998건 (train 1,798 / valid 200) | ✅ 재생성 완료 (edges 드롭) |
+| Personal | Task 6B extract-state | 542건 (train 490 / valid 52) | 완료 (변동 없음) |
 | Org | 0~4, 5A, 5B | 2,800건 | 예정 |
 
 ---
 
-## 학습 설정 (RunPod — 2026-04-14 정상화)
+## 학습 설정 (MLX — 2026-04-18 현행화)
+
+RunPod은 운영 불안정(디스크·드라이버·스케줄 문제)으로 폐기. 어댑터별 하이퍼파라미터를 MLX 기준으로 재조정한 뒤 아래 값으로 수렴.
+
+### 공통 하이퍼파라미터 (모든 어댑터 동일)
 
 | 파라미터 | 값 | 비고 |
 |---------|-----|------|
-| base model | google/gemma-4-E2B-it | FP16 |
-| rank | 8 | |
-| alpha | 8.0 (scale=1.0) | 기존 160→8 수정 |
+| base model | unsloth/gemma-4-E2B-it-UD-MLX-4bit | MLX 4bit QLoRA |
+| rank | 16 | |
+| scale (alpha/rank) | 32.0 | |
 | lora_dropout | 0.05 | |
-| weight_decay | 0.01 | |
-| batch_size | 2 | |
-| gradient_accumulation | 8 | effective batch=16 |
-| lr | 2e-4 | |
-| layers_to_transform | last 8 | 기존 전체 35→8 수정 |
-| early stopping | patience=3 | load_best_model_at_end |
-| eval/save_steps | 50 | |
+| keys | self_attn.{q,k,v,o}_proj | attention only |
+| num_layers | 8 | last 8 layers |
+| batch_size | 1 | |
+| grad_accumulation_steps | 4 | effective batch = 4 |
+| learning_rate | 2e-4 | |
+| max_seq_length | 2048 | |
+| grad_checkpoint | true | |
+| mask_prompt | true | 응답 토큰에만 loss |
+| val_batches | 25 | |
+| steps_per_report | 20 | |
+| steps_per_eval | 100 | |
+| save_every | 200 | |
 
-스크립트: `scripts/runpod/train_all.py`
+설정 파일: `configs/mlx/_base.yaml`
+
+### iters (어댑터별 자동 계산)
+
+```
+iters = max(150, (n_train × 3 epochs) // effective_batch)
+      = max(150, (n_train × 3) // 4)
+```
+
+`scripts/mlx/train_all.py`의 `compute_iters()`가 각 task의 `train.jsonl` 건수로 계산.
+
+| 어댑터 | n_train | iters |
+|---|---|---|
+| extract-core | 1798 | 1348 |
+| extract-state | 490 | 367 |
+| retrieve-filter | 1269 | 951 |
+| save-pronoun | 660 | 495 |
+| retrieve-expand | 468 | 351 |
+| routing | 265 | 198 |
+| save-state-personal | 438 | 328 |
+| security-personal | 495 | 371 |
+| security-context | 415 | 311 |
+| security-access | 319 | 239 |
+| ... | ... | ... |
+
+### LoRA 파라미터는 공통, iters만 어댑터별
+
+과거 실험(v1~v5)에서 rank·scale·dropout 조정 시 전반적으로 성능 차이가 작거나 오히려 악화. **iters를 데이터 크기에 맞춰 자동 계산**하는 것이 가장 단순하고 효과적이라고 판단.
+
+스크립트: `scripts/mlx/train_all.py`
+어댑터 출력: `runpod_output/mlx_adapters/<task>/`
+로그: `runpod_output/mlx_logs/<task>.log`
+
+---
+
+## v12 재학습 진행 현황 (2026-04-18)
+
+| # | 어댑터 | 데이터 전환 | 학습 | Val loss |
+|---|---|---|---|---|
+| M1 | extract-core | ✅ edges 필드 드롭 | ✅ iters=1348 완료 | **0.086** (1.606 → 0.086) |
+| M4/M4.1 | save-pronoun | ✅ 출력 `{text, tokens}` / question. 세션리스, 인칭 치환 금지, 규칙 기반 시간부사 치환 | 🔄 진행 중 (iters=495) | — |
+| M5/M5.1 | retrieve-filter | 🔄 Claude CLI 전체 재생성 (노이즈 필터 후 부족분 보충) | 대기 | — |
+
+### 백업된 pre-v12 어댑터
+- `runpod_output/mlx_adapters/extract-core_pre_v12/`
+- `runpod_output/mlx_adapters/save-pronoun_pre_v12/`
+- `runpod_output/mlx_adapters/extract_backup_20260418/` (구 통합 어댑터)
+- `runpod_output/mlx_adapters/save-pronoun_backup_20260418/`
+- `runpod_output/mlx_adapters/retrieve-filter_backup_20260418/`
+
+### 변환/생성 스크립트
+- `scripts/drop_edges_extract_core.py` — extract-core edges 드롭
+- `scripts/convert_save_pronoun_v12.py` — save-pronoun 스키마 전환 + 시간부사 규칙 치환
+- `scripts/convert_retrieve_filter_v12.py` — retrieve-filter 트리플→문장 + 노이즈 필터
+- `scripts/mlx/build_retrieve_filter_aug.py` — Claude CLI(opus) v12 완결형 문장 증강
 
 ---
 
 ## 다음 세션 할 일
 
-1. RunPod 재학습 (A5000, extract-core/state 분리 + 정상화된 하이퍼파라미터)
-2. eval: extract-core 추출 정확도 + extract-state deactivate 정확도 측정
-3. save.py 파이프라인 수정 (extract 1회 → core + state 순차 호출)
-4. GGUF 변환 + lm_head 버그 확인
-5. Org 데이터셋 생성 스크립트 작성
+1. retrieve-filter 학습 (iters=951, Claude CLI 재생성 병합 후)
+2. 세 어댑터 추론 검증 — GGUF 변환 + MLX 서버 로딩 + 실제 프롬프트 반응
+3. Org 데이터셋 생성 (후순위)
