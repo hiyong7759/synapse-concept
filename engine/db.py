@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS node_mentions (
 CREATE TABLE IF NOT EXISTS node_categories (
     node_id    INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
     category   TEXT    NOT NULL,
-    origin     TEXT    NOT NULL DEFAULT 'user' CHECK(origin IN ('user', 'ai', 'rule')),
+    origin     TEXT    NOT NULL DEFAULT 'user' CHECK(origin IN ('user', 'ai', 'rule', 'external')),
     created_at TEXT    NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (node_id, category)
 );
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS node_categories (
 CREATE TABLE IF NOT EXISTS aliases (
     alias   TEXT    PRIMARY KEY,
     node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-    origin  TEXT    NOT NULL DEFAULT 'user' CHECK(origin IN ('user', 'ai', 'rule')),
+    origin  TEXT    NOT NULL DEFAULT 'user' CHECK(origin IN ('user', 'ai', 'rule', 'external')),
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -103,6 +103,16 @@ def _get_cols(conn: sqlite3.Connection, table: str) -> list[str]:
     return [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
 
 
+def _check_allows_external(conn: sqlite3.Connection, table: str) -> bool:
+    """sqlite_master.sql 에서 해당 테이블의 CHECK 제약이 'external' 값을 포함하는지 검사."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone()
+    if not row or not row[0]:
+        return False
+    return "'external'" in row[0]
+
+
 def _is_current_schema(conn: sqlite3.Connection) -> bool:
     """v15 스키마 여부 확인: edges 테이블 없음 + origin 컬럼 존재 + 필수 테이블."""
     tables = _get_tables(conn)
@@ -128,6 +138,11 @@ def _is_current_schema(conn: sqlite3.Connection) -> bool:
     if "origin" not in _get_cols(conn, "node_categories"):
         return False
     if "origin" not in _get_cols(conn, "aliases"):
+        return False
+    # v15 A2: CHECK 제약이 'external' origin 값을 허용해야 함
+    if not _check_allows_external(conn, "node_categories"):
+        return False
+    if not _check_allows_external(conn, "aliases"):
         return False
     return True
 
@@ -165,6 +180,59 @@ def _migrate_add_origin_columns(db_path: str) -> None:
                 "ADD COLUMN origin TEXT NOT NULL DEFAULT 'user'"
             )
         conn.commit()
+    finally:
+        conn.close()
+
+
+def _can_migrate_check_to_external(conn: sqlite3.Connection) -> bool:
+    """origin 컬럼은 있지만 CHECK 제약에 'external' 값이 빠져있는지 확인."""
+    tables = _get_tables(conn)
+    if "edges" in tables:
+        return False
+    for required in ("node_categories", "aliases"):
+        if required not in tables:
+            return False
+    nc_cols = _get_cols(conn, "node_categories")
+    al_cols = _get_cols(conn, "aliases")
+    if "origin" not in nc_cols or "origin" not in al_cols:
+        return False
+    return (not _check_allows_external(conn, "node_categories")
+            or not _check_allows_external(conn, "aliases"))
+
+
+def _migrate_check_to_external(db_path: str) -> None:
+    """node_categories / aliases CHECK 제약에 'external' 값 허용 — 테이블 재생성 방식."""
+    backup = _backup_db(db_path)
+    print(f"[db] v15 A2 CHECK 제약 마이그레이션: origin 'external' 허용. 백업={backup}")
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.executescript("""
+            CREATE TABLE node_categories_new (
+                node_id    INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+                category   TEXT    NOT NULL,
+                origin     TEXT    NOT NULL DEFAULT 'user' CHECK(origin IN ('user', 'ai', 'rule', 'external')),
+                created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (node_id, category)
+            );
+            INSERT INTO node_categories_new (node_id, category, origin, created_at)
+                SELECT node_id, category, origin, created_at FROM node_categories;
+            DROP TABLE node_categories;
+            ALTER TABLE node_categories_new RENAME TO node_categories;
+
+            CREATE TABLE aliases_new (
+                alias   TEXT    PRIMARY KEY,
+                node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+                origin  TEXT    NOT NULL DEFAULT 'user' CHECK(origin IN ('user', 'ai', 'rule', 'external')),
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            INSERT INTO aliases_new (alias, node_id, origin, created_at)
+                SELECT alias, node_id, origin, created_at FROM aliases;
+            DROP TABLE aliases;
+            ALTER TABLE aliases_new RENAME TO aliases;
+        """)
+        conn.commit()
+        conn.execute("PRAGMA foreign_keys = ON")
     finally:
         conn.close()
 
@@ -230,6 +298,12 @@ def init_db(db_path: str = DB_PATH) -> str:
                 conn.close()
                 conn = None
                 _migrate_add_origin_columns(db_path)
+                conn = sqlite3.connect(db_path)
+            # CHECK 제약에 'external' 값만 빠진 경우 테이블 재생성으로 무손실 확장
+            if conn is not None and _can_migrate_check_to_external(conn):
+                conn.close()
+                conn = None
+                _migrate_check_to_external(db_path)
                 conn = sqlite3.connect(db_path)
             # 그래도 v15 스키마가 아니면 구형 DB로 판정 → 백업 후 재생성
             if not _is_current_schema(conn):
