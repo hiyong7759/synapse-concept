@@ -1,23 +1,27 @@
 # Synapse 설계 — /review 검토 편입
 
-**최종 업데이트**: 2026-04-17
+**최종 업데이트**: 2026-04-19 (v14 — 자동 저장 + origin 검토 뷰로 전환)
 
 ## 배경
 
-시냅스는 **저장과 합성을 분리**한다. 자동 저장되는 것은 원문 sentence + 노드 + 노드↔문장 역참조(`node_mentions`)까지이고, 그 외의 모든 의미 합성(카테고리 부여·엣지 생성·별칭 등록·노드 병합)은 **사용자 승인**을 거쳐야 DB에 반영된다. 근거: "사용자가 인지하지 못한 채 쌓이는 지식은 사용자의 지식이 아니다. 승인 과정의 읽기/판단 행위가 곧 사고 확장."
+v14에서 저장 모델이 바뀌었다. 카테고리·엣지·별칭은 **자동으로 저장**되며, 각 레코드는 `origin`(`user` / `ai` / `rule`) 컬럼으로 출처가 식별된다. "사용자가 인지하지 못한 채 쌓이는 것"을 막는 대신, **"사용자가 언제든 찾아서 고칠 수 있게 한다"**.
 
-`/review`는 이 승인 과정을 담는 화면이다. 게임화된 편입 경로로서 "짝짓기 / 묶기 / 체인 / 생존 / 일일 / 공백" 같은 유형의 검토 작업을 제공한다.
+`/review`는 이 모델에서 **세 가지 역할**만 담는다:
+
+1. **`unresolved_tokens` 해소** — 치환 실패 지시어(유일한 승인 대기 테이블)
+2. **AI·규칙 생성물 검토 뷰** — `origin='ai'` / `'rule'` 필터 목록에서 잘못된 항목 즉시 삭제
+3. **파괴적 작업 승인** — 노드 병합·아카이브 등 되돌릴 수 없는 작업
 
 ---
 
 ## 핵심 설계 원칙
 
-`/review` 검토 흐름의 4개 원칙은 **`docs/DESIGN_PRINCIPLES.md §3` /review 검토 원칙** 참고.
-(승인 대기 테이블 금지 · 런타임 도출 · 승인 즉시 반영 · LLM 없이도 동작)
+`/review` 검토 흐름의 5개 원칙은 **`docs/DESIGN_PRINCIPLES.md §3` /review 검토 원칙** 참고.
+(자동 저장 + origin 추적 · unresolved_tokens만 승인 대기 · 파괴적 작업만 승인 · AI/규칙 목록 뷰 · LLM 없이도 동작)
 
 ---
 
-## 유일한 저장 예외: unresolved_tokens
+## 유일한 승인 대기 테이블: unresolved_tokens
 
 ```sql
 CREATE TABLE unresolved_tokens (
@@ -29,19 +33,17 @@ CREATE TABLE unresolved_tokens (
 CREATE INDEX idx_unresolved_sentence ON unresolved_tokens(sentence_id);
 ```
 
-**왜 이것만 저장하는가?**
+**왜 이것만 승인 대기인가?**
 
 치환 실패는 **저장 시점에만 발생하는 이벤트**다. 사용자가 "요즘 허리 아파"를 입력하면 `_preprocess`가 "요즘"을 치환 시도하고 실패한다. 이 시점이 지나면 `sentences` 테이블에는 원문 그대로 남고, 그 "요즘"이 아직 해소 대기 중인지 사용자가 이미 닫은 건지는 어디에도 흔적이 남지 않는다. 즉 **런타임 재생성 불가** → 별도 저장 필수.
 
-다른 제안(공출현 쌍·오타 의심·미분류·LLM 추론)은 전부 `nodes / node_mentions / node_categories`에서 쿼리로 재생성 가능하므로 저장이 필요 없다.
+AI·규칙 생성물은 이미 `edges / node_categories / aliases`에 `origin`과 함께 저장되어 있으므로 "대기 테이블"이 필요 없다. 조회만 하면 된다.
 
 ---
 
 ## 섹션별 도출기 (engine/suggestions.py)
 
-각 함수는 DB 쿼리 + 필요 시 LLM 호출로 제안 리스트를 반환한다. **DB에 쓰지 않는다.**
-
-### unresolved — 미해결 지시어
+### unresolved — 미해결 지시어 (승인 대기 해소)
 
 ```python
 def unresolved() -> list[Suggestion]:
@@ -54,35 +56,33 @@ def unresolved() -> list[Suggestion]:
 
 승인 흐름: 사용자가 옵션 선택 → `POST /review/apply type=token` → `nodes` upsert + `node_mentions` INSERT + `unresolved_tokens` DELETE. "알 수 없음" 선택은 `type=token_dismiss`로 `unresolved_tokens` DELETE만.
 
-### uncategorized — 미분류 노드
+### ai_generated — AI 생성물 검수 (신규)
 
 ```python
-def uncategorized() -> list[Suggestion]:
-    # SELECT n.id, n.name
-    #   FROM nodes n
-    #   LEFT JOIN node_categories nc ON nc.node_id = n.id
-    #   WHERE nc.node_id IS NULL AND n.status = 'active'
-    # 각 노드에 대해:
-    #   기존 사용자 정의 경로 목록 상위 N개를 옵션에 포함
-    #   선택적으로 synapse/chat(base)에 분류 제안 요청 → 옵션에 추가
+def ai_generated(kind: str, limit: int) -> list[Suggestion]:
+    # kind in ('edge', 'category', 'alias')
+    # origin = 'ai'인 최근 생성물 목록
+    # edges:          SELECT * FROM edges WHERE origin='ai' ORDER BY created_at DESC LIMIT ?
+    # node_categories: SELECT * FROM node_categories WHERE origin='ai' ...
+    # aliases:         SELECT * FROM aliases WHERE origin='ai' ...
+    #
+    # 각 항목에 원문 sentence·노드 컨텍스트를 함께 반환 (사용자가 판단 가능하도록)
 ```
 
-승인 흐름: `POST /review/apply type=category` → `node_categories` INSERT.
+**액션**: 각 항목마다 `유지` / `삭제` 버튼. 삭제는 해당 테이블 DELETE.
 
-### cooccur_pairs — 공출현 노드 쌍
+### rule_generated — 규칙 생성물 검수 (규칙 오류 추적용)
 
 ```python
-def cooccur_pairs(limit: int) -> list[Suggestion]:
-    # node_mentions self-JOIN으로 같은 sentence_id에 속한 노드 쌍 수집
-    # 이미 edges에 존재하는 쌍은 제외
-    # 상위 limit개 반환
-    # 관계 종류 옵션(similar/cooccur/cause/contain/...)은
-    #   synapse/chat(base)에 관련 sentence 텍스트를 함께 전달해 추천
+def rule_generated(kind: str, limit: int) -> list[Suggestion]:
+    # kind in ('edge', 'category', 'alias')
+    # origin = 'rule'인 생성물 목록
+    # 사용자가 "잘못 분류됐네" 발견 시 해당 규칙을 이후 수정하기 위한 추적 경로
 ```
 
-승인 흐름: `POST /review/apply type=edge` → `edges` INSERT.
+**액션**: `유지` / `삭제`. 같은 규칙이 반복 오류 내면 엔지니어에게 규칙 수정 신호.
 
-### suspected_typos — 오타 의심 쌍
+### suspected_typos — 오타 의심 쌍 (파괴적 작업 승인)
 
 ```python
 def suspected_typos() -> list[Suggestion]:
@@ -91,30 +91,27 @@ def suspected_typos() -> list[Suggestion]:
     # 옵션: "같음 (병합)", "별칭으로만", "다르지만 관련 (엣지)", "다름 (무시)"
 ```
 
-승인 흐름: 사용자 선택에 따라 `type=merge` / `type=alias` / `type=edge` / `type=token_dismiss`로 분기.
+병합(`merge_nodes`)은 되돌릴 수 없어 **자동 저장 대상 아님** — 사용자 승인 유지.
 
-### alias_suggestions(node_id) — 별칭 제안 (사용자 요청 시에만)
+승인 흐름:
+- "같음" → `type=merge` (`merge_nodes(keep_id, remove_id)` 호출)
+- "별칭으로만" → `type=alias` (aliases INSERT, origin='user')
+- "다르지만 관련" → `type=edge` (edges INSERT, origin='user')
+- "다름" → 무시 (이 쌍을 다음 번 도출에서 제외하는 상태는 별도 필요 시 추가)
 
-```python
-def alias_suggestions(node_id: int) -> list[Suggestion]:
-    # 사용자가 그래프 뷰 노드 상세에서 "별칭 추천" 버튼 클릭 시 호출
-    # synapse/chat(base)에 노드 이름 → 줄임말·영어 원문·다국어 표기·흔한 오타 요청
-    # 결과를 옵션으로 제시
-```
-
-승인 흐름: `POST /review/apply type=alias` → `aliases` INSERT.
-
-### stale_nodes(days) — 노드 생존
+### stale_nodes(days) — 노드 생존 (아카이브 승인)
 
 ```python
 def stale_nodes(days: int) -> list[Suggestion]:
-    # nodes.updated_at 기준 N일 이상 미갱신 + edges.last_used 참조 없음
+    # nodes.updated_at 기준 N일 이상 미갱신 + 최근 참조 없음
     # 옵션: "유지", "아카이브 (status=inactive)"
 ```
 
-승인 흐름: `POST /review/apply type=archive` / 유지는 그냥 카드만 닫기.
+아카이브는 status 변경이라 파괴적이지 않지만, 사용자가 모르게 비활성화되면 당황하므로 승인 유지.
 
-### daily(date) — 일일 회고
+승인 흐름: `POST /review/apply type=archive` / 유지는 카드만 닫기.
+
+### daily(date) — 일일 회고 (정보 뷰)
 
 ```python
 def daily(date: str) -> list[Suggestion]:
@@ -123,7 +120,7 @@ def daily(date: str) -> list[Suggestion]:
     # 부족한 내용을 이어 쓰려면 기본 입력 흐름으로
 ```
 
-### gaps() — 기록 공백
+### gaps() — 기록 공백 (정보 뷰)
 
 ```python
 def gaps() -> list[Suggestion]:
@@ -135,15 +132,28 @@ def gaps() -> list[Suggestion]:
 
 ---
 
+### 폐기된 섹션 (v14)
+
+자동 저장으로 전환되며 아래 섹션은 `/review`에서 제거됨 — 이미 DB에 저장되어 있어 "제안"이 불필요:
+
+- ~~`uncategorized` (미분류 노드)~~ — 저장 시점에 `origin='ai'` 또는 `'rule'`로 자동 분류
+- ~~`cooccur_pairs` (공출현 노드 쌍)~~ — `origin='ai'` 엣지로 자동 생성
+- ~~`alias_suggestions` (별칭 제안)~~ — `origin='ai'` 별칭으로 자동 등록
+
+사용자는 이들을 `ai_generated` 뷰에서 일괄 검수하거나, 그래프 뷰에서 개별 편집할 수 있다.
+
+---
+
 ## API (api/routes/graph.py)
 
 ### GET /review
 
-현재 시점의 모든 섹션 제안을 JSON으로 반환. 섹션 필터 지원:
+현재 시점의 모든 섹션을 JSON으로 반환. 섹션 필터 지원:
 
 ```
 GET /review
-GET /review?sections=unresolved,uncategorized
+GET /review?sections=unresolved,ai_generated
+GET /review?sections=ai_generated&kind=edge&limit=20
 ```
 
 응답 예시:
@@ -154,12 +164,18 @@ GET /review?sections=unresolved,uncategorized
      "question": "'요즘'은 언제부터 언제까지인가요?",
      "options": ["2026-04-10~04-17", "이번 달", "최근 7일", "직접 입력"]}
   ],
-  "uncategorized": [
-    {"node_id": 17, "node_name": "허리디스크",
-     "question": "'허리디스크'는 어떤 분류에 속하나요?",
-     "options": ["건강.질병", "BOD.disease"], "allow_free_input": true}
-  ],
-  "cooccur_pairs": [...],
+  "ai_generated": {
+    "edge": [
+      {"id": 103, "source": "허리디스크", "target": "L4-L5", "label": "contain",
+       "sentence": "허리디스크 L4-L5 진단받았어", "created_at": "2026-04-19T..."}
+    ],
+    "category": [
+      {"node_id": 17, "node_name": "허리디스크", "category": "BOD.disease",
+       "created_at": "..."}
+    ],
+    "alias": [...]
+  },
+  "rule_generated": { "edge": [...], "category": [...], "alias": [...] },
   "suspected_typos": [...],
   "stale_nodes": [...],
   "daily": [...],
@@ -167,77 +183,81 @@ GET /review?sections=unresolved,uncategorized
 }
 ```
 
-응답 구조는 섹션별로 다르다. UI는 섹션 이름으로 렌더링 분기.
-
 ### GET /review/count
 
-사이드바 배지용 집계:
+사이드바 배지용 집계 (쿼리만, LLM 없음):
 ```json
-{"total": 12, "unresolved": 2, "uncategorized": 5, "cooccur_pairs": 3, "suspected_typos": 1, "stale_nodes": 1}
+{
+  "unresolved": 2,
+  "ai_generated": {"edge": 12, "category": 8, "alias": 3},
+  "rule_generated": {"edge": 4, "category": 9, "alias": 0},
+  "suspected_typos": 1,
+  "stale_nodes": 1
+}
 ```
-간단 쿼리만 사용 (LLM 호출 없음).
 
 ### POST /review/apply
 
-제안 수락. body:
+제안 수락·처리. body:
 ```json
-{"type": "edge", "params": {"source_id": 17, "target_id": 42, "label": "cause"}}
+{"type": "merge", "params": {"keep_id": 17, "remove_id": 42}}
 ```
 
 | type | params | 동작 |
 |------|--------|------|
-| `edge` | `{source_id, target_id, label}` | `edges` INSERT |
-| `category` | `{node_id, category}` | `node_categories` INSERT |
-| `alias` | `{node_id, alias}` | `aliases` INSERT |
-| `merge` | `{keep_id, remove_id}` | `merge_nodes` 호출 |
-| `archive` | `{node_id}` | `nodes.status='inactive'` |
 | `token` | `{sentence_id, token, value}` | `nodes` upsert + `node_mentions` INSERT + `unresolved_tokens` DELETE |
 | `token_dismiss` | `{sentence_id, token}` | `unresolved_tokens` DELETE (그래프 변경 없음) |
+| `merge` | `{keep_id, remove_id}` | `merge_nodes` 호출 (파괴적) |
+| `archive` | `{node_id}` | `nodes.status='inactive'` |
+| `edge` (수동 추가) | `{source_id, target_id, label}` | `edges` INSERT, origin='user' |
+| `category` (수동 추가) | `{node_id, category}` | `node_categories` INSERT, origin='user' |
+| `alias` (수동 추가) | `{node_id, alias}` | `aliases` INSERT, origin='user' |
+
+### DELETE — 자동 저장물 제거
+
+검토 목록에서 잘못된 항목을 제거하는 API (이미 저장된 것 삭제):
+
+| 엔드포인트 | 동작 |
+|-----------|------|
+| `DELETE /edges/{id}` | 엣지 제거 |
+| `DELETE /nodes/{id}/categories/{category}` | 카테고리 제거 |
+| `DELETE /aliases/{alias}` | 별칭 제거 |
+
+이전 v13의 "승인 후 편집" API와 동일. v14에서는 **제거가 주 액션**(추가는 이미 자동).
 
 ---
 
 ## 프론트 (app/src/pages/ReviewPage.tsx)
 
-- 페이지 로드 시 `GET /review` 호출 → 섹션별로 리스트 렌더
-- 각 제안은 `{question, options}` 구조. 옵션 버튼 클릭 시 `POST /review/apply` 호출 + 클라이언트 상태에서 해당 제안 제거
-- 승인된 결과는 그래프 뷰로 전환했을 때 애니메이션으로 강조 (새 엣지/노드/카테고리 칩 1.5초 하이라이트)
-- 사이드바 배지: `GET /review/count`로 열린 제안 수 표시
-- LLM 호출이 있는 섹션(`cooccur_pairs`의 관계 종류 옵션 등)은 사용자가 섹션을 펼칠 때만 지연 로드 (페이지 초기 로딩 부담 완화)
-
-### 게임 모드
-
-사용자 결정사항의 6가지 게임 유형은 **같은 데이터를 섹션별로 다르게 시각화하는 UI 뷰일 뿐, 백엔드 스키마는 동일**:
-
-- 관계 짝짓기 → `cooccur_pairs`
-- 묶기 게임 → `cooccur_pairs` + `uncategorized`를 클러스터로 묶어 표시
-- 체인 채우기 → `cooccur_pairs` 중 2-hop 연결 후보
-- 노드 생존 → `stale_nodes`
-- 일일 그래프 → `daily(today)`
-- 공백 채우기 → `gaps`
-
-LLM 역할은 옵션 후보 생성만. 최종 결정은 항상 사용자.
+- 페이지 로드 시 `GET /review` 호출 → 섹션별 리스트 렌더
+- **`ai_generated` 섹션**: 기본 확장, 각 항목에 `[삭제]` 버튼 + 원문 컨텍스트 툴팁
+- **`rule_generated` 섹션**: 기본 접힘, 사용자가 펼쳐서 훑어볼 때만 부하 발생
+- **`unresolved` 섹션**: 질문형 카드. 옵션 선택 시 `POST /review/apply type=token`
+- **`suspected_typos` / `stale_nodes`**: 파괴적이므로 확인 모달 포함
+- 사이드바 배지: `GET /review/count`로 섹션별 카운트 표시. `ai_generated` 배지는 "검수 대기 건수"로 기능
+- 삭제 직후 목록에서 해당 항목 제거 (optimistic update)
 
 ---
 
 ## 독립 동작 (`--no-llm`)
 
-LLM 없이도 대부분의 섹션은 작동한다:
+LLM 없이도 모든 검토 섹션이 작동한다:
 
-- **쿼리만으로 동작**: `unresolved`, `uncategorized`(LLM 제안 옵션 제외), `cooccur_pairs`(관계 종류 옵션 없이 쌍만), `suspected_typos`, `stale_nodes`, `daily`, `gaps`
-- **빈 결과**: `alias_suggestions(node_id)` (LLM 필수)
+- **쿼리만으로 완결**: `unresolved`(옵션 구성 제외), `ai_generated`, `rule_generated`, `suspected_typos`, `stale_nodes`, `daily`, `gaps`
+- **LLM 호출은 저장 시점에만** — extract 어댑터가 `origin='ai'`로 엣지·카테고리·별칭을 자동 생성할 때 1회. 이후 검토는 LLM 없이 가능.
 
-사용자는 여전히 카테고리·엣지·별칭을 자유 입력으로 직접 추가할 수 있다.
+사용자는 여전히 카테고리·엣지·별칭을 자유 입력으로 직접 추가할 수 있다 (`origin='user'`).
 
 ---
 
-## 승인 이후 편집
+## 편집 — 언제든 수정·삭제
 
-승인된 카테고리·엣지·별칭은 Phase 4의 편집 API로 **언제든 수정·삭제 가능**하다:
+자동 저장된 카테고리·엣지·별칭은 그래프 뷰 / `/review` / 노드 상세 화면에서 **언제든** 수정·삭제 가능:
 
-- `POST /nodes/{id}/categories` — 추가
+- `POST /nodes/{id}/categories` — 추가 (origin='user')
 - `DELETE /nodes/{id}/categories/{category}` — 삭제
 - `PUT /nodes/{id}/categories` body `{from, to}` — 이름 변경
 - `DELETE /edges/{id}` — 엣지 삭제
 - `DELETE /aliases/{alias}` — 별칭 삭제
 
-"승인된 것은 틀릴 수 없다"는 아니다. 사용자의 판단은 변할 수 있고 그래프도 그에 맞춰 업데이트된다.
+v14의 핵심 가정: **"자동 저장은 완벽하지 않다. 사용자가 쉽게 고칠 수 있으면 된다."** origin 컬럼 + 검수 뷰 + 편집 API 세 가지가 이 가정을 뒷받침한다.
