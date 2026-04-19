@@ -34,6 +34,7 @@ PORT = int(os.getenv("SYNAPSE_PORT", "8765"))
 # ── 사용 가능한 태스크 ─────────────────────────────────────
 TASKS = [
     "extract",
+    "extract-state",
     "retrieve-filter",
     "retrieve-expand",
     "retrieve-expand-org",
