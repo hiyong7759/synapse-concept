@@ -386,21 +386,10 @@ admin       — 시스템 관리자 (전체)
 
 ---
 
-### Task 1-org: 상태 변경 감지 (주어 추적)
+### ~~Task 1-org: 상태 변경 감지 (주어 추적)~~ (v15 폐기)
 
-개인 Task 1과 구조 동일. **차이: 주어가 명시됨.**
-
-```
-입력: "김대리 개발팀으로 이동했어"
-      기존 트리플:
-      - 김대리 —[소속]→ 마케팅팀
-      - 김대리 —[직급]→ 대리
-출력: {"inactive": [{"source": "김대리", "target": "마케팅팀"}]}
-```
-
-조직 상태 변경 유형: 인사이동, 직급 변경, 퇴사/입사, 프로젝트 종료/중단, 고객사 계약 해지, 담당자 교체
-
-목표 수량: **400건**
+> 엣지 테이블 폐기(v15)로 "트리플 무효화" 개념 자체가 사라짐. sentence 단위 판정으로 전환되어 개인·조직 공통 `extract-state` 어댑터 단일 사용.
+> 기존 데이터(`save-state-personal`, `save-state-org`)는 `archive/`로 이동 예정.
 
 ---
 
@@ -719,7 +708,8 @@ iters = max(150, (n_train × 3 epochs) // effective_batch)
 | save-pronoun | 660 | 495 |
 | retrieve-expand | 468 | 351 |
 | routing | 265 | 198 |
-| save-state-personal | 438 | 328 |
+| ~~save-state-personal~~ | ~~438~~ | ~~328~~ (v15 폐기) |
+| ~~save-state-org~~ | — | — (v15 폐기) |
 | security-personal | 495 | 371 |
 | security-context | 415 | 311 |
 | security-access | 319 | 239 |
