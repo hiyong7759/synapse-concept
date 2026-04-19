@@ -17,9 +17,9 @@
 6. 동의어/다국어는 aliases.
 7. meta 컬럼·JSON 필드를 노드에 추가 금지 (예외: `node_categories`).
 
-**저장과 승인**
-8. 저장과 합성의 분리 (자동 저장은 sentence + 노드 + `node_mentions` + `unresolved_tokens`까지).
-9. DB에 있는 것은 전부 승인된 것.
+**저장과 출처**
+8. 저장은 자동, 출처는 기록 — 카테고리·엣지·별칭 모두 자동 저장, `origin`(user/ai/rule)으로 식별.
+9. `unresolved_tokens`와 파괴적 작업(노드 병합)만 `/review` 승인 — AI·규칙 생성물은 UI에서 즉시 수정·삭제 가능.
 10. 입력 단위 = 마크다운 구조화된 게시물.
 
 **동작**
