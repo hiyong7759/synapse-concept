@@ -9,8 +9,12 @@
 v15 폐기 섹션 (DESIGN_REVIEW.md §폐기된 섹션 참고):
 - `uncategorized` — 저장 시점에 origin='ai'/'rule'로 자동 분류 (예정)
 - `cooccur_pairs` — 문장 하이퍼엣지(node_mentions)에 이미 자동 포함되므로 별도 제안 불필요
-- `alias_suggestions` — origin='ai' 별칭으로 자동 등록 (예정)
+- `alias_suggestions` — 저장 후 백그라운드 워커가 origin='external' 별칭 자동 등록 (v15-A2)
 - 의미 엣지 관련 섹션 — edges 테이블 폐기로 전체 제거
+
+v15-A2 origin 출처별 검수 섹션:
+- `ai_generated`  — kind='category'만 (AI 추론 카테고리). 별칭은 AI 추론 안 함.
+- `external_generated` — kind='alias'만 (Wikidata altLabel). AI와 출처를 분리.
 """
 
 from __future__ import annotations
@@ -259,6 +263,80 @@ def gaps(db_path: str = DB_PATH, threshold_days: int = 7, limit: int = 5) -> lis
     return gaps_found[:limit]
 
 
+# ─── origin 출처별 검수 섹션 (v15-A2) ────────────────────
+
+def ai_generated(
+    db_path: str = DB_PATH, kind: str = "category", limit: int = 30
+) -> list[dict]:
+    """AI 생성물 검수 — v15-A2: kind='category'만 (별칭은 external로 이전).
+
+    node_categories.origin='ai' 레코드를 최근순으로 반환. 각 항목에 대상 노드명
+    을 함께 주어 사용자가 "이 분류가 맞나?"를 즉시 판단할 수 있게 한다.
+    """
+    if kind != "category":
+        return []  # v15-A2: AI origin alias는 존재하지 않음
+    conn = get_connection(db_path)
+    try:
+        rows = conn.execute(
+            """SELECT nc.node_id, n.name AS node_name, nc.category, nc.created_at
+               FROM node_categories nc
+               JOIN nodes n ON n.id = nc.node_id
+               WHERE nc.origin='ai' AND n.status='active'
+               ORDER BY nc.created_at DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [
+        {
+            "kind": "category",
+            "node_id": r["node_id"],
+            "node_name": r["node_name"],
+            "category": r["category"],
+            "created_at": r["created_at"],
+            "question": f"'{r['node_name']}' 노드의 AI 분류 '{r['category']}' 이 맞나요?",
+            "options": ["유지", "삭제"],
+        }
+        for r in rows
+    ]
+
+
+def external_generated(
+    db_path: str = DB_PATH, kind: str = "alias", limit: int = 30
+) -> list[dict]:
+    """외부 API 생성물 검수 — v15-A2: kind='alias'만 (Wikidata altLabel).
+
+    aliases.origin='external' 레코드를 최근순으로 반환. 원 노드명과 별칭을 같이
+    보여 Wikidata 동명이인·동의어 오매핑을 사용자가 즉시 제거할 수 있게 한다.
+    """
+    if kind != "alias":
+        return []  # v15-A2: external origin category는 존재하지 않음
+    conn = get_connection(db_path)
+    try:
+        rows = conn.execute(
+            """SELECT a.alias, a.node_id, n.name AS node_name, a.created_at
+               FROM aliases a
+               JOIN nodes n ON n.id = a.node_id
+               WHERE a.origin='external' AND n.status='active'
+               ORDER BY a.created_at DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+    finally:
+        conn.close()
+    return [
+        {
+            "kind": "alias",
+            "node_id": r["node_id"],
+            "node_name": r["node_name"],
+            "alias": r["alias"],
+            "created_at": r["created_at"],
+            "question": f"'{r['node_name']}' 노드에 외부 별칭 '{r['alias']}' 이 맞나요?",
+            "options": ["유지", "삭제"],
+        }
+        for r in rows
+    ]
+
+
 # ─── 통합 ─────────────────────────────────────────────────
 
 def all_sections(
@@ -269,6 +347,8 @@ def all_sections(
     """전체 섹션 호출. sections 인자로 일부만 선택 가능."""
     available = {
         "unresolved":         lambda: unresolved(db_path=db_path),
+        "ai_generated":       lambda: ai_generated(db_path=db_path),
+        "external_generated": lambda: external_generated(db_path=db_path),
         "suspected_typos":    lambda: suspected_typos(db_path=db_path),
         "missing_basic_info": lambda: missing_basic_info(db_path=db_path),
         "stale_nodes":        lambda: stale_nodes(db_path=db_path),
@@ -284,14 +364,22 @@ def counts(db_path: str = DB_PATH) -> dict:
     conn = get_connection(db_path)
     try:
         unresolved_n = conn.execute("SELECT COUNT(*) FROM unresolved_tokens").fetchone()[0]
+        ai_cat_n = conn.execute(
+            "SELECT COUNT(*) FROM node_categories WHERE origin='ai'"
+        ).fetchone()[0]
+        ext_alias_n = conn.execute(
+            "SELECT COUNT(*) FROM aliases WHERE origin='external'"
+        ).fetchone()[0]
     finally:
         conn.close()
     typos_n = len(find_suspected_typos(db_path=db_path))
     basic_n = len(missing_basic_info(db_path=db_path))
-    total = unresolved_n + typos_n + basic_n
+    total = unresolved_n + typos_n + basic_n + ai_cat_n + ext_alias_n
     return {
         "total":              total,
         "unresolved":         unresolved_n,
+        "ai_generated":       {"category": ai_cat_n},
+        "external_generated": {"alias": ext_alias_n},
         "suspected_typos":    typos_n,
         "missing_basic_info": basic_n,
     }
