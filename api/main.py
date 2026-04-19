@@ -14,6 +14,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .routes.graph import router
+from engine.workers import install_default_hooks
+
+# v15-A2: 저장 완료 이벤트에 카테고리/별칭 워커 연결 (daemon 스레드, 비블로킹)
+install_default_hooks(background=True)
 
 app = FastAPI(title="Synapse API", version="1.0.0")
 

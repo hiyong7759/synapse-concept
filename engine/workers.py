@@ -187,8 +187,15 @@ def run_workers(result: SaveResult, db_path: str) -> None:
             print(f"[workers] {name}_worker 예외: {e}")
 
 
+_INSTALLED = False
+
+
 def install_default_hooks(background: bool = True) -> None:
-    """save() 훅에 워커 디스패처 등록. background=True 면 daemon 스레드로 실행."""
+    """save() 훅에 워커 디스패처 등록. background=True 면 daemon 스레드로 실행.
+    프로세스 수명 내 1회만 설치(멱등) — 재임포트·uvicorn reload 로 중복 누적 방지."""
+    global _INSTALLED
+    if _INSTALLED:
+        return
     def hook(result: SaveResult, db_path: str) -> None:
         if background:
             threading.Thread(
@@ -197,3 +204,4 @@ def install_default_hooks(background: bool = True) -> None:
         else:
             run_workers(result, db_path)
     register_post_save_hook(hook)
+    _INSTALLED = True

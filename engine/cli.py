@@ -19,6 +19,7 @@ from engine.db import get_stats, init_db, DB_PATH
 from engine.save import save, find_suspected_typos
 from engine.retrieve import retrieve
 from engine.llm import llm_extract
+from engine.workers import install_default_hooks
 from typing import Optional
 
 
@@ -53,6 +54,8 @@ def cmd_typos() -> None:
 
 
 def cmd_interactive(use_llm: bool) -> None:
+    # v15-A2: 저장 완료 이벤트에 카테고리/별칭 워커 연결 (daemon 스레드, 비블로킹)
+    install_default_hooks(background=True)
     mode_tag = "" if use_llm else " [LLM 없음]"
     print(f"Synapse 그래프 엔진{mode_tag}")
     print("  입력: 자유 대화  |  /q 종료  |  /stats 통계  |  /extract <텍스트> 추출 확인")
