@@ -19,38 +19,18 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 BASE_MODEL = "unsloth/gemma-4-E2B-it-UD-MLX-4bit"
 
-SYSTEM = """한국어 문장에서 지식 그래프의 노드, 카테고리, 보관 유형을 추출하라.
+SYSTEM = """한국어 문장에서 지식 하이퍼그래프의 노드를 추출하라.
 JSON만 출력. 다른 텍스트 금지.
 
 출력 형식:
-{"retention":"memory|daily","nodes":[{"name":"노드명","category":"대분류.소분류"}]}
+{"nodes":["노드명", ...]}
 
 규칙:
 - 노드는 원자. 하나의 개념 = 하나의 노드.
 - 1인칭(나/내/저/제)이 문장에 명시된 경우 "나" 노드로 추출. 문장에 없는 1인칭 추가 금지.
 - 3인칭 주어는 원문 그대로 노드 추출.
-- 부정부사(안, 못)는 독립 노드다. 예: "스타벅스 안 좋아" → 스타벅스, 안, 좋아 (3개 독립 노드).
-- retention: 잘 변하지 않는 사실/상태/이력 → "memory". 순간적 활동/감정/일상 → "daily".
-- 추출할 노드가 없는 대화 → {"retention":"daily","nodes":[]}
-
-카테고리는 반드시 '대분류.소분류' 형식. 약어 금지.
-PER: individual,family,friend,colleague,org,public
-BOD: disease,medical,part,sleep,exercise,nutrition
-MND: mental,emotion,coping,motivation,personality
-FOD: ingredient,recipe,restaurant,drink,product
-LIV: housing,moving,appliance,interior,maintenance,supply
-MON: income,spending,saving,invest,loan,insurance,payment
-WRK: workplace,role,jobchange,business,cert,tool
-TEC: sw,hw,infra,ai,data
-EDU: school,academic,exam,online,reading
-LAW: statute,contract,rights,admin,tax
-TRV: domestic,abroad,flight,place,stay
-NAT: weather,animal,plant,ecology,terrain
-CUL: music,film,book,art,show,media
-HOB: sport,outdoor,game,craft,social,sing
-SOC: issue,news,politics,economy,international,incident
-REL: romance,comm,conflict
-REG: practice,catholic,christianity,buddhism,islam,other"""
+- 부정부사(안, 못)는 독립 노드다. 예: "스타벅스 안 좋아" → ["스타벅스", "안", "좋아"].
+- 추출할 노드가 없는 대화 → {"nodes":[]}"""
 
 
 # (카테고리, 입력, 필수 포함 노드 집합)
@@ -177,13 +157,19 @@ def run(adapter_dir: Path) -> None:
             kwargs["sampler"] = sampler
         out = generate(model, tokenizer, prompt=prompt, **kwargs)
 
-        # 파싱
+        # 파싱 (v15: nodes는 문자열 배열. dict 형태도 하위 호환)
         try:
             import re
             m = re.search(r"\{.*\}", out, re.DOTALL)
             if m:
                 parsed = json.loads(m.group())
-                actual_names = set(n.get("name", "") for n in parsed.get("nodes", []) if isinstance(n, dict))
+                nodes = parsed.get("nodes", [])
+                actual_names = set()
+                for n in nodes:
+                    if isinstance(n, str):
+                        actual_names.add(n.strip())
+                    elif isinstance(n, dict) and n.get("name"):
+                        actual_names.add(n["name"].strip())
             else:
                 actual_names = set()
         except Exception:
