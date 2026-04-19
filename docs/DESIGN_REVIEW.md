@@ -60,15 +60,27 @@ def unresolved() -> list[Suggestion]:
 
 ```python
 def ai_generated(kind: str, limit: int) -> list[Suggestion]:
-    # kind in ('category', 'alias')
+    # kind = 'category' (v15에선 ai 출처는 카테고리만. aliases는 external로 이전)
     # origin = 'ai'인 최근 생성물 목록
     # node_categories: SELECT * FROM node_categories WHERE origin='ai' ...
-    # aliases:         SELECT * FROM aliases WHERE origin='ai' ...
     #
     # 각 항목에 원문 sentence·노드 컨텍스트를 함께 반환 (사용자가 판단 가능하도록)
 ```
 
 **액션**: 각 항목마다 `유지` / `삭제` 버튼. 삭제는 해당 테이블 DELETE.
+
+### external_generated — 외부 API 생성물 검수 (Wikidata 별칭)
+
+```python
+def external_generated(kind: str, limit: int) -> list[Suggestion]:
+    # kind = 'alias' (v15에선 external 출처는 별칭만. Wikidata altLabel)
+    # origin = 'external'인 최근 생성물 목록
+    # aliases: SELECT * FROM aliases WHERE origin='external' ...
+    #
+    # 각 항목에 원 노드명과 Wikidata altLabel 둘 다 표시 (매핑 정확성 확인용)
+```
+
+**액션**: `유지` / `삭제`. Wikidata가 잘못 매핑한 경우(동명이인·동의어 충돌) 사용자가 즉시 제거.
 
 ### rule_generated — 규칙 생성물 검수 (규칙 오류 추적용)
 
@@ -168,8 +180,13 @@ GET /review?sections=ai_generated&kind=category&limit=20
     "category": [
       {"node_id": 17, "node_name": "허리디스크", "category": "BOD.disease",
        "created_at": "..."}
-    ],
-    "alias": [...]
+    ]
+  },
+  "external_generated": {
+    "alias": [
+      {"node_id": 42, "node_name": "React Native", "alias": "리액트 네이티브",
+       "source": "wikidata", "created_at": "..."}
+    ]
   },
   "rule_generated": { "category": [...], "alias": [...] },
   "suspected_typos": [...],
@@ -185,7 +202,8 @@ GET /review?sections=ai_generated&kind=category&limit=20
 ```json
 {
   "unresolved": 2,
-  "ai_generated": {"category": 8, "alias": 3},
+  "ai_generated": {"category": 8},
+  "external_generated": {"alias": 3},
   "rule_generated": {"category": 9, "alias": 0},
   "suspected_typos": 1,
   "stale_nodes": 1

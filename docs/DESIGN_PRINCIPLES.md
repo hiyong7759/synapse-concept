@@ -33,8 +33,8 @@
 
 ### 저장과 출처
 
-7. **저장은 자동, 출처는 기록한다.** 원문 sentence + 노드 + `node_mentions` + `node_categories` + `aliases`는 모두 자동 저장한다. 각 레코드는 `origin` 컬럼(`user` / `ai` / `rule`)으로 출처가 식별되며, 사용자는 언제든 AI·규칙 생성물을 수정·삭제할 수 있다. **치환 실패 지시어(`unresolved_tokens`)와 파괴적 작업(노드 병합 등)만** `/review` 승인을 거친다.
-8. **DB의 모든 레코드는 출처가 식별된다.** `node_categories`, `aliases`에는 `origin`이 붙는다. UI·`/review`는 이 값으로 필터링해 "AI가 자동으로 단 것만 훑어보기" 같은 검토 뷰를 제공한다. `rule`은 규칙 오류 추적용, `ai`는 LLM 추론 오류 검수용이다.
+7. **저장은 자동, 출처는 기록한다.** 원문 sentence + 노드 + `node_mentions` + `node_categories` + `aliases`는 모두 자동 저장한다. 각 레코드는 `origin` 컬럼(`user` / `ai` / `rule` / `external`)으로 출처가 식별되며, 사용자는 언제든 AI·규칙·외부 생성물을 수정·삭제할 수 있다. **치환 실패 지시어(`unresolved_tokens`)와 파괴적 작업(노드 병합 등)만** `/review` 승인을 거친다.
+8. **DB의 모든 레코드는 출처가 식별된다.** `node_categories`, `aliases`에는 `origin`이 붙는다. UI·`/review`는 이 값으로 필터링해 "AI가 자동으로 단 것만 훑어보기" 같은 검토 뷰를 제공한다. 출처별 역할: `user` 사용자 명시, `ai` LLM 추론(오류 검수용), `rule` 결정론적 규칙(규칙 오류 추적용), `external` 외부 API(예: Wikidata altLabel, 외부 데이터 오염 검수용).
 9. **입력 단위 = 마크다운 구조화된 게시물.** 세션·맥락 경계 자동 추론 없음. 평문은 LLM이 마크다운 구조화 초안을 제안하고 사용자 확정 후 저장.
 
 ### 동작

@@ -14,8 +14,8 @@
 sentences:         id, text, role('user'|'assistant'), created_at
 nodes:             id, name, status('active'|'inactive'), created_at, updated_at
 node_mentions:     node_id, sentence_id, created_at                                   — PK(node_id, sentence_id)
-node_categories:   node_id, category, origin('user'|'ai'|'rule'), created_at          — PK(node_id, category)
-aliases:           alias TEXT PRIMARY KEY, node_id, origin, created_at
+node_categories:   node_id, category, origin('user'|'ai'|'rule'|'external'), created_at — PK(node_id, category)
+aliases:           alias TEXT PRIMARY KEY, node_id, origin('user'|'rule'|'external'), created_at
 unresolved_tokens: sentence_id, token, created_at                                     — PK(sentence_id, token)
 ```
 
@@ -23,8 +23,9 @@ unresolved_tokens: sentence_id, token, created_at                               
 
 **origin 값**:
 - `user` — 사용자 직접 입력 (마크다운 heading, 수동 등록)
-- `ai` — LLM 추론 (extract 어댑터의 카테고리/별칭 자동 생성)
-- `rule` — 결정론적 규칙 (날짜 정규화, 부정부사 감지, doc_mode 계층 카테고리)
+- `ai` — LLM 추론 (카테고리 분류 워커. 베이스 모델 + 시스템 프롬프트)
+- `rule` — 결정론적 규칙 (날짜 정규화, 부정부사 감지, doc_mode 계층 카테고리, 인칭대명사 별칭 시드)
+- `external` — 외부 API (Wikidata altLabel로 가져온 별칭)
 
 **node_mentions**: 문장 하이퍼엣지의 멤버십. 모든 노드에 동일 적용되는 노드↔문장 역참조. 시간·장소·부정 같은 특수 노드도 별도 취급 없이 여기만 참조한다.
 
