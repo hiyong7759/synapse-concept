@@ -8,6 +8,12 @@
 - 의미 관계(cause/avoid/similar)는 sentence 원문에 이미 있고, 해석은 외부 지능체 몫.
 - 평문 입력 → structure-suggest 게이트 → SaveResult.markdown_draft 반환 (저장 보류)
 
+v15-A2 저장 정책:
+- 동기 단계에서 aliases는 user·rule origin만 INSERT (Wikidata·LLM 추천 경로 없음).
+- 동기 단계에서 node_categories는 user·rule origin만 INSERT (AI 분류 경로 없음).
+- AI 카테고리 분류와 external 별칭 수집은 저장 완료 이벤트로 넘기고 백그라운드 워커가
+  담당. save() 는 commit 성공 후 등록된 훅을 호출한다 (register_post_save_hook).
+
 맥락 공유:
 - save-pronoun context = 같은 게시물의 다른 sentences (직전 대화 주입 폐기)
 """
@@ -17,7 +23,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Optional
+from typing import Callable, Optional
 
 from .db import get_connection, DB_PATH
 from .llm import chat, LLMError, save_pronoun, llm_extract, structure_suggest
@@ -35,6 +41,33 @@ class SaveResult:
     nodes_deactivated: list[str] = field(default_factory=list)  # 상태 변경된 노드 이름
     markdown_draft: Optional[str] = None  # structure-suggest 초안 (저장 보류 시)
     question: Optional[str] = None
+
+
+# ─── 저장 완료 이벤트 훅 (v15-A2) ─────────────────────────
+
+PostSaveHook = Callable[["SaveResult", str], None]
+
+_POST_SAVE_HOOKS: list[PostSaveHook] = []
+
+
+def register_post_save_hook(hook: PostSaveHook) -> None:
+    """저장 완료 시 호출될 훅 등록. hook(result, db_path) 시그니처.
+
+    v15-A2: 백그라운드 워커(카테고리 분류 · Wikidata 별칭)가 이 훅에 등록해
+    `result.node_ids_added` 신규 노드를 소비한다. 훅 내부에서 asyncio.create_task
+    또는 FastAPI BackgroundTasks 로 비동기 스케줄링할 책임은 훅 쪽에 있다.
+    """
+    if hook not in _POST_SAVE_HOOKS:
+        _POST_SAVE_HOOKS.append(hook)
+
+
+def _fire_post_save_hooks(result: "SaveResult", db_path: str) -> None:
+    """commit 성공 후 등록된 훅 일괄 호출. 훅 예외는 격리(저장 성공에 영향 없음)."""
+    for hook in _POST_SAVE_HOOKS:
+        try:
+            hook(result, db_path)
+        except Exception as e:
+            print(f"[save] post_save_hook {hook.__name__} 예외: {e}")
 
 
 # ─── DB 헬퍼 ──────────────────────────────────────────────
@@ -399,6 +432,9 @@ def save(
         conn.commit()
     finally:
         conn.close()
+
+    # 저장 완료 이벤트 — 백그라운드 워커 체인 트리거 (v15-A2)
+    _fire_post_save_hooks(result, db_path)
 
     return result
 
