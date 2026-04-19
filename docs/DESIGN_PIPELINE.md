@@ -89,8 +89,7 @@ heading 경로(`더나은.개발팀`)가 사용자 명시 카테고리 경로가
   ↓
   [synapse/extract]  temperature=0, max_tokens=32768
     입력: 정규화된 텍스트 + "알려진 사실:" (인출 원본 문장들, 있을 때)
-    출력: {nodes, categories, aliases, deactivate}
-    categories·aliases는 전부 자동 저장 대상 (origin='ai')
+    출력: {nodes, deactivate}  ← v15 축소 (categories·aliases 폐기, 백그라운드 워커로 이전)
     의미 관계(cause/avoid/similar)는 추출하지 않음 — sentence 원문에 이미 있음
     전처리: ()[] 공백 치환 (2B 모델 반복 루프 방지)
   ↓
@@ -108,18 +107,22 @@ heading 경로(`더나은.개발팀`)가 사용자 명시 카테고리 경로가
     단독 4자리 숫자(2026)는 오탐 위험으로 제외.
     분할된 날짜 노드는 category='TIM.*'에 origin='rule'로 자동 등록.
   ↓
-  DB 저장 (모두 자동, origin 부여):
+  DB 저장 (동기 — 즉시 반영):
     nodes upsert (중복 이름은 기존 id 재사용 — '2026년'은 모든 게시물에서 같은 노드)
     node_mentions INSERT OR IGNORE (node_id, sentence_id)  — 문장 하이퍼엣지 멤버십
-    node_categories INSERT — origin별 분기:
+    node_categories INSERT — 동기 origin 처리:
       · heading 경로 → origin='user'
-      · LLM 추론 카테고리 → origin='ai'
-      · 규칙 분류(날짜/부정부사/doc_mode 계층 등) → origin='rule'
-    aliases INSERT — LLM이 새 노드에 제안한 줄임말·다국어 → origin='ai'
+      · 규칙 분류(날짜 TIM.*·doc_mode 계층 등) → origin='rule'
+      · AI 추론 카테고리는 여기서 생성하지 않음 → 백그라운드 워커로 이전
+    aliases INSERT — 동기 origin 처리:
       · 사용자 수동 등록 → origin='user'
+      · 인칭대명사 시드 → origin='rule'
+      · Wikidata·LLM 추천은 여기서 생성하지 않음 → 백그라운드 워커로 이전
     deactivate 필드 → _deactivate_by_sentence_ids (선택, 사용자가 취소한 과거 기록 표시)
   ↓
   unresolved_tokens INSERT (치환 실패 토큰 — 유일한 승인 대기 테이블)
+  ↓
+  [저장 완료 이벤트 발생] → 백그라운드 워커 체인 트리거 (아래 "백그라운드 워커" 섹션)
 ```
 
 ### 날짜 처리 — 사용자 언급 공간 원칙
@@ -165,6 +168,95 @@ heading 경로(`더나은.개발팀`)가 사용자 명시 카테고리 경로가
 ### 자동 시드 예외
 
 - `_FIRST_PERSON_ALIASES` — 인칭대명사 11개는 origin='rule'로 자동 시드 (모든 사용자 공통).
+
+---
+
+## 백그라운드 워커 (v15 신규)
+
+저장 파이프라인은 노드·문장 저장까지만 동기로 수행한다. **카테고리 분류**와 **별칭 생성**은 별도 백그라운드 워커가 처리한다. 목적: UI 응답 속도 확보 + LLM/외부 API 비용을 저장 흐름에서 분리.
+
+### 트리거
+
+문장 저장이 완료되는 즉시(같은 트랜잭션 커밋 직후) **저장 완료 이벤트**를 발행한다. 워커는 이 이벤트를 큐에 쌓고 순차 처리.
+
+```
+[저장 파이프라인 끝]
+  → POST 응답 즉시 반환 (UI는 "기록했어요" 표시)
+  → 이벤트 큐잉: {sentence_id, new_node_ids: [...]}
+        ↓
+[카테고리 분류 워커]  new_node_ids 중 category 미보유 노드 대상
+[Wikidata 별칭 워커]  new_node_ids 중 별칭 미보유 노드 대상
+```
+
+같은 노드가 여러 번 언급되면 이미 처리된 것은 스킵 (`node_categories` / `aliases`에 이미 있는지 확인).
+
+### 실행 리소스 관리
+
+리소스 여유 없으면 큐에 쌓아두고 유휴 시간에 처리:
+
+- **동시 실행 제한**: asyncio 세마포어로 각 워커 최대 N개 병렬 (기본 2)
+- **리소스 체크**: CPU/메모리/MLX 서버 사용 여부 확인. 임계치 초과 시 지연
+- **백오프**: 외부 API 실패 시 exponential backoff, 반복 실패는 해당 노드 skip 표시
+
+### 워커 ①: 카테고리 분류 워커
+
+**어댑터 미사용** — 베이스 모델(gemma4:e2b)에 `docs/CATEGORY_SYSTEMPROMPT.md`를 시스템 프롬프트로 주입해서 분류.
+
+```
+입력: 노드명 + 이 노드가 언급된 최근 문장들 (상위 N건)
+출력: {"categories": ["BOD.disease", ...]}  (빈 배열이면 분류 불가)
+        ↓
+각 카테고리마다:
+  node_categories INSERT (origin='ai', node_id, category)
+        ↓
+실패 / 빈 결과 → 아무것도 저장하지 않음 (나중에 재처리 대상으로 남음)
+```
+
+- 입력에 포함할 문장 선택: `node_mentions` JOIN `sentences` ORDER BY `created_at` DESC LIMIT N.
+- 이미 user/rule origin 카테고리가 있는 노드도 대상 (AI 분류는 보완적으로 함께 쌓임).
+
+### 워커 ②: Wikidata 별칭 워커
+
+**LLM 미사용** — 외부 지식베이스의 altLabel(다국어 별칭)을 그대로 가져옴.
+
+```
+입력: 노드명
+        ↓
+Wikidata API 호출:
+  - search: ?action=wbsearchentities&search=<노드명>&language=ko
+  - fetch:  ?action=wbgetentities&ids=<Q번호>&props=aliases&languages=ko|en
+        ↓
+altLabel 목록 (ko, en 언어)
+        ↓
+각 별칭마다:
+  aliases INSERT OR IGNORE (alias, node_id, origin='external')
+        ↓
+실패 / 매칭 없음 → 스킵 (재시도 대상으로 큐에 남기거나 skip 플래그)
+```
+
+- 한국어 + 영어 altLabel만 사용 (다국어 확장은 추후).
+- 같은 Wikidata 엔티티가 다른 노드 여러 개에 매핑될 수 있음 (동명이인 주의) → 사용자가 `/review`의 `external_generated` 뷰에서 잘못된 매핑 제거.
+- rate limit: Wikidata 무료 API 표준 준수 + 로컬 캐시(동일 노드명은 중복 호출 안 함).
+
+### 구현 방식 (실행 단위)
+
+**FastAPI BackgroundTasks + asyncio 세마포어** 조합 (복잡한 외부 큐 브로커 불필요):
+
+```python
+# /ingest 저장 엔드포인트 끝부분
+background_tasks.add_task(category_worker, sentence_id, new_node_ids)
+background_tasks.add_task(alias_worker, new_node_ids)
+
+# 워커는 내부에 asyncio.Semaphore로 동시 제한 + 리소스 체크
+```
+
+- 앱 재시작 시 미완료 작업은 다음 언급 때 자연 재시도 (`node_categories`/`aliases` 테이블에 없으면 다시 대상).
+- 수동 재실행 경로도 제공: `/review`에서 "지금 다시 분류" 버튼 (선택적).
+
+### `--no-llm` 모드 대응
+
+- 카테고리 분류 워커: LLM 호출 불가 → 아예 실행 안 됨. `origin='rule'`·`'user'` 카테고리만 DB에 쌓임.
+- Wikidata 별칭 워커: LLM과 무관하게 동작. 인터넷 없으면 스킵.
 
 ---
 
@@ -224,7 +316,8 @@ heading 경로(`더나은.개발팀`)가 사용자 명시 카테고리 경로가
 | 섹션 | 데이터 소스 | 역할 |
 |------|-------------|------|
 | `unresolved` | `unresolved_tokens` | 승인 대기 해소 |
-| `ai_generated` | `node_categories/aliases WHERE origin='ai'` | 검수 뷰 (유지/삭제) |
+| `ai_generated` | `node_categories WHERE origin='ai'` | 검수 뷰 (유지/삭제) |
+| `external_generated` | `aliases WHERE origin='external'` | Wikidata 별칭 검수 뷰 |
 | `rule_generated` | `WHERE origin='rule'` | 검수 뷰 (규칙 오류 추적) |
 | `suspected_typos` | `find_suspected_typos` | 병합 승인 (파괴적) |
 | `stale_nodes` | `nodes.updated_at` | 아카이브 승인 |
@@ -309,7 +402,7 @@ DB 경량화가 필요한 시점에 별도 정책 재설계 예정. 후보: `las
 | `synapse/retrieve-filter` | 인출 관련성 판단 (pass/reject). 입력 단위는 sentence | 재학습 예정 |
 | `synapse/retrieve-expand` | 질문 → 노드 후보 키워드 확장 | 완료 |
 | `synapse/save-pronoun` | 지시어·시간부사·부정부사 치환. `tokens` + `unresolved` 분리 반환 | 재학습 예정 |
-| `synapse/extract` | nodes + categories + aliases + deactivate (v15: edges 출력 제거, origin='ai') | **재학습 필요 — v15 스키마** |
+| `synapse/extract` | **{nodes, deactivate}만** (v15 축소: categories·aliases는 백그라운드 워커로 이전) | **재학습 필요 — v15 스키마** |
 | `synapse/structure-suggest` | 평문 → 마크다운 구조화 초안 | 초기 base 모델 |
 | `synapse/chat` | 응답 생성 (답변 컨텍스트는 인출 sentences 원문) | 베이스 모델 |
 
@@ -335,9 +428,10 @@ DB 경량화가 필요한 시점에 별도 정책 재설계 예정. 후보: `las
 
 시냅스는 LLM 없이도 기본 동작을 보장한다.
 
-- 저장: `_preprocess` 규칙 기반 감지만 동작 (날짜 정규식, 부정부사 정규식). 지시어 치환이 불가하면 `unresolved_tokens`에 기록. LLM 추론 카테고리·별칭은 생성되지 않으므로 `origin='ai'` 레코드는 발생하지 않음 (`origin='rule'`·`'user'`만)
+- 저장: `_preprocess` 규칙 기반 감지만 동작. 지시어 치환 불가 시 `unresolved_tokens` 기록
+- 백그라운드 워커: 카테고리 분류 워커는 LLM 호출 불가로 비활성 (`origin='ai'` 카테고리 발생 안 함). Wikidata 별칭 워커는 **인터넷만 있으면 동작** (LLM과 무관)
 - 인출: `retrieve-expand`·`retrieve-filter` 생략하고 키워드 정확 매칭 + BFS만
-- `/review`: `unresolved`, `ai_generated`(빈 결과), `rule_generated`, `suspected_typos`, `stale_nodes`, `daily`, `gaps` 모두 쿼리만으로 동작
+- `/review`: `unresolved`, `ai_generated`(빈 결과), `external_generated`, `rule_generated`, `suspected_typos`, `stale_nodes`, `daily`, `gaps` 모두 쿼리만으로 동작
 
 ---
 
