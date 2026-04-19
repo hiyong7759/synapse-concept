@@ -1,6 +1,6 @@
 # Synapse Engine — 범용 온디바이스 지식 그래프 패키지 설계
 
-**최종 업데이트**: 2026-04-17 — 엔진 MVP 포팅 기준이 v11 스키마(node_mentions, unresolved_tokens, edges 의미 재정의)로 바뀜. 조사 엣지 관련 구현(negation, edge label = 조사)은 제거. `/review` 런타임 제안 도출기(`suggestions.dart`)가 신규 추가. 자세한 배경은 `docs/DESIGN_PIPELINE.md` 참고.
+**최종 업데이트**: 2026-04-19 — 엔진 MVP 포팅 기준이 v13 스키마(node_mentions, unresolved_tokens, edges 의미 재정의, retention 폐기)로 확정. 조사 엣지 관련 구현(negation, edge label = 조사)은 제거. `/review` 런타임 제안 도출기(`suggestions.dart`)가 신규 추가. 자세한 배경은 `docs/DESIGN_PIPELINE.md` 참고.
 
 ## Context
 
@@ -16,7 +16,7 @@ synapse_engine/               ← pub.dev 패키지 (또는 private)
 │   ├── synapse_engine.dart   ← 단일 진입점. export만
 │   ├── src/
 │   │   ├── engine.dart       ← SynapseEngine 클래스 (유일한 공개 API)
-│   │   ├── db.dart           ← SQLite 스키마 + CRUD (sqflite). v11
+│   │   ├── db.dart           ← SQLite 스키마 + CRUD (sqflite). v13
 │   │   ├── inference.dart    ← llamadart 래퍼. 모델 로딩 + 어댑터 스왑
 │   │   ├── save.dart         ← 자동 저장 파이프라인 (sentence + node + node_mentions + unresolved_tokens)
 │   │   ├── retrieve.dart     ← BFS 인출 파이프라인 (node_mentions JOIN 기반)
@@ -41,7 +41,7 @@ synapse_engine/               ← pub.dev 패키지 (또는 private)
 └── README.md
 ```
 
-> v11 변경: 조사 기반 엣지가 폐기되어 `negation.dart`와 "엣지 자동 생성" 로직 제거. 대신 `node_mentions` 채우기가 저장 파이프라인의 핵심이 된다. 의미 엣지는 `/review` 승인으로만 `edges`에 들어간다.
+> v13 기준: 조사 기반 엣지가 폐기되어 `negation.dart`와 "엣지 자동 생성" 로직 제거. 대신 `node_mentions` 채우기가 저장 파이프라인의 핵심이 된다. 의미 엣지는 `/review` 승인으로만 `edges`에 들어간다. `sentences.retention` 컬럼도 v13에서 폐기(모든 sentence 동등 보관).
 
 핵심 원칙: `lib/src/` 아래는 전부 `src/` 내부. 소비자는 `synapse_engine.dart`를 통해서만 접근.
 
@@ -429,6 +429,6 @@ DESIGN_MOBILE.md Phase 0과 동일. MLX→GGUF 변환 + 품질 검증.
 - `engine/retrieve.py` → retrieve.dart (`node_mentions` JOIN 기반)
 - `engine/suggestions.py` → suggestions.dart (/review 런타임 도출기)
 - `engine/llm.py` → inference.dart + 시스템 프롬프트
-- `engine/db.py` → db.dart (v11 스키마)
+- `engine/db.py` → db.dart (v13 스키마)
 - `engine/markdown.py` → markdown.dart
 - `api/mlx_server.py` → inference.dart (어댑터 스왑 패턴)
