@@ -1,6 +1,6 @@
 # Synapse 설계 — 카테고리 분류체계
 
-**최종 업데이트**: 2026-04-09
+**최종 업데이트**: 2026-04-19 (v2 — TIM·ACT 대분류 추가, 스키마 `node_categories` 테이블 반영)
 
 ## 목적
 
@@ -20,7 +20,7 @@
 
 ---
 
-## 분류체계 (v1 — 17개 대분류)
+## 분류체계 (v2 — 19개 대분류)
 
 형식: `대분류코드.소분류코드` (영문 소문자)
 예시: `BOD.disease`, `TEC.hw`, `MON.spending`
@@ -44,6 +44,8 @@
 | 15 | **SOC** | 사회·시사 | 뉴스, 정치, 국제, 사회문제 | `politics` `international` `incident` `economy` `issue` `news` |
 | 16 | **REL** | 관계·소통 | 사람 사이의 상호작용 | `romance` `conflict` `comm` `manner` `online` |
 | 17 | **REG** | 종교·신앙 | 종교, 신앙생활, 의례 | `christianity` `buddhism` `catholic` `islam` `other` `practice` |
+| 18 | **TIM** | 시간 | 언제 (날짜, 시점, 기간) | `year` `month` `day` `date` `time` `relative` `period` |
+| 19 | **ACT** | 행동·동작 | 무엇을 하는가 (동사로 추출된 개념) | `eat` `move` `use` `make` `talk` `think` `rest` `work` |
 
 ---
 
@@ -179,6 +181,27 @@
 - `christianity` `buddhism` `catholic` `islam` `other` — 종파
 - `practice` — 신앙 활동 (예배, 기도, 성지순례)
 
+### TIM — 시간
+CLAUDE.md 날짜 분할 규칙과 직결. 시간 단위를 독립 노드로 분해하여 `node_mentions` 교집합으로 시간 범위 쿼리를 지원한다.
+- `year` — 연 단위 (`2026년`)
+- `month` — 월 단위 (`4월`)
+- `day` — 일 단위 (`18일`)
+- `date` — 통째 날짜 노드 (`2026년 4월 18일`)
+- `time` — 시각 (`오전 10시`, `14:30`)
+- `relative` — 상대 시간 (오늘, 어제, 내일, 이번주)
+- `period` — 기간·시간대 (오전, 오후, 새벽, 봄, 여름)
+
+### ACT — 행동·동작
+동사로 추출된 개념. **대상(명사)과 행위(동사)는 각자 별도 노드**로 분리된다.
+- `eat` — 먹다, 마시다 (식사·음용 행위)
+- `move` — 가다, 오다, 이동하다
+- `use` — 쓰다, 사용하다 (도구·기기 조작)
+- `make` — 만들다, 제작하다
+- `talk` — 말하다, 대화하다
+- `think` — 생각하다, 고민하다
+- `rest` — 쉬다, 휴식하다
+- `work` — 일하다, 작업하다
+
 ---
 
 ## 분류 경계 규칙
@@ -200,6 +223,9 @@
 | 강남세브란스 (병원 기관) | PER.org → BOD.medical 중 BOD.medical | 건강 맥락 우선 |
 | 거시 경제 뉴스 | SOC.economy | 개인 재무 아님 |
 | 내 주식 수익 | MON.invest | 개인 재무 |
+| "운동했다" (행위) vs "데드리프트" (종목) | 각각 ACT.rest / BOD.exercise | 대상 = BOD, 행위 = ACT (각자 별도 노드) |
+| "스타벅스 갔다" | FOD.restaurant + ACT.move | 대상·행위 각자 |
+| "2026-04-18" 날짜 | TIM.date (+ year/month/day 분할 노드) | 시간 단위는 교집합 쿼리용으로 분해 |
 
 ---
 
@@ -365,6 +391,19 @@ FOD.restaurant ↔ TRV.domestic   맛집 ↔ 국내 여행
 FOD.restaurant ↔ TRV.abroad     현지 음식 ↔ 해외여행
 FOD.ingredient ↔ BOD.nutrition  식재료 ↔ 영양 관리
 FOD.product   ↔ BOD.nutrition   건강식품 ↔ 영양 관리
+
+# ACT (행동·동작) — 대상 카테고리와 연결
+ACT.eat       ↔ FOD.restaurant  먹는 행위 ↔ 식당
+ACT.eat       ↔ FOD.ingredient  먹는 행위 ↔ 식재료
+ACT.move      ↔ TRV.transport   이동 ↔ 교통수단
+ACT.move      ↔ TRV.place       이동 ↔ 장소
+ACT.use       ↔ TEC.hw          사용 ↔ 하드웨어
+ACT.use       ↔ TEC.sw          사용 ↔ 소프트웨어
+ACT.make      ↔ HOB.craft       만들기 ↔ 공예·DIY
+ACT.talk      ↔ REL.comm        대화 ↔ 소통
+ACT.think     ↔ MND.motivation  사고·고민 ↔ 동기
+ACT.rest      ↔ BOD.sleep       휴식 ↔ 수면
+ACT.work      ↔ WRK.role        일 ↔ 직무
 ```
 
 ### 독립 소분류 (인접 없음)
@@ -392,6 +431,9 @@ REL.manner      예절·에티켓 — 독립적
 SOC.incident    사건·사고 — 독립적
 SOC.news        뉴스 — 독립적
 REG.*           종파 구분 — 독립적 (practice 제외)
+TIM.*           시간 전 소분류 — 독립적 (year/month/day/date/time/relative/period)
+                사유: 시간은 모든 주제와 얽혀 인접 정의 시 노이즈 폭증.
+                      검색은 node_mentions 교집합으로 이미 해결됨 (CLAUDE.md 인출 예시).
 ```
 
 ### 코드 표현 (engine/retrieve.py)
@@ -492,6 +534,18 @@ _ADJACENT_PAIRS: list[tuple[str, str]] = [
     ("SOC.politics",   "LAW.statute"),
     # REG
     ("REG.practice",   "MND.coping"),
+    # ACT (행동·동작) — TIM은 독립 대분류라 인접 없음
+    ("ACT.eat",        "FOD.restaurant"),
+    ("ACT.eat",        "FOD.ingredient"),
+    ("ACT.move",       "TRV.transport"),
+    ("ACT.move",       "TRV.place"),
+    ("ACT.use",        "TEC.hw"),
+    ("ACT.use",        "TEC.sw"),
+    ("ACT.make",       "HOB.craft"),
+    ("ACT.talk",       "REL.comm"),
+    ("ACT.think",      "MND.motivation"),
+    ("ACT.rest",       "BOD.sleep"),
+    ("ACT.work",       "WRK.role"),
 ]
 
 def _build_adjacent_map(pairs: list[tuple[str, str]]) -> dict[str, list[str]]:
@@ -509,19 +563,21 @@ ADJACENT_SUBCATEGORIES: dict[str, list[str]] = _build_adjacent_map(_ADJACENT_PAI
 
 데이터가 쌓이면 카테고리 간 엣지 출현 빈도로 인접 맵을 검증·보완한다.
 
-```python
-# 카테고리 간 엣지 출현 빈도 쿼리
+```sql
+-- 카테고리 간 공출현(node_mentions 기반) 빈도 쿼리
+-- v13: nodes.category 컬럼은 제거되고 node_categories 다대다 테이블로 대체됨
 SELECT
-    n1.category AS cat_a,
-    n2.category AS cat_b,
-    COUNT(*) AS edge_count
-FROM edges e
-JOIN nodes n1 ON e.source_node_id = n1.id
-JOIN nodes n2 ON e.target_node_id = n2.id
-WHERE n1.category IS NOT NULL AND n2.category IS NOT NULL
-  AND n1.category != n2.category
+    c1.category AS cat_a,
+    c2.category AS cat_b,
+    COUNT(DISTINCT m1.sentence_id) AS cooccur_count
+FROM node_mentions m1
+JOIN node_mentions m2 ON m1.sentence_id = m2.sentence_id
+                     AND m1.node_id < m2.node_id
+JOIN node_categories c1 ON c1.node_id = m1.node_id
+JOIN node_categories c2 ON c2.node_id = m2.node_id
+WHERE c1.category != c2.category
 GROUP BY cat_a, cat_b
-ORDER BY edge_count DESC;
+ORDER BY cooccur_count DESC;
 ```
 
 인접 맵 조정 기준:
@@ -533,7 +589,7 @@ ORDER BY edge_count DESC;
 
 ## 참조
 
-- 스키마: `docs/DESIGN_GRAPH.md` — `nodes.category` 컬럼
+- 스키마: `docs/DESIGN_GRAPH.md` — `node_categories` 테이블 (v13 다대다, `nodes.category` 컬럼은 폐기)
 - 인출 파이프라인: `docs/DESIGN_PIPELINE.md` — 카테고리 보완 조회
-- 파인튜닝 데이터: `data/finetune/task6_*.jsonl` — 1,677건
+- 파인튜닝 데이터: `data/finetune/tasks/extract-core/train.jsonl`
 - 구현: `engine/retrieve.py` — `_get_category_supplement_nodes()`
