@@ -22,6 +22,11 @@ CategoryLLMFn = Callable[[str, list[str]], list[str]]
 WikidataAliasFn = Callable[[str], list[str]]
 
 WIKIDATA_API = "https://www.wikidata.org/w/api.php"
+# Wikimedia API 는 "의미 있는 User-Agent" 요구 — 기본 urllib UA 는 403. 프로젝트 식별자 + 연락처.
+WIKIDATA_UA = os.getenv(
+    "SYNAPSE_WIKIDATA_UA",
+    "synapse/0.1 (https://github.com/hiyong; hiyong@deonaeun.com)",
+)
 _CATEGORY_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "..", "docs", "CATEGORY_SYSTEMPROMPT.md")
 
 
@@ -109,24 +114,28 @@ def category_worker(
 
 # ─── 워커 ② Wikidata 별칭 ─────────────────────────────────
 
+def _wikidata_get(params: dict) -> dict:
+    """User-Agent 포함 Wikidata API GET. 응답 JSON 반환."""
+    url = f"{WIKIDATA_API}?{urllib.parse.urlencode(params)}"
+    req = urllib.request.Request(url, headers={"User-Agent": WIKIDATA_UA})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read().decode())
+
+
 def _default_wikidata_alias(node_name: str) -> list[str]:
     """wbsearchentities → wbgetentities(aliases, ko|en). 실패·빈 결과는 []."""
     try:
-        q1 = urllib.parse.urlencode({
+        hits = _wikidata_get({
             "action": "wbsearchentities", "search": node_name,
             "language": "ko", "format": "json", "limit": 1,
-        })
-        with urllib.request.urlopen(f"{WIKIDATA_API}?{q1}", timeout=10) as r:
-            hits = json.loads(r.read().decode()).get("search", [])
+        }).get("search", [])
         if not hits:
             return []
         qid = hits[0]["id"]
-        q2 = urllib.parse.urlencode({
+        data = _wikidata_get({
             "action": "wbgetentities", "ids": qid, "props": "aliases",
             "languages": "ko|en", "format": "json",
         })
-        with urllib.request.urlopen(f"{WIKIDATA_API}?{q2}", timeout=10) as r:
-            data = json.loads(r.read().decode())
         aliases_data = data.get("entities", {}).get(qid, {}).get("aliases", {})
     except Exception:
         return []
