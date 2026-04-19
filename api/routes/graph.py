@@ -449,7 +449,9 @@ def remove_sentence(sentence_id: int):
 # ─── /review (Phase 5) ─────────────────────────────────────
 
 class ReviewApplyRequest(BaseModel):
-    type: str  # category | alias | merge | archive | token | token_dismiss | basic_info
+    # category | alias | category_delete | alias_delete | merge | archive
+    # | token | token_dismiss | basic_info
+    type: str
     params: dict
 
 
@@ -560,6 +562,41 @@ def review_apply(req: ReviewApplyRequest):
                 "mentions_added": r.mentions_added,
                 "markdown_draft": r.markdown_draft,
             }
+
+        if t == "category_delete":
+            # ai_generated 섹션 "삭제" 버튼. origin 필수 — 사용자 수동 등록(user)은
+            # 노드 상세 화면에서 삭제하도록 분리 (실수 방지).
+            nid = p.get("node_id")
+            cat = (p.get("category") or "").strip()
+            origin = (p.get("origin") or "").strip()
+            if nid is None or not cat or origin not in ("ai", "rule", "external"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="node_id/category/origin(ai|rule|external) 필요",
+                )
+            cur = conn.execute(
+                "DELETE FROM node_categories WHERE node_id=? AND category=? AND origin=?",
+                (nid, cat, origin),
+            )
+            conn.commit()
+            return {"ok": True, "deleted": cur.rowcount}
+
+        if t == "alias_delete":
+            # external_generated 섹션 "삭제" 버튼. origin 필수 — 사용자/규칙 별칭은
+            # 노드 상세 화면에서 삭제.
+            alias = (p.get("alias") or "").strip()
+            origin = (p.get("origin") or "").strip()
+            if not alias or origin not in ("ai", "rule", "external"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="alias/origin(ai|rule|external) 필요",
+                )
+            cur = conn.execute(
+                "DELETE FROM aliases WHERE alias=? AND origin=?",
+                (alias, origin),
+            )
+            conn.commit()
+            return {"ok": True, "deleted": cur.rowcount}
 
         if t == "token_dismiss":
             sentence_id = p.get("sentence_id")
