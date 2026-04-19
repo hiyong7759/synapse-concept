@@ -229,15 +229,17 @@ def structure_suggest(text: str, known_paths: Optional[list[str]] = None) -> str
 
 
 def llm_extract(text: str, context_sentences: Optional[list[tuple[int, str]]] = None) -> dict:
-    """LLM으로 노드/상태변경 추출.
+    """LLM으로 노드/상태변경만 추출 (v15-A2: {nodes, deactivate}로 축소).
 
-    v15: edges 테이블 폐기로 엣지 label 추출 없음. 어댑터 출력의 edges/category/retention
-    필드는 어댑터에 남아있더라도 모두 드롭. 노드 이름과 deactivate 식별자만 사용.
+    v15-A2 설계:
+    - 출력 필드는 오직 `nodes`(노드 이름)과 `deactivate`(상충 sentence_id)뿐.
+    - 카테고리 분류 · 별칭 수집은 저장 완료 후 백그라운드 워커로 이전
+      (`engine/workers.py` — 카테고리 워커는 LLM, 별칭 워커는 Wikidata altLabel).
+    - 구 어댑터가 남긴 edges / category / retention / aliases 필드는 전부 드롭한다
+      (재학습 전 호환 방어). 의미 관계는 sentence 원문에 담겨 있고 외부 지능체 몫.
 
-    의미 관계(cause/avoid/similar)는 sentence 원문에 이미 담겨 있고, 해석은 외부 지능체 몫.
-
-    context_sentences: retrieve에서 가져온 (sentence_id, text) 쌍. deactivate 판단에 사용.
-    반환: {"nodes": [...], "deactivate": [sentence_id, ...]}
+    context_sentences: retrieve에서 가져온 (sentence_id, text) 쌍. deactivate 판단용.
+    반환: {"nodes": [{"name": str}, ...], "deactivate": [sentence_id, ...]}
     """
     try:
         # ()[] 가 포함되면 2B 모델이 반복 루프에 빠짐 — 공백으로 치환
@@ -252,17 +254,15 @@ def llm_extract(text: str, context_sentences: Optional[list[tuple[int, str]]] = 
         if not match:
             return {"nodes": [], "deactivate": []}
         result = json.loads(match.group())
-        # v15: 어댑터가 edges/category/retention을 뱉어도 전부 드롭. nodes + deactivate만 남김.
+        # v15-A2: name만 보존. 어댑터가 뱉은 aliases/categories/edges/retention 전부 드롭.
         nodes = []
         for n in result.get("nodes", []):
             if isinstance(n, dict) and n.get("name"):
                 nodes.append({"name": n["name"]})
             elif isinstance(n, str):
                 nodes.append({"name": n})
-        return {
-            "nodes": nodes,
-            "deactivate": result.get("deactivate", []),
-        }
+        deactivate = [s for s in result.get("deactivate", []) if isinstance(s, int)]
+        return {"nodes": nodes, "deactivate": deactivate}
     except Exception:
         return {"nodes": [], "deactivate": []}
 

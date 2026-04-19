@@ -291,7 +291,7 @@ def _save_one_item(
         if _add_unresolved(conn, sid, token):
             result.unresolved_added.append((sid, token))
 
-    # 3. extract (v15: nodes + deactivate만. category/aliases는 추후 C2b, edges 필드 폐기)
+    # 3. extract (v15-A2: nodes + deactivate만. 카테고리/별칭은 저장 후 백그라운드 워커)
     if use_llm:
         try:
             extracted = llm_extract(effective_text, context_sentences=retrieve_context_sentences)
