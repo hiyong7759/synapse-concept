@@ -389,7 +389,7 @@ admin       — 시스템 관리자 (전체)
 ### ~~Task 1-org: 상태 변경 감지 (주어 추적)~~ (v15 폐기)
 
 > 엣지 테이블 폐기(v15)로 "트리플 무효화" 개념 자체가 사라짐. sentence 단위 판정으로 전환되어 개인·조직 공통 `extract-state` 어댑터 단일 사용.
-> 기존 데이터(`save-state-personal`, `save-state-org`)는 `archive/`로 이동 예정.
+> 기존 데이터는 `archive/finetune/tasks/save-state-personal/`, `archive/finetune/tasks/save-state-org/`로 이동 완료.
 
 ---
 
