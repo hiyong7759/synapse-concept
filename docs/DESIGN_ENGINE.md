@@ -1,6 +1,6 @@
-# Synapse Engine — 범용 온디바이스 지식 그래프 패키지 설계
+# Synapse Engine — 범용 온디바이스 지식 하이퍼그래프 패키지 설계
 
-**최종 업데이트**: 2026-04-19 — 엔진 MVP 포팅 기준이 v13 스키마(node_mentions, unresolved_tokens, edges 의미 재정의, retention 폐기)로 확정. 조사 엣지 관련 구현(negation, edge label = 조사)은 제거. `/review` 런타임 제안 도출기(`suggestions.dart`)가 신규 추가. 자세한 배경은 `docs/DESIGN_PIPELINE.md` 참고.
+**최종 업데이트**: 2026-04-19 — 엔진 MVP 포팅 기준이 v15 스키마(node_mentions, node_categories, aliases, unresolved_tokens, **edges 테이블 폐기**, retention 폐기)로 확정. 의미 엣지 관련 구현(edge label 추출, edge JOIN 경로)은 모두 제거. 연결은 문장·카테고리·별칭 하이퍼엣지로만 표현. `/review` 런타임 제안 도출기(`suggestions.dart`)가 신규 추가. 자세한 배경은 `docs/DESIGN_PIPELINE.md` 참고.
 
 ## Context
 
@@ -16,7 +16,7 @@ synapse_engine/               ← pub.dev 패키지 (또는 private)
 │   ├── synapse_engine.dart   ← 단일 진입점. export만
 │   ├── src/
 │   │   ├── engine.dart       ← SynapseEngine 클래스 (유일한 공개 API)
-│   │   ├── db.dart           ← SQLite 스키마 + CRUD (sqflite). v13
+│   │   ├── db.dart           ← SQLite 스키마 + CRUD (sqflite). v15
 │   │   ├── inference.dart    ← llamadart 래퍼. 모델 로딩 + 어댑터 스왑
 │   │   ├── save.dart         ← 자동 저장 파이프라인 (sentence + node + node_mentions + unresolved_tokens)
 │   │   ├── retrieve.dart     ← BFS 인출 파이프라인 (node_mentions JOIN 기반)
@@ -41,14 +41,14 @@ synapse_engine/               ← pub.dev 패키지 (또는 private)
 └── README.md
 ```
 
-> v13 기준: 조사 기반 엣지가 폐기되어 `negation.dart`와 "엣지 자동 생성" 로직 제거. 대신 `node_mentions` 채우기가 저장 파이프라인의 핵심이 된다. 의미 엣지는 `/review` 승인으로만 `edges`에 들어간다. `sentences.retention` 컬럼도 v13에서 폐기(모든 sentence 동등 보관).
+> v15 기준: **엣지 테이블 자체가 폐기**되어 `negation.dart`, 엣지 자동 생성, 엣지 label 추출 코드 모두 제거. 연결은 ① `node_mentions`(문장 바구니) ② `node_categories`(카테고리 바구니) ③ `aliases`(별칭 바구니) 세 하이퍼엣지로만 표현. 저장 파이프라인의 핵심은 `node_mentions` 채우기. 의미 관계(cause/avoid/similar) 해석은 외부 지능체 몫. `sentences.retention` 컬럼도 v13에서 폐기(모든 sentence 동등 보관).
 
 핵심 원칙: `lib/src/` 아래는 전부 `src/` 내부. 소비자는 `synapse_engine.dart`를 통해서만 접근.
 
 ## 2. 공개 API — 6개 메서드 + 이벤트 스트림
 
 ```dart
-/// 시냅스 온디바이스 지식 그래프 엔진.
+/// 시냅스 온디바이스 지식 하이퍼그래프 엔진.
 class SynapseEngine {
 
   // ── 생성 ──────────────────────────────────────
@@ -72,11 +72,11 @@ class SynapseEngine {
   /// 인출만 (저장 없이). 질문 응답용.
   Future<RetrieveResult> retrieve(String query);
 
-  // ── 그래프 직접 쿼리 ──────────────────────────
-  /// 노드 기준 트리플 조회. 필터 조건 지원.
-  Future<List<Triple>> query(GraphQuery query);
+  // ── 하이퍼그래프 직접 쿼리 ────────────────────
+  /// 노드 기준 같은 바구니 멤버 조회. 필터 조건 지원.
+  Future<List<SentenceContext>> query(HypergraphQuery query);
 
-  // ── 그래프 관리 ───────────────────────────────
+  // ── 하이퍼그래프 관리 ─────────────────────────
   /// 별칭 등록/삭제.
   Future<void> addAlias(String alias, String nodeName);
   Future<void> removeAlias(String alias);
@@ -84,24 +84,24 @@ class SynapseEngine {
   /// 노드 분리 (동음이의어).
   Future<void> splitNode(int nodeId, SplitSpec spec);
 
-  /// 문장 삭제 (연결된 엣지 삭제, 고아 노드 보존).
+  /// 문장 삭제 (연결된 node_mentions 삭제, 고아 노드 보존).
   Future<void> deleteSentence(int sentenceId);
 
-  /// 문장 수정 → 기존 엣지 삭제 후 재추출.
+  /// 문장 수정 → 기존 node_mentions 삭제 후 재추출.
   Future<SaveResult> updateSentence(int sentenceId, String newText);
 
-  /// 엣지/노드 롤백.
-  Future<void> rollback(List<int> edgeIds, {List<int>? nodeIds});
+  /// 문장/노드 롤백.
+  Future<void> rollback({List<int>? sentenceIds, List<int>? nodeIds});
 
   /// DB 통계.
   Future<EngineStats> getStats();
 
   // ── 이벤트 스트림 ─────────────────────────────
-  /// 트리플 추가 이벤트.
-  Stream<TripleAddedEvent> get onTripleAdded;
+  /// 문장 커밋 이벤트 (sentence + 연관 node_mentions 한꺼번에).
+  Stream<SentenceCommittedEvent> get onSentenceCommitted;
 
-  /// 엣지 비활성화 이벤트.
-  Stream<EdgeDeactivatedEvent> get onEdgeDeactivated;
+  /// 노드 비활성화 이벤트.
+  Stream<NodeDeactivatedEvent> get onNodeDeactivated;
 
   /// 노드 생성 이벤트.
   Stream<NodeCreatedEvent> get onNodeCreated;
@@ -202,53 +202,56 @@ final result = await engine.runAdapter('gabjil-extract', inputText);
 
 ## 5. 이벤트 스트림
 
-gabjil 같은 앱이 그래프 변화를 실시간 구독:
+gabjil 같은 앱이 하이퍼그래프 변화를 실시간 구독:
 
 ```dart
-class TripleAddedEvent {
-  final Triple triple;
+class SentenceCommittedEvent {
   final int sentenceId;
+  final String text;
+  final List<int> mentionedNodeIds;   // 이 sentence 바구니의 멤버
   final DateTime timestamp;
 }
 
-class EdgeDeactivatedEvent {
-  final Triple triple;
+class NodeDeactivatedEvent {
+  final int nodeId;
+  final String name;
   final String reason; // "상충" | "수동"
 }
 
 class NodeCreatedEvent {
   final String name;
-  final String? category;
+  final List<String>? categories;
   final int nodeId;
 }
 ```
 
 gabjil 사용 예시:
 ```dart
-engine.onTripleAdded.listen((event) {
-  if (event.triple.src == targetPerson) {
+engine.onSentenceCommitted.listen((event) async {
+  // targetPerson 노드가 이 sentence 바구니에 들어갔는지 확인
+  if (event.mentionedNodeIds.contains(targetPersonId)) {
     complaintCount++;
-    if (complaintCount >= 3) suggestCharacterCreation(targetPerson);
+    if (complaintCount >= 3) suggestCharacterCreation(targetPersonId);
   }
 });
 ```
 
-## 6. 그래프 직접 쿼리
+## 6. 하이퍼그래프 직접 쿼리
 
-BFS 파이프라인 외에 앱이 직접 그래프를 조회:
+BFS 파이프라인 외에 앱이 직접 하이퍼그래프를 조회:
 
 ```dart
-class GraphQuery {
+class HypergraphQuery {
   final String? nodeName;       // 특정 노드 기준
   final int? nodeId;
   final String? category;       // 카테고리 필터
   final DateRange? dateRange;   // 기간 필터
   final int? limit;             // 최대 결과 수
-  final bool includeInactive;   // 비활성 엣지 포함 여부
+  final bool includeInactive;   // 비활성 노드 포함 여부
 }
 
-// 사용 예
-final triples = await engine.query(GraphQuery(
+// 사용 예: 특정 노드가 속한 문장 바구니들의 sentence 원문 + 같은 바구니 멤버들
+final results = await engine.query(HypergraphQuery(
   nodeName: '김부장',
   dateRange: DateRange(last: Duration(days: 7)),
 ));
@@ -269,11 +272,11 @@ class EngineConfig {
   /// save-pronoun 치환 전에 앱이 자체 치환 규칙 적용.
   final Future<String> Function(String text)? onBeforePronoun;
 
-  /// 인출 결과를 앱이 추가 필터링.
-  final Future<List<Triple>> Function(List<Triple> triples, String query)? onAfterRetrieve;
+  /// 인출 결과(sentence 컨텍스트 목록)를 앱이 추가 필터링.
+  final Future<List<SentenceContext>> Function(List<SentenceContext> sentences, String query)? onAfterRetrieve;
 
   /// 응답 생성 전 시스템 프롬프트 커스터마이징.
-  final String Function(String defaultSystemPrompt, List<Triple> context)? onBuildChatPrompt;
+  final String Function(String defaultSystemPrompt, List<SentenceContext> context)? onBuildChatPrompt;
 }
 ```
 
@@ -358,11 +361,11 @@ EngineConfig(
 ### 필수 (엔진 MVP)
 | 기능 | 원본 | 포팅 | gabjil |
 |------|------|------|--------|
-| 그래프 저장 (nodes/node_mentions/node_categories/sentences/unresolved_tokens) | db.py, save.py | db.dart, save.dart | ★★★ |
-| extract 어댑터 (edges·category 필드 드롭) | llm.py extract | inference.dart | ★★★ |
+| 하이퍼그래프 저장 (nodes/node_mentions/node_categories/aliases/sentences/unresolved_tokens) | db.py, save.py | db.dart, save.dart | ★★★ |
+| extract 어댑터 (v15: edges 출력 필드 제거, nodes/categories/aliases만) | llm.py extract | inference.dart | ★★★ |
 | save-pronoun 어댑터 (tokens + unresolved 분리 반환) | llm.py save-pronoun | inference.dart | ★★★ |
 | structure-suggest 어댑터 (평문 → 마크다운 초안) | llm.py | inference.dart | ★★ |
-| BFS 인출 (node_mentions JOIN) + retrieve-filter | retrieve.py | retrieve.dart | ★★★ |
+| BFS 인출 (node_mentions JOIN + node_categories 공유 + 인접 맵) + retrieve-filter | retrieve.py | retrieve.dart | ★★★ |
 | retrieve-expand | retrieve.py | retrieve.dart | ★★★ |
 | 부정부사 규칙 감지(노드화, 엣지 아님) | save.py | save.dart 내 규칙 | ★★★ |
 | 자모 오타 의심 쌍 판정 (자동 교정 없음) | save.py | typo.dart | ★ |
@@ -375,8 +378,8 @@ EngineConfig(
 |------|------|
 | 카테고리 주입 | CategoryMap + AdjacencyMap 외부 주입 |
 | 커스텀 어댑터 | AdapterSpec으로 런타임 로드 |
-| 이벤트 스트림 | onTripleAdded, onEdgeDeactivated, onNodeCreated |
-| 그래프 쿼리 | GraphQuery로 직접 조회 |
+| 이벤트 스트림 | onSentenceCommitted, onNodeDeactivated, onNodeCreated |
+| 하이퍼그래프 쿼리 | HypergraphQuery로 직접 조회 |
 | 파이프라인 훅 | onAfterExtract, onBeforePronoun 등 |
 
 ### 보류
@@ -425,10 +428,10 @@ DESIGN_MOBILE.md Phase 0과 동일. MLX→GGUF 변환 + 품질 검증.
 - synapse-app: 기존 웹앱의 모바일 버전
 
 ## 13. 핵심 파일 참조 (포팅 원본)
-- `engine/save.py` → save.dart (자동 저장 + 문장 CRUD + split_node + merge_nodes). 조사 엣지 생성 코드와 `_correct_typos` 자동 교정 코드는 포팅 대상 아님
-- `engine/retrieve.py` → retrieve.dart (`node_mentions` JOIN 기반)
+- `engine/save.py` → save.dart (자동 저장 + 문장 CRUD + split_node + merge_nodes). 엣지 생성 코드(조사·의미) 전체와 `_correct_typos` 자동 교정 코드는 포팅 대상 아님
+- `engine/retrieve.py` → retrieve.dart (`node_mentions` JOIN + `node_categories` 공유 + 인접 맵)
 - `engine/suggestions.py` → suggestions.dart (/review 런타임 도출기)
 - `engine/llm.py` → inference.dart + 시스템 프롬프트
-- `engine/db.py` → db.dart (v13 스키마)
+- `engine/db.py` → db.dart (v15 스키마 — edges 테이블 없음)
 - `engine/markdown.py` → markdown.dart
 - `api/mlx_server.py` → inference.dart (어댑터 스왑 패턴)

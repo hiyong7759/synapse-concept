@@ -143,7 +143,7 @@ Task 6은 저장 파이프라인의 핵심: Kiwi 형태소 분석 제거 → LLM
 
 **시스템 프롬프트:**
 ```
-당신은 지식 그래프 저장 엔진입니다.
+당신은 지식 하이퍼그래프 저장 엔진입니다.
 입력 문장에서 치환 가능한 부분만 치환합니다.
 
 규칙:
@@ -198,7 +198,7 @@ Task 6은 저장 파이프라인의 핵심: Kiwi 형태소 분석 제거 → LLM
 
 **시스템 프롬프트:**
 ```
-당신은 지식 그래프 인출 필터입니다.
+당신은 지식 하이퍼그래프 인출 필터입니다.
 질문과 문장을 보고, 이 문장이 질문과 관련 있는지 판단하세요.
 불확실하면 pass로 판단하세요 (제외보다 포함이 안전).
 출력: pass 또는 reject (한 단어만)
@@ -207,22 +207,22 @@ Task 6은 저장 파이프라인의 핵심: Kiwi 형태소 분석 제거 → LLM
 **예시 데이터:**
 ```jsonl
 {"messages": [
-  {"role": "system", "content": "당신은 지식 그래프 인출 필터입니다. 질문과 문장을 보고 관련 있는지 판단하세요. 불확실하면 pass. 출력: pass 또는 reject"},
+  {"role": "system", "content": "당신은 지식 하이퍼그래프 인출 필터입니다. 질문과 문장을 보고 관련 있는지 판단하세요. 불확실하면 pass. 출력: pass 또는 reject"},
   {"role": "user", "content": "질문: 언제 허리 아팠지?\n문장: 허리디스크 L4-L5 진단받았어"},
   {"role": "assistant", "content": "pass"}
 ]}
 {"messages": [
-  {"role": "system", "content": "당신은 지식 그래프 인출 필터입니다. 질문과 문장을 보고 관련 있는지 판단하세요. 불확실하면 pass. 출력: pass 또는 reject"},
+  {"role": "system", "content": "당신은 지식 하이퍼그래프 인출 필터입니다. 질문과 문장을 보고 관련 있는지 판단하세요. 불확실하면 pass. 출력: pass 또는 reject"},
   {"role": "user", "content": "질문: 언제 허리 아팠지?\n문장: 스타벅스 신메뉴 맛있어"},
   {"role": "assistant", "content": "reject"}
 ]}
 {"messages": [
-  {"role": "system", "content": "당신은 지식 그래프 인출 필터입니다. 질문과 문장을 보고 관련 있는지 판단하세요. 불확실하면 pass. 출력: pass 또는 reject"},
+  {"role": "system", "content": "당신은 지식 하이퍼그래프 인출 필터입니다. 질문과 문장을 보고 관련 있는지 판단하세요. 불확실하면 pass. 출력: pass 또는 reject"},
   {"role": "user", "content": "질문: 언제 허리 아팠지?\n문장: 허리 다 나았어"},
   {"role": "assistant", "content": "pass"}
 ]}
 {"messages": [
-  {"role": "system", "content": "당신은 지식 그래프 인출 필터입니다. 질문과 문장을 보고 관련 있는지 판단하세요. 불확실하면 pass. 출력: pass 또는 reject"},
+  {"role": "system", "content": "당신은 지식 하이퍼그래프 인출 필터입니다. 질문과 문장을 보고 관련 있는지 판단하세요. 불확실하면 pass. 출력: pass 또는 reject"},
   {"role": "user", "content": "질문: 좋아하는 음식 뭐야?\n문장: 나 삼성에서 일하고 있어"},
   {"role": "assistant", "content": "reject"}
 ]}
@@ -234,8 +234,8 @@ Task 6은 저장 파이프라인의 핵심: Kiwi 형태소 분석 제거 → LLM
 
 **시스템 프롬프트:**
 ```
-당신은 지식 그래프 검색 엔진입니다.
-질문을 보고 그래프에서 검색해야 할 관련 노드 후보를 생성하세요.
+당신은 지식 하이퍼그래프 검색 엔진입니다.
+질문을 보고 하이퍼그래프에서 검색해야 할 관련 노드 후보를 생성하세요.
 형태소 단위로 쪼개진 노드 이름으로 나열하세요.
 출력 형식: ["노드1", "노드2", ...]
 ```
@@ -243,17 +243,17 @@ Task 6은 저장 파이프라인의 핵심: Kiwi 형태소 분석 제거 → LLM
 **예시 데이터:**
 ```jsonl
 {"messages": [
-  {"role": "system", "content": "당신은 지식 그래프 검색 엔진입니다. 질문을 보고 검색해야 할 노드 후보를 형태소 단위로 나열하세요. 출력 형식: [\"노드1\", \"노드2\", ...]"},
+  {"role": "system", "content": "당신은 지식 하이퍼그래프 검색 엔진입니다. 질문을 보고 검색해야 할 노드 후보를 형태소 단위로 나열하세요. 출력 형식: [\"노드1\", \"노드2\", ...]"},
   {"role": "user", "content": "질문: 언제 아팠지?"},
   {"role": "assistant", "content": "[\"허리\", \"아프\", \"감기\", \"두통\", \"병원\", \"낫\"]"}
 ]}
 {"messages": [
-  {"role": "system", "content": "당신은 지식 그래프 검색 엔진입니다. 질문을 보고 검색해야 할 노드 후보를 형태소 단위로 나열하세요. 출력 형식: [\"노드1\", \"노드2\", ...]"},
+  {"role": "system", "content": "당신은 지식 하이퍼그래프 검색 엔진입니다. 질문을 보고 검색해야 할 노드 후보를 형태소 단위로 나열하세요. 출력 형식: [\"노드1\", \"노드2\", ...]"},
   {"role": "user", "content": "질문: 내가 좋아하는 음식 뭐야?"},
   {"role": "assistant", "content": "[\"좋아하\", \"음식\", \"먹\", \"맛있\", \"자주\"]"}
 ]}
 {"messages": [
-  {"role": "system", "content": "당신은 지식 그래프 검색 엔진입니다. 질문을 보고 검색해야 할 노드 후보를 형태소 단위로 나열하세요. 출력 형식: [\"노드1\", \"노드2\", ...]"},
+  {"role": "system", "content": "당신은 지식 하이퍼그래프 검색 엔진입니다. 질문을 보고 검색해야 할 노드 후보를 형태소 단위로 나열하세요. 출력 형식: [\"노드1\", \"노드2\", ...]"},
   {"role": "user", "content": "질문: 지금 어디 살아?"},
   {"role": "assistant", "content": "[\"살\", \"이사\", \"집\", \"주소\", \"거주\"]"}
 ]}
@@ -267,7 +267,7 @@ Task 6은 저장 파이프라인의 핵심: Kiwi 형태소 분석 제거 → LLM
 
 **시스템 프롬프트:**
 ```
-당신은 지식 그래프 보안 엔진입니다.
+당신은 지식 하이퍼그래프 보안 엔진입니다.
 관계(source—label—target) 하나를 보고 민감정보 여부를 판단하세요.
 출력 형식: safe 또는 sensitive:<카테고리>
 카테고리: health_detail | financial | location_precise | relationship_private | schedule_combined
@@ -283,17 +283,17 @@ Task 6은 저장 파이프라인의 핵심: Kiwi 형태소 분석 제거 → LLM
 **예시 데이터:**
 ```jsonl
 {"messages": [
-  {"role": "system", "content": "당신은 지식 그래프 보안 엔진입니다. 관계(source—label—target) 하나를 보고 민감정보 여부를 판단하세요. 출력 형식: safe 또는 sensitive:<카테고리>"},
+  {"role": "system", "content": "당신은 지식 하이퍼그래프 보안 엔진입니다. 관계(source—label—target) 하나를 보고 민감정보 여부를 판단하세요. 출력 형식: safe 또는 sensitive:<카테고리>"},
   {"role": "user", "content": "관계: 허리 → 아프"},
   {"role": "assistant", "content": "safe"}
 ]}
 {"messages": [
-  {"role": "system", "content": "당신은 지식 그래프 보안 엔진입니다. 관계(source—label—target) 하나를 보고 민감정보 여부를 판단하세요. 출력 형식: safe 또는 sensitive:<카테고리>"},
+  {"role": "system", "content": "당신은 지식 하이퍼그래프 보안 엔진입니다. 관계(source—label—target) 하나를 보고 민감정보 여부를 판단하세요. 출력 형식: safe 또는 sensitive:<카테고리>"},
   {"role": "user", "content": "관계: 약 → 세레콕시브"},
   {"role": "assistant", "content": "sensitive:health_detail"}
 ]}
 {"messages": [
-  {"role": "system", "content": "당신은 지식 그래프 보안 엔진입니다. 관계(source—label—target) 하나를 보고 민감정보 여부를 판단하세요. 출력 형식: safe 또는 sensitive:<카테고리>"},
+  {"role": "system", "content": "당신은 지식 하이퍼그래프 보안 엔진입니다. 관계(source—label—target) 하나를 보고 민감정보 여부를 판단하세요. 출력 형식: safe 또는 sensitive:<카테고리>"},
   {"role": "user", "content": "관계: 연봉 → 8000"},
   {"role": "assistant", "content": "sensitive:financial"}
 ]}
@@ -305,7 +305,7 @@ Task 6은 저장 파이프라인의 핵심: Kiwi 형태소 분석 제거 → LLM
 
 **시스템 프롬프트:**
 ```
-당신은 지식 그래프 보안 엔진입니다.
+당신은 지식 하이퍼그래프 보안 엔진입니다.
 질문과 인출된 전체 트리플 컨텍스트(각 트리플의 5A 마킹 포함)를 보고,
 답변에 민감정보가 포함되는지 종합 판단하세요.
 출력 형식: {"result": "safe"} 또는 {"result": "confirm", "message": "사용자에게 보여줄 확인 메시지"}
@@ -342,8 +342,8 @@ BFS → Task 3 (관련성 필터)
 사용자 질문
   ↓
 [Task 0-org] augment 필요?
-  ├── personal_only → 개인 그래프만
-  └── augment_org  → 개인 + 조직 그래프 병렬 탐색
+  ├── personal_only → 개인 하이퍼그래프만
+  └── augment_org  → 개인 + 조직 하이퍼그래프 병렬 탐색
                        ↓
                     컨텍스트 merge
                        ↓
@@ -352,7 +352,7 @@ BFS → Task 3 (관련성 필터)
                     답변 LLM
 ```
 
-개인 그래프는 **항상** 탐색. 조직 그래프는 관련 있을 때만 augment.
+개인 하이퍼그래프는 **항상** 탐색. 조직 하이퍼그래프는 관련 있을 때만 augment.
 
 ---
 
@@ -543,7 +543,7 @@ admin       — 시스템 관리자 (전체)
 
 ### 분리 근거
 
-기존 Task 6은 5가지 인지 작업(retention, nodes, edges, category, deactivate)을 단일 어댑터에서 수행.
+기존 Task 6은 5가지 인지 작업(retention, nodes, edges, category, deactivate)을 단일 어댑터에서 수행했다 (v15에선 edges 폐기, retention 폐기로 {nodes, categories, aliases, deactivate}만 남음).
 2B 모델에서 deactivate(상태 무효화)는 **한 번도 정상 동작한 적 없음**:
 - nodes/edges/category: 패턴 매칭 (입력 문장에서 구조 추출)
 - deactivate: 추론 (입력 vs 기존 N개 사실 비교 → 만료된 사실 탐지)
@@ -551,11 +551,12 @@ admin       — 시스템 관리자 (전체)
 2B 모델이 한 어댑터에서 패턴 매칭과 추론을 동시에 수행하는 것은 무리.
 분리 비용(추론 시 LLM 호출 1→2회, ~0.5초 추가)은 미미.
 
-### v13 추가 정리 (2026-04-18)
+### v13~v15 추가 정리
 - edges 필드 폐기 (v12): 조사 기반 엣지는 사용자 승인 기반 의미 엣지로 전환
 - **retention 필드 폐기 (v13)**: "daily → 빈 nodes" 과적합 원인이라 제거. `{nodes, deactivate}`만.
-- category 필드: LLM 추론 결과는 저장 대상 아님 (규칙 기반 + heading 경로만). extract 어댑터에서 제거.
-- 결과: extract-core는 **순수 노드 이름 추출**에만 집중
+- category 필드: LLM 추론 결과는 저장 대상 아님 (규칙 기반 + heading 경로만). extract 어댑터에서 제거 후, v15에서 **다시 포함**(카테고리가 연결 기준으로 승격됨 — §DESIGN_CATEGORY.md 참고). origin='ai'로 자동 저장.
+- **edges 테이블 자체 폐기 (v15)**: 의미 엣지 개념 전면 폐기. extract 어댑터는 `{nodes, categories, aliases, deactivate}` 반환. 의미 관계(cause/avoid/similar) 추출은 더 이상 학습 대상 아님 — sentence 원문에 이미 담겨 있고 외부 지능체가 해석.
+- 결과: extract-core는 **노드 + 카테고리 + 별칭 추출**로 재정의
 
 ---
 
@@ -563,7 +564,7 @@ admin       — 시스템 관리자 (전체)
 
 **시스템 프롬프트:**
 ```
-한국어 문장에서 지식 그래프의 노드를 추출하라.
+한국어 문장에서 지식 하이퍼그래프의 노드를 추출하라.
 JSON만 출력. 다른 텍스트 금지.
 
 출력 형식:

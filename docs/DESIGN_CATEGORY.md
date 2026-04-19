@@ -1,26 +1,29 @@
 # Synapse 설계 — 카테고리 분류체계
 
-**최종 업데이트**: 2026-04-19 (v2 분류 + v14 스키마 — `node_categories`에 `origin` 추가, 자동 저장)
+**최종 업데이트**: 2026-04-19 (v2 분류 + v15 스키마 — 엣지 테이블 폐기, 카테고리가 연결 기준)
 
 ## 목적
 
-카테고리는 두 가지 문제를 해결한다.
+v15부터 카테고리는 **연결 기준 그 자체**다. 별도 엣지 테이블이 없으므로, 노드 간 "의미적 연결"은 ① 같은 문장 바구니(`node_mentions`) 공출현 또는 ② **같은 카테고리 바구니(`node_categories`) 공유** + 인접 맵 한 홉 확장으로만 드러난다. 카테고리는 세 가지 역할을 한다.
 
-**1. BFS 연결 부재 보완**
-파편화된 입력으로 인해 BFS로 연결되지 않는 노드를 같은 카테고리 기준으로 추가 조회.
+**1. 연결 기준 (v15 핵심 역할)**
+같은 카테고리를 공유하는 노드들은 서로 연결된 것으로 간주한다. 예: `스타벅스`와 `투썸` 두 노드가 `FOD.restaurant` 카테고리를 공유하면, 스타벅스가 언급된 질문에도 투썸 관련 sentence가 후보로 떠오른다.
+
+**2. BFS 연결 부재 보완**
+파편화된 입력으로 인해 같은 문장 바구니로 연결되지 않는 노드를 같은 카테고리 기준으로 추가 조회.
 ```
 "허리디스크 L4-L5 진단받았어"  → 저장
 "강남세브란스 정형외과 다니고 있어"  → 별도 문장으로 저장 → BFS 미연결
 "허리 아파?" 질문 → BOD 카테고리 보완 → 강남세브란스 도달 가능
 ```
 
-**2. 소형 모델의 인출 범위 한계 보완**
+**3. 소형 모델의 인출 범위 한계 보완**
 2B 모델은 질문 의도에서 인접 카테고리까지 추론하기 어렵다.
 카테고리 인접 맵을 코드에 하드코딩하여 모델 판단 없이 탐색 범위를 자동 확장.
 
 ---
 
-## 저장 방식 (v14)
+## 저장 방식 (v15)
 
 카테고리는 `node_categories` 테이블에 **자동 저장**되며 `origin` 컬럼으로 출처를 식별한다. 사용자는 `/review`의 `ai_generated`/`rule_generated` 목록 뷰에서 잘못된 분류를 즉시 삭제할 수 있다.
 
@@ -572,11 +575,11 @@ ADJACENT_SUBCATEGORIES: dict[str, list[str]] = _build_adjacent_map(_ADJACENT_PAI
 
 ### 미래 계획 — 데이터 기반 보완
 
-데이터가 쌓이면 카테고리 간 엣지 출현 빈도로 인접 맵을 검증·보완한다.
+데이터가 쌓이면 카테고리 간 **문장 바구니 공출현 빈도**로 인접 맵을 검증·보완한다.
 
 ```sql
 -- 카테고리 간 공출현(node_mentions 기반) 빈도 쿼리
--- v13: nodes.category 컬럼은 제거되고 node_categories 다대다 테이블로 대체됨
+-- v15: edges 테이블 폐기, node_categories 다대다 테이블만 사용
 SELECT
     c1.category AS cat_a,
     c2.category AS cat_b,
@@ -592,15 +595,15 @@ ORDER BY cooccur_count DESC;
 ```
 
 인접 맵 조정 기준:
-- edge_count 상위 → 인접 추가 검토
-- 현재 인접이지만 edge_count 낮음 → 제거 검토
+- cooccur_count 상위 → 인접 추가 검토
+- 현재 인접이지만 cooccur_count 낮음 → 제거 검토
 - 조정 시 이 문서와 코드 동시 업데이트
 
 ---
 
 ## 참조
 
-- 스키마: `docs/DESIGN_GRAPH.md` — `node_categories` 테이블 (v13 다대다, `nodes.category` 컬럼은 폐기)
+- 스키마: `docs/DESIGN_HYPERGRAPH.md` — `node_categories` 테이블 (다대다, 카테고리 하이퍼엣지 멤버십)
 - 인출 파이프라인: `docs/DESIGN_PIPELINE.md` — 카테고리 보완 조회
 - 파인튜닝 데이터: `data/finetune/tasks/extract-core/train.jsonl`
 - 구현: `engine/retrieve.py` — `_get_category_supplement_nodes()`
