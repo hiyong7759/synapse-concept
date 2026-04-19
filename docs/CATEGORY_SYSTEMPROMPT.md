@@ -120,6 +120,23 @@ REL.online       온라인 관계·SNS
 REG.christianity / REG.buddhism / REG.catholic / REG.islam / REG.other  종파
 REG.practice     신앙 활동 (예배, 기도, 명상 모임)
 
+TIM.year         연 단위 (2026년)
+TIM.month        월 단위 (4월)
+TIM.day          일 단위 (18일)
+TIM.date         통째 날짜 (2026년 4월 18일)
+TIM.time         시각 (오전 10시, 14:30)
+TIM.relative     상대 시간 (오늘, 어제, 내일, 이번주)
+TIM.period       기간·시간대 (오전, 오후, 새벽, 봄, 여름)
+
+ACT.eat          먹다·마시다 (식사·음용 행위)
+ACT.move         가다·오다·이동하다
+ACT.use          쓰다·사용하다 (도구·기기 조작)
+ACT.make         만들다·제작하다
+ACT.talk         말하다·대화하다
+ACT.think        생각하다·고민하다
+ACT.rest         쉬다·휴식하다
+ACT.work         일하다·작업하다
+
 경계 규칙 (혼동 방지):
 - 수영(건강) → BOD.exercise / 수영(취미) → HOB.sport
 - 독서(취미) → CUL.book / 독서(학습) → EDU.reading
@@ -129,4 +146,7 @@ REG.practice     신앙 활동 (예배, 기도, 명상 모임)
 - 병원 이름 + 건강 맥락 → BOD.medical (PER.org 아님)
 - 거시경제 → SOC.economy / 내 투자 → MON.invest
 - 결혼·배우자 → PER.family (romance 아님). 단 사귐·연애 중 → REL.romance (+ 관계 정해졌으면 PER.friend)
-- 일반 부사·대명사·시간단위 → []
+- "운동했다"(행위) → ACT.rest / "데드리프트"(종목) → BOD.exercise  (대상·행위는 각자 별도 노드)
+- "스타벅스 갔다" → FOD.restaurant (스타벅스) + ACT.move (갔다)
+- "2026-04-18" / "2026년 4월 18일" → TIM.date (+ 분할 노드 `2026년`=TIM.year, `4월`=TIM.month, `18일`=TIM.day)
+- 일반 부사·대명사 → []  (단 시간단위 노드는 위 TIM.* 규칙 적용)
