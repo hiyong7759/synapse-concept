@@ -2,38 +2,66 @@
 
 ## 작업 규칙 (이 문서의 모든 작업 전 필독)
 
-**추측하지 마라. 검색해라. 실행 전에 검증해라.**
+**작업 원칙은 `docs/DESIGN_PRINCIPLES.md §7 파인튜닝 작업 원칙` 참고.**
+(추측 금지 · MLX 우선/RunPod 폴백 · 환경 매번 검증 · 100 iters 소규모 검증 · 하이퍼파라미터 임의 변경 금지)
 
-학습/파인튜닝 관련 작업 시 일반적인 ML 지식으로 추측하여 진행하지 말 것.
-이 프로젝트에는 확정된 설계·하이퍼파라미터·실패 기록·성공 패턴이 이미 문서화되어 있다.
+아래는 원칙을 실제 작업에 적용하는 체크리스트다.
+
+### 실행 환경: MLX 우선, RunPod 폴백
+
+기본 학습 환경은 **Mac M4 + MLX LoRA (로컬)**. 다음 경우에만 RunPod 사용:
+
+| RunPod 폴백이 정당화되는 조건 | 이유 |
+|---|---|
+| 8B+ 모델 학습 | MLX 통합 메모리로 불가 또는 매우 느림 |
+| 장시간(>24h) 학습 | 로컬 머신 점유 부담 |
+| MLX 비호환 연산 필요 | 일부 커스텀 kernel, 분산 학습 |
+| 대규모 병렬 실험 | 여러 GPU 동시 필요 |
+
+MLX에서 먼저 시도 → 막히면 RunPod으로 이관. 반대 방향은 기본값이 아님.
 
 ### Phase 0: 설계 파악 (반드시 읽기)
 
 - 이 문서(`DESIGN_FINETUNE.md`) — 태스크 구조, 하이퍼파라미터, 데이터 현황, 실패 기록
-- `scripts/runpod/train_all.py` — 확정된 학습 설정 (TaskConfig 클래스)
-- `scripts/runpod/README.md` — RunPod 사용법, 태스크 목록
+- `scripts/mlx/train_all.py` — **MLX 학습 설정 (기본 경로)**
+- `scripts/runpod/train_all.py` — RunPod 폴백 시에만 (TaskConfig 클래스)
+- `scripts/runpod/README.md` — RunPod 사용법 (폴백 시)
 
 ### Phase 1: 환경 검증 루틴 (실행 전 필수)
 
 문서의 설정이 현재 환경에서 유효한지 **매번** 확인. 하루만 지나도 바뀔 수 있다.
 
+**MLX 환경 (기본):**
 ```
-[ ] 라이브러리 버전 확인
-    - pip show unsloth peft transformers trl → 버전이 문서/스크립트 작성 시점과 다르면 변경사항 검색
-    - 특히 unsloth, trl은 API가 자주 바뀜 (deprecated 파라미터, 클래스 이동 등)
+[ ] MLX 라이브러리 버전 확인
+    - pip show mlx mlx-lm → MLX 업데이트 주기가 짧아 API 변경 잦음
+    - 버전이 문서/스크립트 작성 시점과 다르면 changelog 확인
 [ ] 모델/토크나이저 확인
-    - 베이스 모델 접근 가능한지 (HF 캐시 또는 다운로드)
-    - chat_template이 변경되지 않았는지
+    - 베이스 모델 HF 캐시 존재 여부
+    - chat_template 변경 여부
 [ ] 데이터 파일 존재 + 건수 확인
     - wc -l data/finetune/tasks/*/train.jsonl
     - 빈 파일, 0건 데이터 체크
-[ ] GPU/VRAM 확인
-    - nvidia-smi (RunPod이면 할당된 GPU 종류와 VRAM)
-    - 이전 프로세스 잔류 VRAM 점유 여부
+[ ] 통합 메모리 여유 확인 (MLX)
+    - 다른 프로세스의 메모리 점유량 (특히 MLX 서버가 이미 떠 있는지)
+    - 활성 모니터 또는 vm_stat
 [ ] 디스크 여유 확인
-    - df -h /workspace (RunPod 볼륨 용량)
+    - df -h ~
 [ ] 기존 어댑터 백업
-    - 재학습 시 기존 결과 덮어쓰기 전 _backup 또는 타임스탬프 보존
+    - 재학습 전 _backup 또는 타임스탬프 보존
+```
+
+**RunPod 폴백 환경 (예외 시):**
+```
+[ ] 폴백 조건에 해당하는지 재확인 (위 표)
+[ ] 라이브러리 버전 확인
+    - pip show unsloth peft transformers trl
+    - unsloth, trl은 API가 자주 바뀜 (deprecated 파라미터, 클래스 이동)
+[ ] GPU/VRAM 확인
+    - nvidia-smi (할당된 GPU 종류와 VRAM)
+    - 이전 프로세스 잔류 VRAM 점유 여부
+[ ] 디스크 여유
+    - df -h /workspace
 ```
 
 ### Phase 2: 소규모 검증 (첫 실행 필수)
@@ -44,17 +72,9 @@
 [ ] 100 iters 테스트 실행 (가장 작은 태스크)
 [ ] train_loss 정상 감소 확인
 [ ] eval_loss 트렌드 확인 (↓이면 정상, →이면 과적합 조짐)
-[ ] 출력 포맷 확인 (GGUF 변환 후 실제 프롬프트로 추론 1건)
+[ ] 출력 포맷 확인 (MLX 추론 또는 GGUF 변환 후 실제 프롬프트 1건)
 [ ] 문제 있으면 → 전체 학습 진행하지 말고 원인 분석
 ```
-
-### 금지 사항
-
-- 하이퍼파라미터(lr, layers, alpha, batch 등)를 임의로 정하지 말 것 — 이미 확정된 값이 있음
-- 이전에 실패한 접근(전체 레이어 LoRA, alpha=160 등)을 반복하지 말 것
-- 환경을 가정하지 말 것 — RTX3080 없음, RunPod 사용, MLX는 로컬 테스트용
-- "설정 완료"를 동작 확인 전에 말하지 말 것 — 실제 1회 실행으로 검증 후 보고
-- 에러 발생 시 로그 일부만 보고 판단하지 말 것 — 성공/실패 케이스 비교 후 판단
 
 ---
 
