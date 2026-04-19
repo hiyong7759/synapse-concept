@@ -229,10 +229,12 @@ def structure_suggest(text: str, known_paths: Optional[list[str]] = None) -> str
 
 
 def llm_extract(text: str, context_sentences: Optional[list[tuple[int, str]]] = None) -> dict:
-    """LLM으로 노드/상태변경/보관유형 추출.
+    """LLM으로 노드/상태변경 추출.
 
-    v11: edges·category 필드는 어댑터 출력에 있어도 무시한다.
-    조사 기반 엣지는 폐기되었고, LLM 추론 카테고리·retention도 저장 대상이 아니다.
+    v15: edges 테이블 폐기로 엣지 label 추출 없음. 어댑터 출력의 edges/category/retention
+    필드는 어댑터에 남아있더라도 모두 드롭. 노드 이름과 deactivate 식별자만 사용.
+
+    의미 관계(cause/avoid/similar)는 sentence 원문에 이미 담겨 있고, 해석은 외부 지능체 몫.
 
     context_sentences: retrieve에서 가져온 (sentence_id, text) 쌍. deactivate 판단에 사용.
     반환: {"nodes": [...], "deactivate": [sentence_id, ...]}
@@ -250,7 +252,7 @@ def llm_extract(text: str, context_sentences: Optional[list[tuple[int, str]]] = 
         if not match:
             return {"nodes": [], "deactivate": []}
         result = json.loads(match.group())
-        # edges·category·retention 필드는 드롭. 노드 이름과 deactivate만 남김.
+        # v15: 어댑터가 edges/category/retention을 뱉어도 전부 드롭. nodes + deactivate만 남김.
         nodes = []
         for n in result.get("nodes", []):
             if isinstance(n, dict) and n.get("name"):

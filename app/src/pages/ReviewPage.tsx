@@ -2,17 +2,13 @@ import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import type { ReviewAllResponse } from '../api';
-import {
-  labelOfCategory, descOfCategory,
-  labelOfRelation, descOfRelation,
-} from '../categories';
+// v15: 엣지 폐기로 labelOfRelation/descOfRelation 사용 제거.
+// labelOfCategory/descOfCategory도 uncategorized 섹션 폐기와 함께 사용처 사라짐.
 import { useToast } from '../components/Toast';
 import styles from './ReviewPage.module.css';
 
 type SectionKey =
   | 'unresolved'
-  | 'uncategorized'
-  | 'cooccur_pairs'
   | 'suspected_typos'
   | 'missing_basic_info'
   | 'stale_nodes'
@@ -20,8 +16,6 @@ type SectionKey =
 
 const SECTION_LABEL: Record<SectionKey, string> = {
   unresolved:         '🔍 미해결 지시어',
-  uncategorized:      '🏷  미분류 노드',
-  cooccur_pairs:      '🔗 공출현 노드 쌍',
   suspected_typos:    '⚠ 오타 의심',
   missing_basic_info: '👤 기본 정보 누락',
   stale_nodes:        '⏳ 오래된 노드',
@@ -112,8 +106,6 @@ export function ReviewPage() {
   const sections: SectionKey[] = [
     'missing_basic_info',
     'unresolved',
-    'uncategorized',
-    'cooccur_pairs',
     'suspected_typos',
     'stale_nodes',
     'gaps',
@@ -125,7 +117,7 @@ export function ReviewPage() {
         <button className={styles.topbarBtn} onClick={() => navigate('/')}>← 탐색</button>
         <div className={styles.topbarLogo}>REVIEW</div>
         <div className={styles.topbarActions}>
-          <button className={styles.topbarBtn} onClick={() => navigate('/graph')}>그래프</button>
+          <button className={styles.topbarBtn} onClick={() => navigate('/hypergraph')}>하이퍼그래프</button>
           <button className={styles.topbarBtn} onClick={reload} disabled={loading}>
             {loading ? '...' : '↻'}
           </button>
@@ -220,77 +212,8 @@ export function ReviewPage() {
           );
         })}
 
-        {data?.uncategorized?.map((item) => {
-          const key = `c:${item.node_id}`;
-          const value = freeInputs[key] ?? '';
-          const submitFree = () => {
-            const v = value.trim();
-            if (!v) return;
-            apply(key, 'category', { node_id: item.node_id, category: v }, `카테고리 "${v}" 추가됨`);
-            setFree(key, '');
-          };
-          return (
-            <div key={key} className={cardClass(key)}>
-              <div className={styles.section}>{SECTION_LABEL.uncategorized}</div>
-              <div className={styles.question}>{item.question}</div>
-              <div className={styles.options}>
-                {item.options.map((opt) => {
-                  const desc = descOfCategory(opt);
-                  return (
-                    <button
-                      key={opt}
-                      className={styles.optBtn}
-                      title={desc ? `${opt} — ${desc}` : opt}
-                      onClick={() => apply(key, 'category', { node_id: item.node_id, category: opt }, `카테고리 "${labelOfCategory(opt)}" 추가됨`)}
-                    >
-                      {labelOfCategory(opt)}
-                      <span className={styles.optCode}>{opt}</span>
-                    </button>
-                  );
-                })}
-                <input
-                  className={styles.freeInput}
-                  placeholder="직접 입력 (예: 병원.2026-04-18)"
-                  value={value}
-                  onChange={(e) => setFree(key, e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') submitFree(); }}
-                />
-                <button className={styles.optBtn} onClick={submitFree}>저장</button>
-              </div>
-            </div>
-          );
-        })}
-
-        {data?.cooccur_pairs?.map((item) => {
-          const key = `co:${item.source_id}:${item.target_id}`;
-          return (
-            <div key={key} className={cardClass(key)}>
-              <div className={styles.section}>{SECTION_LABEL.cooccur_pairs} <span className={styles.meta}>({item.cooccur_count}회 함께 등장)</span></div>
-              <div className={styles.question}>{item.question}</div>
-              {item.sample_sentence && <div className={styles.context}>{item.sample_sentence}</div>}
-              <div className={styles.options}>
-                {item.options.map((opt) => {
-                  const desc = descOfRelation(opt);
-                  return (
-                    <button
-                      key={opt}
-                      className={styles.optBtn}
-                      title={desc ? `${opt} — ${desc}` : opt}
-                      onClick={() => apply(key, 'edge', {
-                        source_id: item.source_id,
-                        target_id: item.target_id,
-                        label: opt,
-                      }, `"${labelOfRelation(opt)}" 관계 생성됨`)}
-                    >
-                      {labelOfRelation(opt)}
-                      <span className={styles.optCode}>{opt}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
+        {/* v15: uncategorized 섹션 폐기 (카테고리 편집은 노드 상세에서 직접) */}
+        {/* v15: cooccur_pairs 섹션 폐기 (문장 하이퍼엣지에 자동 포함) */}
 
         {data?.suspected_typos?.map((item) => {
           const key = `t:${item.node_a_id}:${item.node_b_id}`;

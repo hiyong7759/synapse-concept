@@ -1,7 +1,8 @@
-/// SynapseEngine — public API facade.
+/// SynapseEngine — public API facade (v15).
 ///
-/// Single entry point for consumer apps.
-/// All internal modules are hidden behind this class.
+/// Single entry point for consumer apps. All internal modules are hidden
+/// behind this class. v15: edges 테이블 폐기. 연결은 node_mentions +
+/// node_categories + aliases 세 하이퍼엣지로 표현.
 
 import 'dart:async';
 
@@ -11,7 +12,7 @@ import 'db.dart' as db_mod;
 import 'inference.dart';
 import 'models/engine_config.dart';
 import 'models/engine_event.dart';
-import 'models/graph_query.dart';
+import 'models/hypergraph_query.dart';
 import 'models/retrieve_result.dart';
 import 'models/save_result.dart';
 import 'models/triple.dart';
@@ -29,16 +30,17 @@ class PipelineResult {
   });
 }
 
-/// On-device knowledge graph engine.
+/// On-device knowledge hypergraph engine.
 class SynapseEngine {
   final Database _db;
   final InferenceEngine _inference;
   final EngineConfig _config;
 
-  // Event stream controllers
-  final _tripleAddedController = StreamController<TripleAddedEvent>.broadcast();
-  final _edgeDeactivatedController =
-      StreamController<EdgeDeactivatedEvent>.broadcast();
+  // Event stream controllers (v15)
+  final _sentenceCommittedController =
+      StreamController<SentenceCommittedEvent>.broadcast();
+  final _nodeDeactivatedController =
+      StreamController<NodeDeactivatedEvent>.broadcast();
   final _nodeCreatedController = StreamController<NodeCreatedEvent>.broadcast();
 
   SynapseEngine._(this._db, this._inference, this._config);
@@ -50,10 +52,8 @@ class SynapseEngine {
     EngineConfig config, {
     InferenceBackend? backend,
   }) async {
-    // Open DB
     final database = await db_mod.openSynapseDb(config.dataDir);
 
-    // Init inference
     final inferenceBackend = backend ?? StubInferenceBackend();
     final inference = InferenceEngine(
       inferenceBackend,
@@ -62,7 +62,6 @@ class SynapseEngine {
     );
     await inference.init(config.modelPath, config.adapterDir);
 
-    // Register custom adapters
     for (final adapter in config.customAdapters) {
       inference.registerAdapter(adapter);
     }
@@ -74,8 +73,8 @@ class SynapseEngine {
   Future<void> dispose() async {
     await _inference.dispose();
     await _db.close();
-    await _tripleAddedController.close();
-    await _edgeDeactivatedController.close();
+    await _sentenceCommittedController.close();
+    await _nodeDeactivatedController.close();
     await _nodeCreatedController.close();
   }
 
@@ -86,7 +85,6 @@ class SynapseEngine {
     String text, {
     void Function(PipelineStep step)? onProgress,
   }) async {
-    // 1. Retrieve (for context)
     onProgress?.call(PipelineStep.retrieveExpand);
     final retrieveResult = await retrieve_mod.retrieve(
       _db,
@@ -95,7 +93,6 @@ class SynapseEngine {
       adjacencyMap: _buildAdjacencyMap(),
     );
 
-    // 2. Save (with retrieved context)
     onProgress?.call(PipelineStep.extract);
     final contextSentences = retrieveResult.contextTriples
         .where((t) => t.sentenceText != null)
@@ -110,13 +107,6 @@ class SynapseEngine {
       contextSentences: contextSentences,
     );
 
-    // Apply onAfterExtract hook
-    if (_config.onAfterExtract != null) {
-      // Hook gets raw result as map, returns modified
-      // (simplified: hook is called after save completes)
-    }
-
-    // Emit events
     _emitSaveEvents(saveResult);
 
     return PipelineResult(
@@ -142,10 +132,11 @@ class SynapseEngine {
     );
   }
 
-  // ── Graph query ────────────────────────────────────────
+  // ── Hypergraph query ───────────────────────────────────
 
-  /// Direct graph query without BFS pipeline.
-  Future<List<Triple>> query(GraphQuery q) async {
+  /// Direct hypergraph query: 같은 문장 바구니에 공출현한 노드 페어를 Triple 형태로 반환.
+  /// v15: edges 테이블 폐기로 node_mentions JOIN 기반.
+  Future<List<Triple>> query(HypergraphQuery q) async {
     final conditions = <String>[];
     final args = <Object>[];
 
@@ -154,7 +145,7 @@ class SynapseEngine {
       args.addAll([q.nodeName!, q.nodeName!]);
     }
     if (q.nodeId != null) {
-      conditions.add('(e.source_node_id = ? OR e.target_node_id = ?)');
+      conditions.add('(m1.node_id = ? OR m2.node_id = ?)');
       args.addAll([q.nodeId!, q.nodeId!]);
     }
     if (q.category != null) {
@@ -168,10 +159,9 @@ class SynapseEngine {
       conditions.add("n1.status = 'active' AND n2.status = 'active'");
     }
     if (q.lastDuration != null) {
-      final since = DateTime.now()
-          .subtract(q.lastDuration!)
-          .toIso8601String();
-      conditions.add('e.created_at >= ?');
+      final since =
+          DateTime.now().subtract(q.lastDuration!).toIso8601String();
+      conditions.add('s.created_at >= ?');
       args.add(since);
     }
 
@@ -180,16 +170,17 @@ class SynapseEngine {
     final limit = q.limit != null ? 'LIMIT ${q.limit}' : '';
 
     final rows = await _db.rawQuery(
-      '''SELECT e.id AS edge_id,
-                n1.id AS src_id, n1.name AS src,
+      '''SELECT n1.id AS src_id, n1.name AS src,
                 n2.id AS tgt_id, n2.name AS tgt,
-                e.label, e.sentence_id, s.text AS sentence_text
-         FROM edges e
-         JOIN nodes n1 ON n1.id = e.source_node_id
-         JOIN nodes n2 ON n2.id = e.target_node_id
-         LEFT JOIN sentences s ON s.id = e.sentence_id
+                s.id AS sentence_id, s.text AS sentence_text
+         FROM node_mentions m1
+         JOIN node_mentions m2
+              ON m1.sentence_id = m2.sentence_id AND m1.node_id < m2.node_id
+         JOIN nodes n1 ON n1.id = m1.node_id
+         JOIN nodes n2 ON n2.id = m2.node_id
+         JOIN sentences s ON s.id = m1.sentence_id
          $where
-         ORDER BY e.created_at DESC
+         ORDER BY s.created_at DESC
          $limit''',
       args,
     );
@@ -197,9 +188,8 @@ class SynapseEngine {
     return rows
         .map((r) => Triple(
               src: r['src'] as String,
-              label: r['label'] as String?,
+              label: null,  // v15: 라벨 없음
               tgt: r['tgt'] as String,
-              edgeId: r['edge_id'] as int,
               srcId: r['src_id'] as int,
               tgtId: r['tgt_id'] as int,
               sentenceId: r['sentence_id'] as int?,
@@ -208,7 +198,7 @@ class SynapseEngine {
         .toList();
   }
 
-  // ── Graph management ───────────────────────────────────
+  // ── Hypergraph management ──────────────────────────────
 
   Future<void> addAlias(String alias, String nodeName) async {
     final rows = await _db.rawQuery(
@@ -224,6 +214,7 @@ class SynapseEngine {
     await db_mod.removeAlias(_db, alias);
   }
 
+  /// 동명이의어 분리. v15: edges 이관 대신 지정한 sentence의 node_mentions를 새 노드로 이관.
   Future<void> splitNode(int nodeId, SplitSpec spec) async {
     final orig = await _db.rawQuery(
       'SELECT id, name FROM nodes WHERE id=?',
@@ -231,7 +222,6 @@ class SynapseEngine {
     );
     if (orig.isEmpty) return;
 
-    // Create new node with same name + copy categories
     final newId = await _db.insert('nodes', {
       'name': orig.first['name'],
     });
@@ -241,27 +231,17 @@ class SynapseEngine {
       [newId, nodeId],
     );
 
-    // Move edges
-    for (final eid in spec.edgeIdsToMove) {
-      final edge = await _db.rawQuery(
-        'SELECT source_node_id, target_node_id FROM edges WHERE id=?',
-        [eid],
+    // v15: sentence_ids_to_move 기준으로 node_mentions 이관
+    if (spec.sentenceIdsToMove.isNotEmpty) {
+      final placeholders =
+          List.filled(spec.sentenceIdsToMove.length, '?').join(',');
+      await _db.execute(
+        'UPDATE node_mentions SET node_id=? '
+        'WHERE node_id=? AND sentence_id IN ($placeholders)',
+        [newId, nodeId, ...spec.sentenceIdsToMove],
       );
-      if (edge.isEmpty) continue;
-      if (edge.first['source_node_id'] == nodeId) {
-        await _db.execute(
-          'UPDATE edges SET source_node_id=? WHERE id=?',
-          [newId, eid],
-        );
-      } else if (edge.first['target_node_id'] == nodeId) {
-        await _db.execute(
-          'UPDATE edges SET target_node_id=? WHERE id=?',
-          [newId, eid],
-        );
-      }
     }
 
-    // Register aliases
     await db_mod.addAlias(_db, spec.aliasForOriginal, nodeId);
     await db_mod.addAlias(_db, spec.aliasForNew, newId);
   }
@@ -277,8 +257,9 @@ class SynapseEngine {
     return result;
   }
 
-  Future<void> rollback(List<int> edgeIds, {List<int>? nodeIds}) async {
-    await save_mod.rollback(_db, edgeIds, nodeIds: nodeIds);
+  /// v15: 문장·노드 롤백. sentence_ids 삭제 → node_mentions CASCADE.
+  Future<void> rollback(List<int> sentenceIds, {List<int>? nodeIds}) async {
+    await save_mod.rollback(_db, sentenceIds, nodeIds: nodeIds);
   }
 
   Future<db_mod.EngineStats> getStats() async {
@@ -295,11 +276,12 @@ class SynapseEngine {
     return _inference.run(name, input);
   }
 
-  // ── Event streams ──────────────────────────────────────
+  // ── Event streams (v15) ────────────────────────────────
 
-  Stream<TripleAddedEvent> get onTripleAdded => _tripleAddedController.stream;
-  Stream<EdgeDeactivatedEvent> get onEdgeDeactivated =>
-      _edgeDeactivatedController.stream;
+  Stream<SentenceCommittedEvent> get onSentenceCommitted =>
+      _sentenceCommittedController.stream;
+  Stream<NodeDeactivatedEvent> get onNodeDeactivated =>
+      _nodeDeactivatedController.stream;
   Stream<NodeCreatedEvent> get onNodeCreated => _nodeCreatedController.stream;
 
   // ── Save response (assistant) ──────────────────────────
@@ -309,30 +291,31 @@ class SynapseEngine {
   // ── Internal ───────────────────────────────────────────
 
   void _emitSaveEvents(SaveResult result) {
-    for (var i = 0; i < result.triplesAdded.length; i++) {
-      final (src, label, tgt) = result.triplesAdded[i];
-      final edgeId =
-          i < result.edgeIdsAdded.length ? result.edgeIdsAdded[i] : 0;
-      _tripleAddedController.add(TripleAddedEvent(
-        triple: Triple(src: src, label: label, tgt: tgt, edgeId: edgeId),
-        sentenceId:
-            result.sentenceIds.isNotEmpty ? result.sentenceIds.first : 0,
+    // 문장 커밋 이벤트 (v15)
+    for (final sid in result.sentenceIds) {
+      _sentenceCommittedController.add(SentenceCommittedEvent(
+        sentenceId: sid,
+        text: '',  // retrieve 가능하지만 간소화
+        mentionedNodeIds: result.nodeIdsAdded,
+        mentionedNodeNames: result.nodesAdded,
         timestamp: DateTime.now(),
       ));
     }
 
-    for (final (src, label, tgt) in result.edgesDeactivated) {
-      _edgeDeactivatedController.add(EdgeDeactivatedEvent(
-        triple: Triple(src: src, label: label, tgt: tgt, edgeId: 0),
+    // 노드 비활성화 이벤트
+    for (final marker in result.nodesDeactivated) {
+      _nodeDeactivatedController.add(NodeDeactivatedEvent(
+        nodeId: 0,
+        name: marker,
         reason: 'conflict',
       ));
     }
 
+    // 신규 노드 이벤트
     for (var i = 0; i < result.nodesAdded.length; i++) {
       _nodeCreatedController.add(NodeCreatedEvent(
         name: result.nodesAdded[i],
-        nodeId:
-            i < result.nodeIdsAdded.length ? result.nodeIdsAdded[i] : 0,
+        nodeId: i < result.nodeIdsAdded.length ? result.nodeIdsAdded[i] : 0,
       ));
     }
   }
@@ -340,20 +323,19 @@ class SynapseEngine {
   Map<String, List<String>>? _buildAdjacencyMap() {
     final adj = _config.adjacency;
     if (adj.isEmpty) return null;
-    // null → retrieve.dart uses its built-in default map
     return adj.toMap();
   }
 }
 
-/// Spec for splitting a homonym node.
+/// Spec for splitting a homonym node. v15: sentence_ids 기준 이관.
 class SplitSpec {
   final String aliasForOriginal;
   final String aliasForNew;
-  final List<int> edgeIdsToMove;
+  final List<int> sentenceIdsToMove;
 
   const SplitSpec({
     required this.aliasForOriginal,
     required this.aliasForNew,
-    required this.edgeIdsToMove,
+    required this.sentenceIdsToMove,
   });
 }

@@ -125,7 +125,7 @@ export function ExplorerPage() {
         <div className={styles.topbarLogo}>SYNAPSE</div>
         <div className={styles.topbarActions}>
           <button className={styles.topbarBtn} onClick={() => navigate('/chat/new')}>+ 새 대화</button>
-          <button className={styles.topbarBtn} onClick={() => navigate('/graph')}>그래프</button>
+          <button className={styles.topbarBtn} onClick={() => navigate('/hypergraph')}>하이퍼그래프</button>
         </div>
       </div>
 

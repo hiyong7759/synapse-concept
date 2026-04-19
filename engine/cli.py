@@ -1,4 +1,4 @@
-"""Synapse CLI — 그래프 엔진 테스트 인터페이스.
+"""Synapse CLI — 하이퍼그래프 엔진 테스트 인터페이스.
 
 사용법:
   python3 -m engine.cli            # 대화형 모드 (MLX 서버 필요: python api/mlx_server.py)
@@ -22,18 +22,13 @@ from engine.llm import llm_extract
 from typing import Optional
 
 
-def _fmt_triple(src, label, tgt) -> str:
-    return f"{src} —({label})→ {tgt}" if label else f"{src} → {tgt}"
-
-
 def cmd_stats() -> None:
     stats = get_stats()
     print(f"DB: {DB_PATH}")
     print(f"  문장 {stats['sentences_total']} (user={stats['sentences_user']}, assistant={stats['sentences_assistant']})")
     print(f"  노드 {stats['nodes_active']}/{stats['nodes_total']} (활성/전체)")
-    print(f"  언급 {stats['node_mentions_total']} (node_mentions)")
-    print(f"  엣지 {stats['edges_total']} (의미 관계, 승인된 것만)")
-    print(f"  카테고리 {stats['categories_total']}")
+    print(f"  언급 {stats['node_mentions_total']} (문장 바구니 멤버십)")
+    print(f"  카테고리 {stats['categories_total']} (카테고리 바구니 멤버십)")
     print(f"  별칭 {stats['aliases_total']}")
     print(f"  미해결 토큰 {stats['unresolved_total']}")
 
@@ -129,9 +124,9 @@ def _print_save_result(r) -> None:
         print(f"  [노드 신규] {', '.join(r.nodes_added)}")
     if r.mentions_added:
         print(f"  [언급 기록] {r.mentions_added}건")
-    for src, label, tgt in r.edges_deactivated:
-        print(f"  [비활성] {_fmt_triple(src, label, tgt)}")
-    if not r.nodes_added and not r.mentions_added and not r.edges_deactivated:
+    for marker in r.nodes_deactivated:
+        print(f"  [상태변경] {marker}")
+    if not r.nodes_added and not r.mentions_added and not r.nodes_deactivated:
         print("  (변경 없음)")
 
 

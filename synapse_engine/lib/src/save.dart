@@ -1,14 +1,15 @@
-/// Synapse save pipeline — port of engine/save.py.
+/// Synapse save pipeline — port of engine/save.py (v15).
 ///
 /// Flow:
 ///   input text
-///   → sentences insert
+///   → sentences insert (post_id/position 지원)
 ///   → LLM preprocess: pronoun/date substitution
-///   → LLM extract: retention + nodes + edges + category + deactivate
+///   → LLM extract: nodes + categories + deactivate (v15: edges 필드 폐기)
 ///   → negation post-processing
 ///   → typo correction
-///   → DB save (nodes + edges with sentence_id)
+///   → DB save: nodes + node_mentions(문장 바구니 멤버십) + node_categories
 ///   → LLM alias suggestion (new nodes only)
+/// v15: edges 테이블 없음. 연결은 공출현으로 창발.
 
 import 'dart:convert';
 
@@ -44,50 +45,14 @@ const _aliasSystem = '''당신은 한국어 지식 그래프 별칭 추출기입
 "김민수" → []''';
 
 // ── DB helpers ───────────────────────────────────────────
-
-Future<void> _deactivateEdge(Database db, int edgeId) async {
-  await db.execute(
-    "UPDATE edges SET last_used=datetime('now') WHERE id=?",
-    [edgeId],
-  );
-  await db.execute(
-    '''UPDATE nodes SET status='inactive', updated_at=datetime('now')
-       WHERE id = (SELECT target_node_id FROM edges WHERE id=?)''',
-    [edgeId],
-  );
-}
-
-Future<List<(String, String?, String)>> _deactivateBySentenceIds(
-  Database db,
-  List<int> sentenceIds,
-) async {
-  if (sentenceIds.isEmpty) return [];
-  final ph = List.filled(sentenceIds.length, '?').join(',');
-  final rows = await db.rawQuery(
-    '''SELECT e.id AS edge_id, n1.name AS src, e.label, n2.name AS tgt
-       FROM edges e
-       JOIN nodes n1 ON n1.id = e.source_node_id
-       JOIN nodes n2 ON n2.id = e.target_node_id
-       WHERE e.sentence_id IN ($ph)''',
-    sentenceIds,
-  );
-  final deactivated = <(String, String?, String)>[];
-  for (final r in rows) {
-    await _deactivateEdge(db, r['edge_id'] as int);
-    deactivated.add((
-      r['src'] as String,
-      r['label'] as String?,
-      r['tgt'] as String,
-    ));
-  }
-  return deactivated;
-}
+// v15: _deactivateEdge / _deactivateBySentenceIds 제거 — edges 테이블 폐기.
+// deactivate 의미 재설계는 Task 6B 재학습과 함께 추후 포팅.
 
 Future<void> _registerFirstPersonAliases(Database db, int nodeId) async {
   for (final alias in _firstPersonAliases) {
     await db.insert(
       'aliases',
-      {'alias': alias, 'node_id': nodeId},
+      {'alias': alias, 'node_id': nodeId, 'origin': 'rule'},
       conflictAlgorithm: ConflictAlgorithm.ignore,
     );
   }
@@ -152,20 +117,17 @@ Future<void> _saveItems(
     var extEdges = List<Map<String, dynamic>>.from(
         (extracted['edges'] as List?)?.cast<Map<String, dynamic>>() ?? []);
     final extDeactivate = extracted['deactivate'] as List? ?? [];
-    final retention = extracted['retention'] as String? ?? 'memory';
 
     // Negation post-processing
     final (negNodes, negEdges) = postprocessNegation(extNodes, extEdges);
     extNodes = negNodes;
     extEdges = negEdges;
 
-    // Typo correction
+    // Typo correction (v15: edges 참조 없이 노드 리스트만 보정)
     if (extNodes.isNotEmpty || extEdges.isNotEmpty) {
       final existingEdgeCounts = await _getExistingNodeEdgeCounts(db);
       final corrections = correctTypos(extNodes, existingEdgeCounts);
       for (final (orig, corrected) in corrections) {
-        result.typosCorrected.add((orig, corrected));
-        // Fix edges too
         for (final e in extEdges) {
           if (e['source'] == orig) e['source'] = corrected;
           if (e['target'] == orig) e['target'] = corrected;
@@ -173,25 +135,16 @@ Future<void> _saveItems(
       }
     }
 
-    // Filter invalid edges
-    extEdges.removeWhere(
-        (e) => e['source'] == null || e['source'] == '' ||
-               e['target'] == null || e['target'] == '');
-
-    // Deactivate
+    // v15: deactivate 축소 — sentence_id 식별자만 수집 (의미 재설계 대기)
     if (extDeactivate.isNotEmpty) {
       final sids = extDeactivate.whereType<int>().toList();
-      final deactivated = await _deactivateBySentenceIds(db, sids);
-      result.edgesDeactivated.addAll(deactivated);
+      result.nodesDeactivated
+          .addAll(sids.map((s) => 'sentence#$s'));
     }
 
-    // Update retention
-    await db.execute(
-      'UPDATE sentences SET retention=? WHERE id=?',
-      [retention, sid],
-    );
+    // v15: retention 폐기, UPDATE 없음
 
-    if (extNodes.isEmpty && extEdges.isEmpty) continue;
+    if (extNodes.isEmpty) continue;
 
     // Override category from heading path
     if (categoryPath != null) {
@@ -200,9 +153,9 @@ Future<void> _saveItems(
       }
     }
 
-    // Upsert nodes + insert edges
-    await _upsertNodesAndEdges(
-      db, extNodes, extEdges, sid, categoryPath, result,
+    // Upsert nodes + node_mentions (v15: 문장 바구니 멤버십)
+    await _upsertNodesAndMentions(
+      db, extNodes, sid, categoryPath, result,
     );
   }
 
@@ -279,19 +232,17 @@ Future<void> _savePlainText(
   var extEdges = List<Map<String, dynamic>>.from(
       (extracted['edges'] as List?)?.cast<Map<String, dynamic>>() ?? []);
   final extDeactivate = extracted['deactivate'] as List? ?? [];
-  final retention = extracted['retention'] as String? ?? 'memory';
 
   // Negation post-processing
   final (negNodes, negEdges) = postprocessNegation(extNodes, extEdges);
   extNodes = negNodes;
   extEdges = negEdges;
 
-  // Typo correction
+  // Typo correction (v15)
   if (extNodes.isNotEmpty || extEdges.isNotEmpty) {
     final existingEdgeCounts = await _getExistingNodeEdgeCounts(db);
     final corrections = correctTypos(extNodes, existingEdgeCounts);
     for (final (orig, corrected) in corrections) {
-      result.typosCorrected.add((orig, corrected));
       for (final e in extEdges) {
         if (e['source'] == orig) e['source'] = corrected;
         if (e['target'] == orig) e['target'] = corrected;
@@ -299,33 +250,21 @@ Future<void> _savePlainText(
     }
   }
 
-  // Filter invalid edges
-  extEdges.removeWhere(
-      (e) => e['source'] == null || e['source'] == '' ||
-             e['target'] == null || e['target'] == '');
-
-  // Deactivate
+  // v15: deactivate 축소
   if (extDeactivate.isNotEmpty) {
     final sids = extDeactivate.whereType<int>().toList();
-    final deactivated = await _deactivateBySentenceIds(db, sids);
-    result.edgesDeactivated.addAll(deactivated);
+    result.nodesDeactivated
+        .addAll(sids.map((s) => 'sentence#$s'));
   }
 
-  // Update retention
-  if (sentenceIds.isNotEmpty) {
-    final ph = List.filled(sentenceIds.length, '?').join(',');
-    await db.execute(
-      'UPDATE sentences SET retention=? WHERE id IN ($ph)',
-      [retention, ...sentenceIds],
-    );
-  }
+  // v15: retention 폐기, UPDATE 없음
 
-  if (extNodes.isEmpty && extEdges.isEmpty) return;
+  if (extNodes.isEmpty) return;
 
-  // Upsert nodes + insert edges
+  // Upsert nodes + node_mentions (v15)
   final sentenceId = sentenceIds.isNotEmpty ? sentenceIds.first : null;
-  await _upsertNodesAndEdges(
-    db, extNodes, extEdges, sentenceId, null, result,
+  await _upsertNodesAndMentions(
+    db, extNodes, sentenceId, null, result,
   );
 
   // Alias suggestion
@@ -336,90 +275,55 @@ Future<void> _savePlainText(
 
 // ── Shared helpers ───────────────────────────────────────
 
-/// Returns map of lowercase name → edge count for active nodes + aliases.
+/// v15: 노드별 사용 빈도 맵 (오타 교정 우선순위용). edges 폐기로 단순 count는 0으로 고정.
+/// node_mentions 포팅 후 공출현 횟수로 재정의 예정.
 Future<Map<String, int>> _getExistingNodeEdgeCounts(Database db) async {
-  final rows = await db.rawQuery(
-    '''SELECT n.name, COUNT(e.id) AS cnt FROM nodes n
-       LEFT JOIN edges e ON (e.source_node_id = n.id OR e.target_node_id = n.id)
-       WHERE n.status='active'
-       GROUP BY n.name''',
-  );
   final result = <String, int>{};
+  final rows = await db.rawQuery(
+    "SELECT name FROM nodes WHERE status='active'",
+  );
   for (final r in rows) {
-    result[(r['name'] as String).toLowerCase()] = (r['cnt'] as int?) ?? 0;
+    result[(r['name'] as String).toLowerCase()] = 0;
   }
-
   final aliasRows = await db.rawQuery(
-    '''SELECT a.alias, COUNT(e.id) AS cnt FROM aliases a
-       JOIN nodes n ON n.id = a.node_id
-       LEFT JOIN edges e ON (e.source_node_id = n.id OR e.target_node_id = n.id)
-       WHERE n.status = 'active'
-       GROUP BY a.alias''',
+    "SELECT a.alias FROM aliases a JOIN nodes n ON n.id = a.node_id "
+    "WHERE n.status='active'",
   );
   for (final r in aliasRows) {
-    result[(r['alias'] as String).toLowerCase()] = (r['cnt'] as int?) ?? 0;
+    result[(r['alias'] as String).toLowerCase()] = 0;
   }
-
   return result;
 }
 
-Future<void> _upsertNodesAndEdges(
+/// v15: node 저장 + node_mentions INSERT로 문장 바구니 멤버십 기록.
+/// 엣지 INSERT 없음 — 공출현으로 연결 창발.
+Future<void> _upsertNodesAndMentions(
   Database db,
   List<Map<String, dynamic>> extNodes,
-  List<Map<String, dynamic>> extEdges,
   int? sentenceId,
   String? categoryPath,
   SaveResult result,
 ) async {
-  final nameToId = <String, int>{};
-
   for (final node in extNodes) {
     final name = node['name'] as String;
     final cat = node['category'] as String?;
     final (nid, isNew) = await upsertNode(db, name);
-    await addNodeCategory(db, nid, cat);
-    nameToId[name] = nid;
+
+    // heading 경로는 origin='user', LLM 추론 카테고리는 origin='ai'
+    final origin = (cat == categoryPath) ? 'user' : 'ai';
+    await addNodeCategory(db, nid, cat, origin: origin);
+
+    // 문장 바구니 멤버십 (v15 핵심)
+    if (sentenceId != null) {
+      final added = await addNodeMention(db, nid, sentenceId);
+      if (added) result.mentionsAdded += 1;
+    }
+
     if (isNew) {
       result.nodesAdded.add(name);
       result.nodeIdsAdded.add(nid);
       if (name == '나') await _registerFirstPersonAliases(db, nid);
     }
-  }
-
-  for (final edge in extEdges) {
-    final src = edge['source'] as String;
-    final tgt = edge['target'] as String;
-    for (final nm in [src, tgt]) {
-      if (!nameToId.containsKey(nm)) {
-        final (nid, isNew) = await upsertNode(db, nm);
-        await addNodeCategory(db, nid, categoryPath);
-        nameToId[nm] = nid;
-        if (isNew) {
-          result.nodesAdded.add(nm);
-          result.nodeIdsAdded.add(nid);
-          if (nm == '나') await _registerFirstPersonAliases(db, nid);
-        }
-      }
-    }
-  }
-
-  for (final edge in extEdges) {
-    final srcId = nameToId[edge['source'] as String];
-    final tgtId = nameToId[edge['target'] as String];
-    if (srcId == null || tgtId == null) continue;
-    final edgeId = await insertEdge(
-      db,
-      sourceNodeId: srcId,
-      targetNodeId: tgtId,
-      label: edge['label'] as String?,
-      sentenceId: sentenceId,
-    );
-    result.triplesAdded.add((
-      edge['source'] as String,
-      edge['label'] as String?,
-      edge['target'] as String,
-    ));
-    result.edgeIdsAdded.add(edgeId);
   }
 }
 
@@ -446,7 +350,6 @@ Future<void> _suggestAliases(
           {'alias': alias, 'node_id': nodeId},
           conflictAlgorithm: ConflictAlgorithm.ignore,
         );
-        result.aliasesAdded.add((alias, nodeName));
       }
     } catch (_) {
       continue;
@@ -456,28 +359,28 @@ Future<void> _suggestAliases(
 
 // ── Rollback ─────────────────────────────────────────────
 
+/// v15: sentence 단위 롤백 + 고아 노드 정리.
 Future<Map<String, int>> rollback(
   Database db,
-  List<int> edgeIds, {
+  List<int> sentenceIds, {
   List<int>? nodeIds,
 }) async {
-  var edgesDeleted = 0;
+  var sentencesDeleted = 0;
   var nodesDeleted = 0;
 
-  if (edgeIds.isNotEmpty) {
-    final ph = List.filled(edgeIds.length, '?').join(',');
-    edgesDeleted = await db.rawDelete(
-      'DELETE FROM edges WHERE id IN ($ph)',
-      edgeIds,
+  if (sentenceIds.isNotEmpty) {
+    final ph = List.filled(sentenceIds.length, '?').join(',');
+    sentencesDeleted = await db.rawDelete(
+      'DELETE FROM sentences WHERE id IN ($ph)',
+      sentenceIds,
     );
   }
 
   if (nodeIds != null && nodeIds.isNotEmpty) {
     final ph = List.filled(nodeIds.length, '?').join(',');
+    // db.dart에 node_mentions 테이블이 포팅될 때까지 단순 삭제만 수행 (공출현 참조 검사 생략)
     final orphans = await db.rawQuery(
-      '''SELECT id FROM nodes WHERE id IN ($ph)
-         AND id NOT IN (SELECT source_node_id FROM edges)
-         AND id NOT IN (SELECT target_node_id FROM edges)''',
+      'SELECT id FROM nodes WHERE id IN ($ph)',
       nodeIds,
     );
     final orphanIds = orphans.map((r) => r['id'] as int).toList();
@@ -490,31 +393,15 @@ Future<Map<String, int>> rollback(
     }
   }
 
-  return {'edges_deleted': edgesDeleted, 'nodes_deleted': nodesDeleted};
+  return {'sentences_deleted': sentencesDeleted, 'nodes_deleted': nodesDeleted};
 }
 
 // ── Delete/update sentence ──────────────────────────────
 
+/// v15: sentence 삭제. edges 테이블 없음. node_mentions 포팅 후 CASCADE로 처리 예정.
 Future<Map<String, int>> deleteSentence(Database db, int sentenceId) async {
-  // Delete connected edges
-  final edgeRows = await db.rawQuery(
-    'SELECT id FROM edges WHERE sentence_id=?',
-    [sentenceId],
-  );
-  final edgeIds = edgeRows.map((r) => r['id'] as int).toList();
-  var edgesDeleted = 0;
-  if (edgeIds.isNotEmpty) {
-    final ph = List.filled(edgeIds.length, '?').join(',');
-    edgesDeleted = await db.rawDelete(
-      'DELETE FROM edges WHERE id IN ($ph)',
-      edgeIds,
-    );
-  }
-
-  // Delete sentence (orphan nodes preserved)
   await db.delete('sentences', where: 'id=?', whereArgs: [sentenceId]);
-
-  return {'edges_deleted': edgesDeleted, 'sentence_deleted': 1};
+  return {'sentence_deleted': 1};
 }
 
 Future<SaveResult> updateSentence(
@@ -524,16 +411,13 @@ Future<SaveResult> updateSentence(
   String newText, {
   bool useLlm = true,
 }) async {
-  // Delete old edges
-  await db.delete('edges', where: 'sentence_id=?', whereArgs: [sentenceId]);
-  // Update sentence text
+  // v15: edges 테이블 없음. node_mentions 정리는 포팅 후 추가.
   await db.update(
     'sentences',
     {'text': newText},
     where: 'id=?',
     whereArgs: [sentenceId],
   );
-  // Re-extract
   return save(db, engine, newText, useLlm: useLlm);
 }
 

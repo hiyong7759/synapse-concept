@@ -368,6 +368,14 @@
 .edgeList::-webkit-scrollbar { width: 3px; }
 .edgeList::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
+.sectionLabel {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 12px 0 4px;
+}
 .edgeItem {
   display: flex;
   align-items: center;
@@ -380,24 +388,6 @@
 }
 .edgeItem:last-child { border-bottom: none; }
 .edgeItem:hover { opacity: 0.72; }
-.edgeDir {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  color: var(--text-tertiary);
-  width: 14px;
-  flex-shrink: 0;
-}
-.edgeLabel {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
-  color: var(--accent);
-  opacity: 0.8;
-  max-width: 80px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
 .edgeNode {
   color: var(--text-secondary);
   overflow: hidden;

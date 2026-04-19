@@ -1,6 +1,8 @@
-"""Synapse API 라우터.
+"""Synapse API 라우터 (v15 — 하이퍼그래프 기반).
 
 설계서 기준 통합 파이프라인: 모든 입력 → retrieve → save → respond.
+v15: edges 테이블 폐기로 관련 엔드포인트·필드 제거. 연결은 node_mentions +
+node_categories + aliases 세 하이퍼엣지로 표현.
 """
 
 import os
@@ -38,16 +40,12 @@ class ChatRequest(BaseModel):
 
 
 class SaveResponseModel(BaseModel):
-    # v12: 게시물 단위 저장 (post_id). 엣지·별칭 자동 생성 없음
+    # v15: 게시물 단위 저장. edges 테이블 폐기로 관련 필드 제거.
     post_id: Optional[int] = None
     nodes_added: list[str]
     node_ids_added: list[int]
     mentions_added: int = 0
-    edges_deactivated: list[tuple[str, Optional[str], str]]
-    # 하위 호환 필드 (항상 빈 배열)
-    triples_added: list[tuple[str, Optional[str], str]] = []
-    edge_ids_added: list[int] = []
-    aliases_added: list[tuple[str, str]] = []
+    nodes_deactivated: list[str] = []  # v15: 상태변경된 노드 이름 (현재는 sentence#N 식별자)
 
 
 class RetrieveResponseModel(BaseModel):
@@ -64,12 +62,12 @@ class ChatResponse(BaseModel):
 
 
 class RollbackRequest(BaseModel):
-    edge_ids: list[int] = []
+    sentence_ids: list[int] = []
     node_ids: list[int] = []
 
 
 class RollbackResponse(BaseModel):
-    edges_deleted: int
+    sentences_deleted: int
     nodes_deleted: int
 
 
@@ -82,16 +80,7 @@ class NodeItem(BaseModel):
     id: int
     name: str
     status: str
-    degree: int
-
-
-class EdgeItem(BaseModel):
-    id: int
-    source_id: int
-    source_name: str
-    target_id: int
-    target_name: str
-    label: Optional[str]
+    degree: int   # v15: 같은 문장 바구니에 함께 등장한 고유 노드 수
 
 
 # ─── 엔드포인트 ──────────────────────────────────────────────
@@ -160,7 +149,7 @@ def chat(req: ChatRequest):
         nodes_added=r_save.nodes_added,
         node_ids_added=r_save.node_ids_added,
         mentions_added=r_save.mentions_added,
-        edges_deactivated=r_save.edges_deactivated,
+        nodes_deactivated=r_save.nodes_deactivated,
     )
 
     # assistant 응답을 sentences에 저장
@@ -176,9 +165,9 @@ def chat(req: ChatRequest):
 
 @router.post("/rollback", response_model=RollbackResponse)
 def rollback_route(req: RollbackRequest):
-    result = rollback(req.edge_ids, req.node_ids)
+    result = rollback(req.sentence_ids, req.node_ids)
     return RollbackResponse(
-        edges_deleted=result["edges_deleted"],
+        sentences_deleted=result["sentences_deleted"],
         nodes_deleted=result["nodes_deleted"],
     )
 
@@ -190,6 +179,7 @@ def stats():
 
 @router.get("/nodes", response_model=list[NodeItem])
 def nodes():
+    """노드 목록. degree = 같은 문장 바구니에 함께 등장한 고유 노드 수."""
     conn = get_connection()
     try:
         rows = conn.execute(
@@ -198,10 +188,10 @@ def nodes():
                 n.id,
                 n.name,
                 n.status,
-                COUNT(e.id) AS degree
+                COUNT(DISTINCT co.node_id) AS degree
             FROM nodes n
-            LEFT JOIN edges e
-                ON e.source_node_id = n.id OR e.target_node_id = n.id
+            LEFT JOIN node_mentions m  ON m.node_id = n.id
+            LEFT JOIN node_mentions co ON co.sentence_id = m.sentence_id AND co.node_id != n.id
             WHERE n.status = 'active'
             GROUP BY n.id
             ORDER BY degree DESC
@@ -212,38 +202,65 @@ def nodes():
     return [NodeItem(id=r["id"], name=r["name"], status=r["status"], degree=r["degree"]) for r in rows]
 
 
-@router.get("/edges", response_model=list[EdgeItem])
-def edges():
+@router.get("/hyperedges")
+def hyperedges():
+    """하이퍼그래프 시각화용: 문장 바구니 + 카테고리 바구니 + 별칭 바구니.
+
+    각 바구니는 여러 노드를 동시에 묶는다 (엣지가 아니라 하이퍼엣지).
+    """
     conn = get_connection()
     try:
-        rows = conn.execute(
+        # 문장 바구니: 같은 sentence에 2개 이상의 노드가 공출현하는 케이스만 반환
+        sentence_rows = conn.execute(
             """
-            SELECT
-                e.id,
-                e.source_node_id AS source_id,
-                n1.name          AS source_name,
-                e.target_node_id AS target_id,
-                n2.name          AS target_name,
-                e.label
-            FROM edges e
-            JOIN nodes n1 ON n1.id = e.source_node_id
-            JOIN nodes n2 ON n2.id = e.target_node_id
-            WHERE n1.status = 'active' AND n2.status = 'active'
+            SELECT s.id AS sentence_id, s.text,
+                   GROUP_CONCAT(m.node_id)   AS node_ids,
+                   GROUP_CONCAT(n.name, '|') AS node_names
+            FROM sentences s
+            JOIN node_mentions m ON m.sentence_id = s.id
+            JOIN nodes n ON n.id = m.node_id AND n.status='active'
+            GROUP BY s.id
+            HAVING COUNT(m.node_id) >= 2
+            """
+        ).fetchall()
+
+        # 카테고리 바구니: 카테고리 공유 노드들
+        category_rows = conn.execute(
+            """
+            SELECT nc.category,
+                   GROUP_CONCAT(n.id)        AS node_ids,
+                   GROUP_CONCAT(n.name, '|') AS node_names
+            FROM node_categories nc
+            JOIN nodes n ON n.id = nc.node_id AND n.status='active'
+            GROUP BY nc.category
+            HAVING COUNT(n.id) >= 2
             """
         ).fetchall()
     finally:
         conn.close()
-    return [
-        EdgeItem(
-            id=r["id"],
-            source_id=r["source_id"],
-            source_name=r["source_name"],
-            target_id=r["target_id"],
-            target_name=r["target_name"],
-            label=r["label"],
-        )
-        for r in rows
-    ]
+
+    return {
+        "sentence_baskets": [
+            {
+                "kind": "sentence",
+                "sentence_id": r["sentence_id"],
+                "label": r["text"],
+                "node_ids": [int(x) for x in (r["node_ids"] or "").split(",") if x],
+                "node_names": (r["node_names"] or "").split("|"),
+            }
+            for r in sentence_rows
+        ],
+        "category_baskets": [
+            {
+                "kind": "category",
+                "category": r["category"],
+                "label": r["category"],
+                "node_ids": [int(x) for x in (r["node_ids"] or "").split(",") if x],
+                "node_names": (r["node_names"] or "").split("|"),
+            }
+            for r in category_rows
+        ],
+    }
 
 
 # ─── 노드 카테고리 편집 (Phase 4) ──────────────────────────
@@ -419,8 +436,8 @@ def sentence_impact(sentence_id: int):
 def edit_sentence(sentence_id: int, req: SentenceUpdateRequest):
     result = update_sentence(sentence_id, req.text, use_llm=USE_LLM)
     return {
-        "triples_added": result.triples_added,
-        "edges_deactivated": result.edges_deactivated,
+        "sentence_id": sentence_id,
+        "nodes_deactivated": result.nodes_deactivated,
     }
 
 
@@ -432,7 +449,7 @@ def remove_sentence(sentence_id: int):
 # ─── /review (Phase 5) ─────────────────────────────────────
 
 class ReviewApplyRequest(BaseModel):
-    type: str  # edge | category | alias | merge | archive | token | token_dismiss
+    type: str  # category | alias | merge | archive | token | token_dismiss | basic_info
     params: dict
 
 
@@ -449,12 +466,6 @@ def review_count():
     return sug.counts()
 
 
-@router.get("/review/alias-suggestions/{node_id}")
-def review_alias_suggestions(node_id: int):
-    """on-demand 별칭 제안 — 노드 상세에서 사용자가 요청 시."""
-    return sug.alias_suggestions(node_id, use_llm=USE_LLM)
-
-
 @router.post("/review/apply")
 def review_apply(req: ReviewApplyRequest):
     """제안 수락 → 최종 테이블 INSERT/UPDATE."""
@@ -463,21 +474,6 @@ def review_apply(req: ReviewApplyRequest):
 
     conn = get_connection()
     try:
-        if t == "edge":
-            sid = p.get("source_id")
-            tid = p.get("target_id")
-            label = p.get("label")
-            sentence_id = p.get("sentence_id")
-            if sid is None or tid is None:
-                raise HTTPException(status_code=400, detail="source_id/target_id 필요")
-            cur = conn.execute(
-                "INSERT INTO edges (source_node_id, target_node_id, label, sentence_id) "
-                "VALUES (?,?,?,?)",
-                (sid, tid, label, sentence_id),
-            )
-            conn.commit()
-            return {"ok": True, "edge_id": cur.lastrowid}
-
         if t == "category":
             nid = p.get("node_id")
             cat = (p.get("category") or "").strip()

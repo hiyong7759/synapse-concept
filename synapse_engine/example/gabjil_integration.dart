@@ -37,14 +37,15 @@ final _complaintCount = <String, int>{};
 
 // ── Event handlers ───────────────────────────────────────
 
-void _onTripleAdded(TripleAddedEvent event) {
-  final src = event.triple.src;
-  if (src == '나') return;
-
-  _complaintCount[src] = (_complaintCount[src] ?? 0) + 1;
-
-  if (_complaintCount[src] == 3) {
-    print('  >> "$src" 불만 3회 누적! 캐릭터 생성 제안');
+/// v15: TripleAddedEvent → SentenceCommittedEvent. 문장 바구니에 타겟 인물이
+/// 포함됐는지 확인하는 방식으로 변경.
+void _onSentenceCommitted(SentenceCommittedEvent event) {
+  for (final name in event.mentionedNodeNames) {
+    if (name == '나') continue;
+    _complaintCount[name] = (_complaintCount[name] ?? 0) + 1;
+    if (_complaintCount[name] == 3) {
+      print('  >> "$name" 불만 3회 누적! 캐릭터 생성 제안');
+    }
   }
 }
 
@@ -80,9 +81,10 @@ Future<void> main() async {
     backend: LlamadartInferenceBackend(),
   );
 
-  engine.onTripleAdded.listen(_onTripleAdded);
+  engine.onSentenceCommitted.listen(_onSentenceCommitted);
   engine.onNodeCreated.listen((e) {
-    print('  [node] ${e.name} (${e.category ?? "?"})');
+    final cats = e.categories?.join(',') ?? '?';
+    print('  [node] ${e.name} ($cats)');
   });
 
   // ── 2. Store structured character data (markdown) ──────
@@ -122,7 +124,7 @@ Future<void> main() async {
   print('\n=== Character Sheet: 김부장 ===');
 
   // Structured data (markdown-entered, user-defined category)
-  final weaknesses = await engine.query(GraphQuery(
+  final weaknesses = await engine.query(HypergraphQuery(
     category: '인물.상사.김부장.약점',
   ));
   print('  Weaknesses (structured):');
@@ -130,7 +132,7 @@ Future<void> main() async {
     print('    $t');
   }
 
-  final habits = await engine.query(GraphQuery(
+  final habits = await engine.query(HypergraphQuery(
     category: '인물.상사.김부장.습관',
   ));
   print('  Habits (structured):');
@@ -139,22 +141,22 @@ Future<void> main() async {
   }
 
   // All edges (from conversation + structured)
-  final allTriples = await engine.query(GraphQuery(nodeName: '김부장'));
-  print('  All connections: ${allTriples.length}');
+  final allTriples = await engine.query(HypergraphQuery(nodeName: '김부장'));
+  print('  All co-occurrences: ${allTriples.length}');
 
   // Recent episodes
-  final recent = await engine.query(GraphQuery(
+  final recent = await engine.query(HypergraphQuery(
     nodeName: '김부장',
     lastDuration: Duration(days: 7),
   ));
-  print('  Recent 7 days: ${recent.length} edges');
+  print('  Recent 7 days: ${recent.length} co-occurrences');
 
   // ── 5. Stats ───────────────────────────────────────────
 
   final stats = await engine.getStats();
   print('\n=== Stats ===');
   print('  Nodes: ${stats.nodesTotal} (active: ${stats.nodesActive})');
-  print('  Edges: ${stats.edgesTotal}');
+  print('  Categories: ${stats.categoriesTotal}');
   print('  Sentences: ${stats.sentencesTotal}');
 
   await engine.dispose();

@@ -1,33 +1,30 @@
-/// Result of the save pipeline.
+/// Result of the save pipeline. v15: edges 테이블 폐기로 트리플·엣지 필드 제거.
 class SaveResult {
+  int? postId;
   final List<int> sentenceIds;
-  final List<(String, String?, String)> triplesAdded;
-  final List<int> edgeIdsAdded;
   final List<String> nodesAdded;
   final List<int> nodeIdsAdded;
-  final List<(String, String?, String)> edgesDeactivated;
-  final List<(String, String)> aliasesAdded;
-  final List<(String, String)> typosCorrected;
+  int mentionsAdded;
+  final List<(int, String)> unresolvedAdded;  // (sentence_id, token)
+  final List<String> nodesDeactivated;        // v15: 상태변경된 노드 식별자
+  String? markdownDraft;                      // structure-suggest 초안
   String? question;
   bool isQuestion;
 
   SaveResult({
+    this.postId,
     List<int>? sentenceIds,
-    List<(String, String?, String)>? triplesAdded,
-    List<int>? edgeIdsAdded,
     List<String>? nodesAdded,
     List<int>? nodeIdsAdded,
-    List<(String, String?, String)>? edgesDeactivated,
-    List<(String, String)>? aliasesAdded,
-    List<(String, String)>? typosCorrected,
+    this.mentionsAdded = 0,
+    List<(int, String)>? unresolvedAdded,
+    List<String>? nodesDeactivated,
+    this.markdownDraft,
     this.question,
     this.isQuestion = false,
   })  : sentenceIds = sentenceIds ?? [],
-        triplesAdded = triplesAdded ?? [],
-        edgeIdsAdded = edgeIdsAdded ?? [],
         nodesAdded = nodesAdded ?? [],
         nodeIdsAdded = nodeIdsAdded ?? [],
-        edgesDeactivated = edgesDeactivated ?? [],
-        aliasesAdded = aliasesAdded ?? [],
-        typosCorrected = typosCorrected ?? [];
+        unresolvedAdded = unresolvedAdded ?? [],
+        nodesDeactivated = nodesDeactivated ?? [];
 }

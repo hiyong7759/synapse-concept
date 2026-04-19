@@ -1,9 +1,11 @@
-"""Synapse 자동 저장 파이프라인 (v12).
+"""Synapse 자동 저장 파이프라인 (v15).
 
 원칙:
 - 입력 단위 = 마크다운 구조화된 게시물 (posts 1건 = 저장 호출 1건)
 - 자동 저장 범위: post + sentences + nodes + node_mentions (+ heading 경로 카테고리)
-- edges 자동 생성 없음. LLM 추론 카테고리 저장 없음. 자동 별칭 없음 (인칭대명사만 예외)
+- v15: edges 테이블 자체 폐기. 노드 간 연결은 node_mentions(문장 바구니) + node_categories
+  (카테고리 바구니) + aliases(별칭 바구니) 세 하이퍼엣지로만 표현.
+- 의미 관계(cause/avoid/similar)는 sentence 원문에 이미 있고, 해석은 외부 지능체 몫.
 - 평문 입력 → structure-suggest 게이트 → SaveResult.markdown_draft 반환 (저장 보류)
 
 맥락 공유:
@@ -30,14 +32,9 @@ class SaveResult:
     node_ids_added: list[int] = field(default_factory=list)
     mentions_added: int = 0
     unresolved_added: list[tuple[int, str]] = field(default_factory=list)  # (sentence_id, token)
-    edges_deactivated: list[tuple[str, Optional[str], str]] = field(default_factory=list)
+    nodes_deactivated: list[str] = field(default_factory=list)  # 상태 변경된 노드 이름
     markdown_draft: Optional[str] = None  # structure-suggest 초안 (저장 보류 시)
     question: Optional[str] = None
-    # 하위 호환용 (항상 빈 값)
-    triples_added: list[tuple[str, Optional[str], str]] = field(default_factory=list)
-    edge_ids_added: list[int] = field(default_factory=list)
-    aliases_added: list[tuple[str, str]] = field(default_factory=list)
-    typos_corrected: list[tuple[str, str]] = field(default_factory=list)
 
 
 # ─── DB 헬퍼 ──────────────────────────────────────────────
@@ -74,12 +71,15 @@ def _upsert_node(conn, name: str) -> tuple[int, bool]:
     return cur.lastrowid, True
 
 
-def _add_node_category(conn, node_id: int, category: Optional[str]) -> None:
+def _add_node_category(
+    conn, node_id: int, category: Optional[str], origin: str = "user"
+) -> None:
+    """카테고리 INSERT. origin: 'user' (heading·수동) / 'ai' (LLM 추론) / 'rule' (규칙)."""
     if not category:
         return
     conn.execute(
-        "INSERT OR IGNORE INTO node_categories (node_id, category) VALUES (?,?)",
-        (node_id, category),
+        "INSERT OR IGNORE INTO node_categories (node_id, category, origin) VALUES (?,?,?)",
+        (node_id, category, origin),
     )
 
 
@@ -100,31 +100,16 @@ def _add_unresolved(conn, sentence_id: int, token: str) -> bool:
     return cur.rowcount > 0
 
 
-def _deactivate_by_sentence_ids(conn, sentence_ids: list[int]) -> list[tuple[str, Optional[str], str]]:
-    """승인된 의미 엣지를 sentence_id 기준으로 비활성화."""
+def _deactivate_by_sentence_ids(conn, sentence_ids: list[int]) -> list[str]:
+    """v15: deactivate 기능 축소 — Task 6B 어댑터 재학습 + 의미 재설계 대기 중.
+
+    이전(v14)에는 edges 테이블을 통해 특정 대상 노드만 선택적으로 비활성화했으나,
+    edges 폐기로 타겟팅 수단이 사라짐. 전체 공출현 노드를 비활성화하는 건 너무 공격적.
+    현재는 no-op — sentence_id 목록만 문자열로 변환해 UI 표시용으로 반환.
+    """
     if not sentence_ids:
         return []
-    deactivated = []
-    ph = ",".join("?" * len(sentence_ids))
-    rows = conn.execute(
-        f"""
-        SELECT e.id AS edge_id, n1.name AS src, e.label, n2.name AS tgt
-        FROM edges e
-        JOIN nodes n1 ON n1.id = e.source_node_id
-        JOIN nodes n2 ON n2.id = e.target_node_id
-        WHERE e.sentence_id IN ({ph})
-        """,
-        sentence_ids,
-    ).fetchall()
-    for r in rows:
-        conn.execute("UPDATE edges SET last_used=datetime('now') WHERE id=?", (r["edge_id"],))
-        conn.execute(
-            "UPDATE nodes SET status='inactive', updated_at=datetime('now') WHERE id = "
-            "(SELECT target_node_id FROM edges WHERE id=?)",
-            (r["edge_id"],),
-        )
-        deactivated.append((r["src"], r["label"], r["tgt"]))
-    return deactivated
+    return [f"sentence#{sid}" for sid in sentence_ids if isinstance(sid, int)]
 
 
 # ─── 토큰 감지 ────────────────────────────────────────────
@@ -227,9 +212,10 @@ _FIRST_PERSON_ALIASES = (
 
 
 def _register_first_person_aliases(conn, node_id: int) -> None:
+    """인칭대명사 11개 시드 — origin='rule'."""
     for alias in _FIRST_PERSON_ALIASES:
         conn.execute(
-            "INSERT OR IGNORE INTO aliases (alias, node_id) VALUES (?,?)",
+            "INSERT OR IGNORE INTO aliases (alias, node_id, origin) VALUES (?,?, 'rule')",
             (alias, node_id),
         )
 
@@ -305,7 +291,7 @@ def _save_one_item(
         if _add_unresolved(conn, sid, token):
             result.unresolved_added.append((sid, token))
 
-    # 3. extract (edges·category·retention 필드는 엔진에서 드롭됨)
+    # 3. extract (v15: nodes + deactivate만. category/aliases는 추후 C2b, edges 필드 폐기)
     if use_llm:
         try:
             extracted = llm_extract(effective_text, context_sentences=retrieve_context_sentences)
@@ -322,10 +308,10 @@ def _save_one_item(
     date_tokens = _expand_date_tokens(effective_text)
     ext_nodes = _merge_nodes_extracted(ext_nodes, neg_tokens + date_tokens)
 
-    # 5. deactivate
+    # 5. deactivate — v15에선 no-op + 식별자 수집만 (재설계 대기)
     if ext_deactivate:
         deact_sids = [s for s in ext_deactivate if isinstance(s, int)]
-        result.edges_deactivated.extend(_deactivate_by_sentence_ids(conn, deact_sids))
+        result.nodes_deactivated.extend(_deactivate_by_sentence_ids(conn, deact_sids))
 
     # 6. 노드 upsert + mentions + (heading 경로) category
     for node in ext_nodes:
@@ -419,25 +405,27 @@ def save(
 
 # ─── 문장/노드 관리 ───────────────────────────────────────
 
-def rollback(edge_ids: list[int], node_ids: list[int], db_path: str = DB_PATH) -> dict:
-    """엣지/노드 삭제. /review 승인된 엣지 회수용."""
+def rollback(sentence_ids: list[int], node_ids: list[int], db_path: str = DB_PATH) -> dict:
+    """문장/노드 삭제. v15: edges 폐기로 문장 단위 롤백이 기본.
+
+    sentence_ids: 삭제할 sentence들 (node_mentions CASCADE)
+    node_ids: 공출현 참조가 없는 노드만 실제 삭제 (고아 정리)
+    """
     conn = get_connection(db_path)
-    edges_deleted = 0
+    sentences_deleted = 0
     nodes_deleted = 0
     try:
-        if edge_ids:
-            ph = ",".join("?" * len(edge_ids))
-            cur = conn.execute(f"DELETE FROM edges WHERE id IN ({ph})", edge_ids)
-            edges_deleted = cur.rowcount
+        if sentence_ids:
+            ph = ",".join("?" * len(sentence_ids))
+            cur = conn.execute(f"DELETE FROM sentences WHERE id IN ({ph})", sentence_ids)
+            sentences_deleted = cur.rowcount
 
         if node_ids:
             ph = ",".join("?" * len(node_ids))
             orphan_ids = [
                 r[0] for r in conn.execute(
                     f"""SELECT id FROM nodes WHERE id IN ({ph})
-                        AND id NOT IN (SELECT node_id FROM node_mentions)
-                        AND id NOT IN (SELECT source_node_id FROM edges)
-                        AND id NOT IN (SELECT target_node_id FROM edges)""",
+                        AND id NOT IN (SELECT node_id FROM node_mentions)""",
                     node_ids,
                 ).fetchall()
             ]
@@ -450,16 +438,18 @@ def rollback(edge_ids: list[int], node_ids: list[int], db_path: str = DB_PATH) -
     finally:
         conn.close()
 
-    return {"edges_deleted": edges_deleted, "nodes_deleted": nodes_deleted}
+    return {"sentences_deleted": sentences_deleted, "nodes_deleted": nodes_deleted}
 
 
 def split_node(
     node_id: int,
     alias_for_original: str,
     alias_for_new: str,
-    edge_ids_to_move: list[int],
+    sentence_ids_to_move: list[int],
     db_path: str = DB_PATH,
 ) -> dict:
+    """동명이의어 분리: 같은 이름 노드를 둘로 쪼개되, 지정한 sentence들의
+    node_mentions를 새 노드로 이관. v15: edges 테이블 폐기로 문장 단위 이관만 수행."""
     conn = get_connection(db_path)
     try:
         orig = conn.execute("SELECT id, name FROM nodes WHERE id=?", (node_id,)).fetchone()
@@ -475,16 +465,14 @@ def split_node(
         )
 
         moved = 0
-        for eid in edge_ids_to_move:
-            edge = conn.execute("SELECT source_node_id, target_node_id FROM edges WHERE id=?", (eid,)).fetchone()
-            if not edge:
-                continue
-            if edge["source_node_id"] == node_id:
-                conn.execute("UPDATE edges SET source_node_id=? WHERE id=?", (new_id, eid))
-                moved += 1
-            elif edge["target_node_id"] == node_id:
-                conn.execute("UPDATE edges SET target_node_id=? WHERE id=?", (new_id, eid))
-                moved += 1
+        if sentence_ids_to_move:
+            ph = ",".join("?" * len(sentence_ids_to_move))
+            cur2 = conn.execute(
+                f"""UPDATE node_mentions SET node_id=?
+                    WHERE node_id=? AND sentence_id IN ({ph})""",
+                [new_id, node_id, *sentence_ids_to_move],
+            )
+            moved = cur2.rowcount
 
         conn.execute("INSERT OR IGNORE INTO aliases (alias, node_id) VALUES (?,?)", (alias_for_original, node_id))
         conn.execute("INSERT OR IGNORE INTO aliases (alias, node_id) VALUES (?,?)", (alias_for_new, new_id))
@@ -496,7 +484,7 @@ def split_node(
     return {
         "original_node_id": node_id,
         "new_node_id": new_id,
-        "edges_moved": moved,
+        "mentions_moved": moved,
         "aliases": {alias_for_original: node_id, alias_for_new: new_id},
     }
 
@@ -513,22 +501,13 @@ def merge_nodes(
         if not keep or not remove:
             return {"error": "node not found"}
 
-        cur1 = conn.execute(
-            "UPDATE edges SET source_node_id=? WHERE source_node_id=?",
-            (keep_id, remove_id),
-        )
-        cur2 = conn.execute(
-            "UPDATE edges SET target_node_id=? WHERE target_node_id=?",
-            (keep_id, remove_id),
-        )
-        edges_moved = cur1.rowcount + cur2.rowcount
-
         conn.execute(
             """INSERT OR IGNORE INTO node_mentions (node_id, sentence_id, created_at)
                SELECT ?, sentence_id, created_at FROM node_mentions WHERE node_id=?""",
             (keep_id, remove_id),
         )
-        conn.execute("DELETE FROM node_mentions WHERE node_id=?", (remove_id,))
+        cur_m = conn.execute("DELETE FROM node_mentions WHERE node_id=?", (remove_id,))
+        mentions_moved = cur_m.rowcount
 
         conn.execute(
             """INSERT OR IGNORE INTO node_categories (node_id, category, created_at)
@@ -561,7 +540,7 @@ def merge_nodes(
         "keep_name": keep["name"],
         "removed_id": remove_id,
         "removed_name": remove["name"],
-        "edges_moved": edges_moved,
+        "mentions_moved": mentions_moved,
         "aliases_moved": aliases_moved,
     }
 
@@ -683,6 +662,7 @@ def search_sentences(
 
 
 def get_sentence_impact(sentence_id: int, db_path: str = DB_PATH) -> dict:
+    """문장 삭제 시 영향 범위 조회. v15: edges 폐기로 mentions만 집계."""
     conn = get_connection(db_path)
     try:
         mentions = conn.execute(
@@ -692,14 +672,6 @@ def get_sentence_impact(sentence_id: int, db_path: str = DB_PATH) -> dict:
                WHERE m.sentence_id = ?""",
             (sentence_id,),
         ).fetchall()
-        edges = conn.execute(
-            """SELECT e.id, n1.name AS src, e.label, n2.name AS tgt
-               FROM edges e
-               JOIN nodes n1 ON n1.id = e.source_node_id
-               JOIN nodes n2 ON n2.id = e.target_node_id
-               WHERE e.sentence_id = ?""",
-            (sentence_id,),
-        ).fetchall()
     finally:
         conn.close()
 
@@ -707,10 +679,6 @@ def get_sentence_impact(sentence_id: int, db_path: str = DB_PATH) -> dict:
         "sentence_id": sentence_id,
         "affected_mentions": [
             {"node_id": m["id"], "node_name": m["name"]} for m in mentions
-        ],
-        "affected_edges": [
-            {"id": e["id"], "source": e["src"], "label": e["label"], "target": e["tgt"]}
-            for e in edges
         ],
     }
 
@@ -726,10 +694,6 @@ def update_sentence(
     conn = get_connection(db_path)
     try:
         conn.execute("DELETE FROM node_mentions WHERE sentence_id = ?", (sentence_id,))
-        conn.execute(
-            "UPDATE edges SET sentence_id = NULL WHERE sentence_id = ?",
-            (sentence_id,),
-        )
         conn.execute(
             "UPDATE sentences SET text = ? WHERE id = ?",
             (new_text, sentence_id),

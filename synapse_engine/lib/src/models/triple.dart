@@ -1,9 +1,9 @@
-/// A directed relation in the knowledge graph.
+/// v15: 같은 sentence 바구니에 공출현한 두 노드를 트리플처럼 표현 (시각화·API 호환용).
+/// edges 테이블 폐기로 label은 항상 null. 의미 관계 해석은 외부 지능체 몫.
 class Triple {
   final String src;
-  final String? label;
+  final String? label;  // v15: 항상 null
   final String tgt;
-  final int edgeId;
   final int srcId;
   final int tgtId;
   final int? sentenceId;
@@ -13,7 +13,6 @@ class Triple {
     required this.src,
     this.label,
     required this.tgt,
-    required this.edgeId,
     this.srcId = 0,
     this.tgtId = 0,
     this.sentenceId,
@@ -22,7 +21,7 @@ class Triple {
 
   @override
   String toString() {
-    if (label != null) return '$src —($label)→ $tgt';
-    return '$src → $tgt';
+    if (tgt.isEmpty) return src;
+    return '$src ↔ $tgt';
   }
 }

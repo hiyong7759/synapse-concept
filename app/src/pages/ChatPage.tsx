@@ -118,7 +118,7 @@ export function ChatPage() {
         <div className={styles.topbarLogo}>SYNAPSE</div>
         <div className={styles.topbarActions}>
           <ReviewBadge />
-          <button className={styles.topbarBtn} onClick={() => navigate('/graph')}>그래프</button>
+          <button className={styles.topbarBtn} onClick={() => navigate('/hypergraph')}>하이퍼그래프</button>
         </div>
       </div>
 

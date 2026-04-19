@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Network, DataSet } from 'vis-network/standalone';
-import type { NodeItem, EdgeItem } from '../types';
+import type { NodeItem, Hyperedge } from '../types';
 import { api } from '../api';
-import styles from './GraphPage.module.css';
+import styles from './HypergraphPage.module.css';
 import { NodeCategoryEditor } from '../components/Graph/NodeCategoryEditor';
 
 // ── 타입 ──────────────────────────────────────────────────────
@@ -17,16 +17,23 @@ interface VNode {
 }
 
 interface VEdge {
-  id: number;
+  id: string;  // 'h-<sentenceId>-<srcId>-<tgtId>' 같은 합성 ID
   from: number;
   to: number;
-  label?: string;
+  title?: string;  // hover tooltip에 문장 원문
   arrows: { to: { enabled: boolean } };
   color: { color: string; highlight: string };
   width: number;
-  font: { color: string; size: number; face: string; strokeWidth: number };
   smooth: { enabled: boolean; type: string; roundness: number };
 }
+
+/** 노드 상세 패널의 "같은 바구니 멤버" 정보 */
+type BasketMember = {
+  otherId: number;
+  otherName: string;
+  kind: 'sentence' | 'category';
+  label: string;  // sentence text 또는 category path
+};
 
 // ── 헬퍼 ─────────────────────────────────────────────────────
 function isMobile() { return window.matchMedia('(max-width:768px)').matches; }
@@ -42,7 +49,7 @@ function buildVNode(node: NodeItem, maxDeg: number, mobile: boolean): VNode {
   const bg = hub ? '#C8A96E' : '#2A2D3E';
   const border = hub ? 'rgba(200,169,110,0.6)' : '#3A3D4A';
   const shadowColor = hub
-    ? `rgba(200,169,110,${hub ? 0.55 : 0.35})`
+    ? 'rgba(200,169,110,0.55)'
     : 'rgba(50,53,70,0.5)';
 
   return {
@@ -55,18 +62,31 @@ function buildVNode(node: NodeItem, maxDeg: number, mobile: boolean): VNode {
   };
 }
 
-function buildVEdge(edge: EdgeItem): VEdge {
-  return {
-    id: edge.id,
-    from: edge.source_id,
-    to: edge.target_id,
-    label: edge.label ?? undefined,
-    arrows: { to: { enabled: false } },
-    color: { color: 'rgba(58,61,74,0.5)', highlight: 'rgba(200,169,110,0.8)' },
-    width: 0.8,
-    font: { color: '#8A8B92', size: 9, face: 'JetBrains Mono', strokeWidth: 0 },
-    smooth: { enabled: true, type: 'continuous', roundness: 0.2 },
-  };
+/**
+ * 하이퍼엣지를 vis-network 페어 엣지로 펼친다.
+ * 문장 바구니(같은 sentence에 공출현)의 모든 노드 페어를 연결.
+ * 카테고리 바구니는 별칭용으로 detail 패널에만 활용 (시각화는 문장 기반만).
+ */
+function expandHyperedgesToVEdges(baskets: Hyperedge[]): VEdge[] {
+  const out: VEdge[] = [];
+  for (const b of baskets) {
+    const ids = b.node_ids;
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        out.push({
+          id: `s${b.sentence_id ?? 0}-${ids[i]}-${ids[j]}`,
+          from: ids[i],
+          to: ids[j],
+          title: b.label,
+          arrows: { to: { enabled: false } },
+          color: { color: 'rgba(58,61,74,0.5)', highlight: 'rgba(200,169,110,0.8)' },
+          width: 0.8,
+          smooth: { enabled: true, type: 'continuous', roundness: 0.2 },
+        });
+      }
+    }
+  }
+  return out;
 }
 
 function networkOptions(mobile: boolean) {
@@ -105,10 +125,8 @@ function networkOptions(mobile: boolean) {
   };
 }
 
-type DetailEdge = { dir: '→' | '←'; label: string | null; otherName: string; otherId: number };
-
 // ── 컴포넌트 ─────────────────────────────────────────────────
-export function GraphPage() {
+export function HypergraphPage() {
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const networkRef = useRef<Network | null>(null);
@@ -117,10 +135,11 @@ export function GraphPage() {
   const allNodesRef = useRef<VNode[]>([]);
   const allEdgesRef = useRef<VEdge[]>([]);
   const rawNodesRef = useRef<NodeItem[]>([]);
-  const rawEdgesRef = useRef<EdgeItem[]>([]);
+  const sentenceBasketsRef = useRef<Hyperedge[]>([]);
+  const categoryBasketsRef = useRef<Hyperedge[]>([]);
   const adjRef = useRef<Map<number, number[]>>(new Map());
 
-  const [stats, setStats] = useState({ nodes: 0, edges: 0 });
+  const [stats, setStats] = useState({ nodes: 0, baskets: 0 });
   const [loading, setLoading] = useState(true);
 
   // 사이드바
@@ -139,27 +158,48 @@ export function GraphPage() {
 
   // 노드 상세 패널
   const [detailNode, setDetailNode] = useState<NodeItem | null>(null);
-  const [detailEdges, setDetailEdges] = useState<DetailEdge[]>([]);
+  const [detailMembers, setDetailMembers] = useState<BasketMember[]>([]);
 
   // hover 상태
   const dimmedNodesRef = useRef<number[]>([]);
-  const dimmedEdgesRef = useRef<number[]>([]);
+  const dimmedEdgesRef = useRef<string[]>([]);
 
-  // ── 노드의 연결 엣지 목록 추출 ────────────────────────────────
-  function getEdgesForNode(id: number): DetailEdge[] {
-    return rawEdgesRef.current
-      .filter(e => e.source_id === id || e.target_id === id)
-      .map(e => {
-        const isOut = e.source_id === id;
-        const otherId = isOut ? e.target_id : e.source_id;
-        const otherNode = rawNodesRef.current.find(n => n.id === otherId);
-        return {
-          dir: (isOut ? '→' : '←') as '→' | '←',
-          label: e.label,
-          otherName: otherNode?.name ?? String(otherId),
+  // ── 노드가 속한 바구니의 다른 멤버 추출 ───────────────────────
+  function getMembersForNode(id: number): BasketMember[] {
+    const out: BasketMember[] = [];
+    const seen = new Set<string>();  // 중복 방지 (otherId + kind 조합)
+
+    for (const b of sentenceBasketsRef.current) {
+      if (!b.node_ids.includes(id)) continue;
+      b.node_ids.forEach((otherId, idx) => {
+        if (otherId === id) return;
+        const key = `s-${otherId}-${b.sentence_id}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push({
           otherId,
-        };
+          otherName: b.node_names[idx],
+          kind: 'sentence',
+          label: b.label,
+        });
       });
+    }
+    for (const b of categoryBasketsRef.current) {
+      if (!b.node_ids.includes(id)) continue;
+      b.node_ids.forEach((otherId, idx) => {
+        if (otherId === id) return;
+        const key = `c-${otherId}-${b.category}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push({
+          otherId,
+          otherName: b.node_names[idx],
+          kind: 'category',
+          label: b.category ?? '',
+        });
+      });
+    }
+    return out;
   }
 
   // ── BFS ─────────────────────────────────────────────────────
@@ -219,8 +259,8 @@ export function GraphPage() {
     visNodesRef.current.update(nodeUpdates);
     visEdgesRef.current.update(edgeUpdates);
 
-    const visibleEdges = edgeUpdates.filter(e => !e.hidden).length;
-    setStats({ nodes: visibleIds.size, edges: visibleEdges });
+    const visibleBaskets = sentenceBasketsRef.current.length + categoryBasketsRef.current.length;
+    setStats({ nodes: visibleIds.size, baskets: visibleBaskets });
   }, []);
 
   // ── 데이터 로드 + 네트워크 초기화 ───────────────────────────
@@ -235,26 +275,29 @@ export function GraphPage() {
 
     async function init() {
       try {
-        const [nodes, edges] = await Promise.all([api.nodes(), api.edges()]);
+        const [nodes, h] = await Promise.all([api.nodes(), api.hyperedges()]);
         if (destroyed) return;
 
         rawNodesRef.current = nodes;
-        rawEdgesRef.current = edges;
+        sentenceBasketsRef.current = h.sentence_baskets;
+        categoryBasketsRef.current = h.category_baskets;
+
+        // 문장 바구니만 시각화 엣지로 펼침 (카테고리는 detail 패널에만)
+        const vEdges = expandHyperedgesToVEdges(h.sentence_baskets);
 
         // 인접 맵 구성 (bfsReachable 성능 최적화)
         const adj = new Map<number, number[]>();
-        edges.forEach(e => {
-          if (!adj.has(e.source_id)) adj.set(e.source_id, []);
-          if (!adj.has(e.target_id)) adj.set(e.target_id, []);
-          adj.get(e.source_id)!.push(e.target_id);
-          adj.get(e.target_id)!.push(e.source_id);
+        vEdges.forEach(e => {
+          if (!adj.has(e.from)) adj.set(e.from, []);
+          if (!adj.has(e.to)) adj.set(e.to, []);
+          adj.get(e.from)!.push(e.to);
+          adj.get(e.to)!.push(e.from);
         });
         adjRef.current = adj;
 
         const mobile = isMobile();
         const maxDeg = nodes.reduce((m, n) => Math.max(m, n.degree), 1);
         const vNodes = nodes.map(n => buildVNode(n, maxDeg, mobile));
-        const vEdges = edges.map(buildVEdge);
 
         allNodesRef.current = vNodes;
         allEdgesRef.current = vEdges;
@@ -264,7 +307,10 @@ export function GraphPage() {
         visNodesRef.current = visNodes;
         visEdgesRef.current = visEdges;
 
-        setStats({ nodes: nodes.length, edges: edges.length });
+        setStats({
+          nodes: nodes.length,
+          baskets: h.sentence_baskets.length + h.category_baskets.length,
+        });
 
         const net = new Network(
           containerRef.current!,
@@ -280,11 +326,11 @@ export function GraphPage() {
         // 호버 — Obsidian 스타일 dim
         net.on('hoverNode', ({ node: nodeId }: { node: number }) => {
           const connectedNodeIds = new Set([nodeId]);
-          const connectedEdgeIds = new Set<number>();
-          rawEdgesRef.current.forEach(e => {
-            if (e.source_id === nodeId || e.target_id === nodeId) {
-              connectedNodeIds.add(e.source_id);
-              connectedNodeIds.add(e.target_id);
+          const connectedEdgeIds = new Set<string>();
+          allEdgesRef.current.forEach(e => {
+            if (e.from === nodeId || e.to === nodeId) {
+              connectedNodeIds.add(e.from);
+              connectedNodeIds.add(e.to);
               connectedEdgeIds.add(e.id);
             }
           });
@@ -301,16 +347,16 @@ export function GraphPage() {
           allEdgesRef.current.forEach(e => {
             if ((visEdges.get(e.id) as { hidden?: boolean } | null)?.hidden) return;
             if (connectedEdgeIds.has(e.id)) {
-              eUp.push({ id: e.id, color: { color: 'rgba(200,169,110,0.75)' }, width: 1.5, font: { color: '#C8A96E', strokeWidth: 0 } });
+              eUp.push({ id: e.id, color: { color: 'rgba(200,169,110,0.75)' }, width: 1.5 });
             } else {
-              eUp.push({ id: e.id, color: { color: 'rgba(58,61,74,0.06)' }, width: 0.3, font: { color: 'transparent' } });
+              eUp.push({ id: e.id, color: { color: 'rgba(58,61,74,0.06)' }, width: 0.3 });
             }
           });
 
           visNodes.update(nUp as VNode[]);
           visEdges.update(eUp as VEdge[]);
           dimmedNodesRef.current = nUp.map((n: { id?: number }) => n.id!);
-          dimmedEdgesRef.current = eUp.map((e: { id?: number }) => e.id!);
+          dimmedEdgesRef.current = eUp.map((e: { id?: string }) => e.id!);
         });
 
         net.on('blurNode', () => {
@@ -322,10 +368,9 @@ export function GraphPage() {
             dimmedNodesRef.current = [];
           }
           if (dimmedEdgesRef.current.length) {
-            visEdges.update(dimmedEdgesRef.current.map(id => {
-              const e = allEdgesRef.current.find(x => x.id === id);
-              return { id, color: { color: 'rgba(58,61,74,0.5)' }, width: 0.8, font: e?.font ?? { color: '#8A8B92', size: 9, face: 'JetBrains Mono', strokeWidth: 0 } };
-            }));
+            visEdges.update(dimmedEdgesRef.current.map(id => ({
+              id, color: { color: 'rgba(58,61,74,0.5)' }, width: 0.8,
+            })));
             dimmedEdgesRef.current = [];
           }
         });
@@ -341,7 +386,7 @@ export function GraphPage() {
           const node = rawNodesRef.current.find(n => n.id === id) ?? null;
           setDetailNode(node);
           setSelectedNodeId(id);
-          setDetailEdges(getEdgesForNode(id));
+          setDetailMembers(getMembersForNode(id));
         });
 
         window.addEventListener('resize', handleResize);
@@ -390,11 +435,15 @@ export function GraphPage() {
     const node = rawNodesRef.current.find(n => n.id === id) ?? null;
     setDetailNode(node);
     setSelectedNodeId(id);
-    setDetailEdges(getEdgesForNode(id));
+    setDetailMembers(getMembersForNode(id));
   }
 
   const maxDeg = rawNodesRef.current.reduce((m, n) => Math.max(m, n.degree), 1);
   const isHub = (n: NodeItem) => n.degree > maxDeg * 0.35;
+
+  // 바구니 멤버 분류
+  const sentenceMembers = detailMembers.filter(m => m.kind === 'sentence');
+  const categoryMembers = detailMembers.filter(m => m.kind === 'category');
 
   return (
     <div className={styles.page}>
@@ -415,7 +464,7 @@ export function GraphPage() {
         </div>
 
         <div className={styles.stats}>
-          노드 <span>{stats.nodes}</span> · 엣지 <span>{stats.edges}</span>
+          노드 <span>{stats.nodes}</span> · 바구니 <span>{stats.baskets}</span>
         </div>
 
         {/* 검색 */}
@@ -468,13 +517,13 @@ export function GraphPage() {
         title="사이드바 열기"
       >›</button>
 
-      {/* ─ 그래프 영역 ─ */}
+      {/* ─ 하이퍼그래프 영역 ─ */}
       <div className={styles.graphArea}>
         <div ref={containerRef} className={styles.graphContainer} />
 
         {loading && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary)', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>
-            그래프 로딩 중...
+            하이퍼그래프 로딩 중...
           </div>
         )}
 
@@ -502,22 +551,44 @@ export function GraphPage() {
               <button className={styles.nodeClose} onClick={() => { setDetailNode(null); setSelectedNodeId(null); }}>✕</button>
             </div>
 
-            <ul className={styles.edgeList}>
-              {detailEdges.map((e, i) => (
-                <li
-                  key={i}
-                  className={styles.edgeItem}
-                  onClick={() => focusNode(e.otherId)}
-                >
-                  <span className={styles.edgeDir}>{e.dir}</span>
-                  {e.label && <span className={styles.edgeLabel}>{e.label}</span>}
-                  <span className={styles.edgeNode}>{e.otherName}</span>
-                </li>
-              ))}
-            </ul>
+            {sentenceMembers.length > 0 && (
+              <>
+                <div className={styles.sectionLabel}>같은 문장 바구니</div>
+                <ul className={styles.edgeList}>
+                  {sentenceMembers.map((m, i) => (
+                    <li
+                      key={`s-${i}`}
+                      className={styles.edgeItem}
+                      onClick={() => focusNode(m.otherId)}
+                      title={m.label}
+                    >
+                      <span className={styles.edgeNode}>{m.otherName}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+
+            {categoryMembers.length > 0 && (
+              <>
+                <div className={styles.sectionLabel}>같은 카테고리 바구니</div>
+                <ul className={styles.edgeList}>
+                  {categoryMembers.map((m, i) => (
+                    <li
+                      key={`c-${i}`}
+                      className={styles.edgeItem}
+                      onClick={() => focusNode(m.otherId)}
+                      title={m.label}
+                    >
+                      <span className={styles.edgeNode}>{m.otherName}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
 
             <div className={styles.nodeStats}>
-              연결 {detailEdges.length}개 (→ {detailEdges.filter(e => e.dir === '→').length} ← {detailEdges.filter(e => e.dir === '←').length})
+              문장 바구니 {sentenceMembers.length} · 카테고리 바구니 {categoryMembers.length}
               {isHub(detailNode) ? '  ·  허브 노드' : ''}
             </div>
 

@@ -183,28 +183,37 @@ Future<Map<String, int>> _matchStartNodes(
   return matched;
 }
 
+/// v15: 같은 sentence 바구니 공출현 페어를 Triple(label=null)로 반환.
+/// node_mentions JOIN으로 구한다.
 Future<List<Triple>> _getTriples(Database db, Set<int> nodeIds) async {
   if (nodeIds.isEmpty) return [];
   final ph = List.filled(nodeIds.length, '?').join(',');
   final ids = nodeIds.toList();
+
+  // 주어진 노드가 속한 sentence의 모든 공출현 페어를 조회.
+  // m1.node_id < m2.node_id로 중복 페어 제거.
   final rows = await db.rawQuery(
-    '''SELECT e.id AS edge_id,
-              n1.id AS src_id, n1.name AS src,
+    '''SELECT n1.id AS src_id, n1.name AS src,
               n2.id AS tgt_id, n2.name AS tgt,
-              e.label, e.sentence_id, s.text AS sentence_text
-       FROM edges e
-       JOIN nodes n1 ON n1.id = e.source_node_id
-       JOIN nodes n2 ON n2.id = e.target_node_id
-       LEFT JOIN sentences s ON s.id = e.sentence_id
-       WHERE (e.source_node_id IN ($ph) OR e.target_node_id IN ($ph))''',
+              s.id AS sentence_id, s.text AS sentence_text
+       FROM node_mentions m1
+       JOIN node_mentions m2
+            ON m1.sentence_id = m2.sentence_id AND m1.node_id < m2.node_id
+       JOIN nodes n1 ON n1.id = m1.node_id
+       JOIN nodes n2 ON n2.id = m2.node_id
+       JOIN sentences s ON s.id = m1.sentence_id
+       WHERE (m1.node_id IN ($ph) OR m2.node_id IN ($ph))
+         AND n1.status='active' AND n2.status='active'
+       ORDER BY s.created_at DESC
+       LIMIT 200''',
     [...ids, ...ids],
   );
+
   return rows
       .map((r) => Triple(
             src: r['src'] as String,
-            label: r['label'] as String?,
+            label: null,  // v15: 라벨 없음
             tgt: r['tgt'] as String,
-            edgeId: r['edge_id'] as int,
             srcId: r['src_id'] as int,
             tgtId: r['tgt_id'] as int,
             sentenceId: r['sentence_id'] as int?,
@@ -290,26 +299,15 @@ Future<RetrieveResult> retrieve(
 
   result.startNodes.addAll(startNodes.keys);
 
-  // 2. BFS
+  // 2. BFS (v15: _getTriples가 빈 리스트 반환 → BFS는 node_mentions 포팅 후 복원 예정)
   final visitedNodeIds = <int>{...startNodes.values};
-  final visitedEdgeIds = <int>{};
-  final visitedSentenceIds = <int>{};
-  final allVisitedEdgeIds = <int>[];
   final contextTriples = <Triple>[];
   var currentNodeIds = Set<int>.from(startNodes.values);
 
   for (var layer = 0; layer < maxLayers; layer++) {
-    final rawTriples = await _getTriples(db, currentNodeIds);
-    final layerTriples = rawTriples
-        .where((t) =>
-            !visitedEdgeIds.contains(t.edgeId) &&
-            (t.sentenceId == null ||
-                !visitedSentenceIds.contains(t.sentenceId)))
-        .toList();
-
+    final layerTriples = await _getTriples(db, currentNodeIds);
     if (layerTriples.isEmpty) break;
 
-    // LLM filter
     List<Triple> filtered;
     if (useLlm && engine != null) {
       filtered = [];
@@ -324,11 +322,6 @@ Future<RetrieveResult> retrieve(
     }
 
     contextTriples.addAll(filtered);
-    for (final t in filtered) {
-      visitedEdgeIds.add(t.edgeId);
-      allVisitedEdgeIds.add(t.edgeId);
-      if (t.sentenceId != null) visitedSentenceIds.add(t.sentenceId!);
-    }
 
     final newIds = <int>{};
     for (final t in filtered) {
@@ -341,7 +334,7 @@ Future<RetrieveResult> retrieve(
     currentNodeIds = newIds;
   }
 
-  // 3. Category supplement
+  // 3. Category supplement (v15: node_mentions 포팅 후 활성화 예정)
   if (useLlm && engine != null) {
     final catNodeIds = await _getCategorySupplementNodes(
       db,
@@ -350,32 +343,17 @@ Future<RetrieveResult> retrieve(
       adjacencyMap: adjacencyMap,
     );
     if (catNodeIds.isNotEmpty) {
-      final catTriples = (await _getTriples(db, catNodeIds))
-          .where((t) => !visitedEdgeIds.contains(t.edgeId))
-          .toList();
-      if (catTriples.isNotEmpty) {
-        for (final t in catTriples) {
-          final text = t.sentenceText ?? t.toString();
-          if (await retrieveFilterSentence(engine, question, text)) {
-            contextTriples.add(t);
-            visitedEdgeIds.add(t.edgeId);
-            allVisitedEdgeIds.add(t.edgeId);
-          }
+      final catTriples = await _getTriples(db, catNodeIds);
+      for (final t in catTriples) {
+        final text = t.sentenceText ?? t.toString();
+        if (await retrieveFilterSentence(engine, question, text)) {
+          contextTriples.add(t);
         }
       }
     }
   }
 
   result.contextTriples.addAll(contextTriples);
-
-  // Batch update last_used
-  if (allVisitedEdgeIds.isNotEmpty) {
-    final ph = List.filled(allVisitedEdgeIds.length, '?').join(',');
-    await db.execute(
-      "UPDATE edges SET last_used=datetime('now') WHERE id IN ($ph)",
-      allVisitedEdgeIds,
-    );
-  }
 
   // 4. LLM answer
   if (useLlm && engine != null) {

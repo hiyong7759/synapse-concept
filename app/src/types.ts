@@ -4,16 +4,12 @@ export interface HistoryItem {
 }
 
 export interface SaveResponse {
-  // v12: 게시물 단위 저장 (post_id). 엣지·별칭 자동 생성 없음
+  // v15: 게시물 단위 저장. edges 테이블 폐기로 관련 필드 제거.
   post_id: number | null;
   nodes_added: string[];
   node_ids_added: number[];
   mentions_added: number;
-  edges_deactivated: [string, string | null, string][];
-  // 하위 호환 필드 (항상 빈 배열)
-  triples_added: [string, string | null, string][];
-  edge_ids_added: number[];
-  aliases_added: [string, string][];
+  nodes_deactivated: string[];  // v15: 상태변경된 노드 식별자
 }
 
 export interface RetrieveResponse {
@@ -36,19 +32,29 @@ export interface NodeItem {
   degree: number;
 }
 
-export interface EdgeItem {
-  id: number;
-  source_id: number;
-  source_name: string;
-  target_id: number;
-  target_name: string;
-  label: string | null;
+/**
+ * v15 하이퍼엣지 — 여러 노드를 동시에 묶는 바구니.
+ * kind='sentence': 같은 문장에 공출현 / kind='category': 같은 카테고리 공유
+ */
+export interface Hyperedge {
+  kind: 'sentence' | 'category';
+  label: string;                // 문장 원문 또는 카테고리 경로
+  node_ids: number[];
+  node_names: string[];
+  sentence_id?: number;         // kind='sentence'일 때
+  category?: string;            // kind='category'일 때
+}
+
+export interface HyperedgesResponse {
+  sentence_baskets: Hyperedge[];
+  category_baskets: Hyperedge[];
 }
 
 export interface StatsResponse {
   nodes_total: number;
   nodes_active: number;
-  edges_total: number;
+  node_mentions_total: number;
+  categories_total: number;
   aliases_total: number;
 }
 

@@ -1,4 +1,4 @@
-"""Synapse 인출 파이프라인 (v12).
+"""Synapse 인출 파이프라인 (v15).
 
 흐름:
   질문
@@ -8,7 +8,9 @@
   → 카테고리 보완: 시작 노드 카테고리 → 인접 카테고리 노드 추가 → 재필터
   → 최종 sentences 컨텍스트 + LLM 답변
 
-v12 변경: 조사 엣지 폐기로 edges 기반 BFS 폐기. node_mentions JOIN 단일 경로.
+v15 변경: edges 테이블 자체 폐기. 연결은 node_mentions(문장 바구니) + node_categories
+(카테고리 바구니) + aliases(별칭 바구니) 세 종류의 하이퍼엣지로만 표현. 의미 관계
+(cause/avoid/similar) 해석은 외부 지능체 몫이라, sentence 원문만 컨텍스트로 전달.
 """
 
 from __future__ import annotations
@@ -37,12 +39,11 @@ class Mention:
 
 @dataclass
 class Triple:
-    """하위 호환용 — 같은 sentence에 함께 언급된 두 노드를 트리플처럼 표현.
-    label은 항상 None (조사 엣지 폐기). API 응답 모양 보존용."""
+    """같은 sentence에 함께 언급된 두 노드를 트리플처럼 표현 (시각화·API 호환용).
+    v15: 모든 Triple은 label=None. 공출현 페어만 의미 있음."""
     src: str
-    label: Optional[str]
+    label: Optional[str]  # v15: 항상 None (edges 테이블 폐기)
     tgt: str
-    edge_id: int = 0
     src_id: int = 0
     tgt_id: int = 0
     sentence_id: Optional[int] = None
@@ -131,45 +132,6 @@ def _get_mentions_for_nodes(conn, node_ids: set[int]) -> list[Mention]:
         Mention(
             node_id=r["node_id"],
             node_name=r["node_name"],
-            sentence_id=r["sentence_id"],
-            sentence_text=r["sentence_text"],
-        )
-        for r in rows
-    ]
-
-
-def _get_edges_for_nodes(conn, node_ids: set[int]) -> list[Triple]:
-    """노드 집합과 의미 관계 엣지로 직접 연결된 인접 노드 조회 (양방향).
-
-    /review 승인된 엣지가 BFS 확장에 기여하도록.
-    sentence_id가 있으면 근거 문장도 함께 반환 (답변 컨텍스트 보강용).
-    """
-    if not node_ids:
-        return []
-    ph = ",".join("?" * len(node_ids))
-    rows = conn.execute(
-        f"""
-        SELECT e.id AS edge_id,
-               n1.id AS src_id, n1.name AS src,
-               n2.id AS tgt_id, n2.name AS tgt,
-               e.label, e.sentence_id, s.text AS sentence_text
-        FROM edges e
-        JOIN nodes n1 ON n1.id = e.source_node_id
-        JOIN nodes n2 ON n2.id = e.target_node_id
-        LEFT JOIN sentences s ON s.id = e.sentence_id
-        WHERE (e.source_node_id IN ({ph}) OR e.target_node_id IN ({ph}))
-          AND n1.status='active' AND n2.status='active'
-        """,
-        list(node_ids) + list(node_ids),
-    ).fetchall()
-    return [
-        Triple(
-            src=r["src"],
-            label=r["label"],
-            tgt=r["tgt"],
-            edge_id=r["edge_id"],
-            src_id=r["src_id"],
-            tgt_id=r["tgt_id"],
             sentence_id=r["sentence_id"],
             sentence_text=r["sentence_text"],
         )
@@ -351,41 +313,19 @@ def _llm_filter_mentions(question: str, mentions: list[Mention]) -> list[Mention
     return result
 
 
-def _llm_filter_edges(question: str, edges: list[Triple]) -> list[Triple]:
-    """의미 엣지 필터. 근거 sentence가 있으면 그걸 기준으로,
-    없으면 'src ─(label)→ tgt' 텍스트로 판정."""
-    if not edges:
-        return []
-    result: list[Triple] = []
-    for t in edges:
-        criterion = t.sentence_text or (
-            f"{t.src} —({t.label})→ {t.tgt}" if t.label else f"{t.src} ↔ {t.tgt}"
-        )
-        if retrieve_filter_sentence(question, criterion):
-            result.append(t)
-    return result
-
-
 def _llm_answer(
     question: str,
     sentences: list[tuple[int, str]],
-    edges: list[Triple],
     images: Optional[list[str]] = None,
     history: Optional[list[dict]] = None,
 ) -> str:
-    """sentence 원문 + 사용자 승인 의미 엣지를 컨텍스트로 자연어 답변."""
+    """sentence 원문 컨텍스트로 자연어 답변. v15: 의미 관계 해석은 LLM 몫."""
     lines: list[str] = []
     seen: set[str] = set()
     for _, text in sentences:
         if text and text not in seen:
             seen.add(text)
             lines.append(f"- {text}")
-    # 의미 엣지: 근거 sentence가 컨텍스트에 이미 있으면 중복 표시 안 함
-    for t in edges:
-        if t.sentence_text and t.sentence_text in seen:
-            continue
-        rel = f"({t.label})" if t.label else "관련"
-        lines.append(f"- {t.src} ─{rel}→ {t.tgt}")
     context = "\n".join(lines)
     user_msg = f"알려진 사실:\n{context}\n\n질문: {question}"
     try:
@@ -408,7 +348,7 @@ def retrieve(
     images: Optional[list[str]] = None,
     history: Optional[list[dict]] = None,
 ) -> RetrieveResult:
-    """질문에 대한 BFS 인출 + LLM 답변. v12: node_mentions JOIN 기반."""
+    """질문에 대한 BFS 인출 + LLM 답변. v15: node_mentions + node_categories 하이퍼엣지 기반."""
     result = RetrieveResult()
 
     conn = get_connection(db_path)
@@ -427,49 +367,33 @@ def retrieve(
 
         result.start_nodes = list(start_nodes.keys())
 
-        # 2. BFS — node_mentions JOIN + edges 보조
+        # 2. BFS — node_mentions JOIN 단일 경로
         visited_node_ids: set[int] = set(start_nodes.values())
         visited_sentence_ids: set[int] = set()
-        visited_edge_ids: set[int] = set()
         all_mentions: list[Mention] = []
-        all_edges: list[Triple] = []
         current_node_ids = set(start_nodes.values())
 
         for _ in range(max_layers):
-            # 2-1) 같은 sentence 공출현 경로
             mentions = [
                 m for m in _get_mentions_for_nodes(conn, current_node_ids)
                 if m.sentence_id not in visited_sentence_ids
             ]
-            # 2-2) 사용자 승인된 의미 엣지 경로
-            edge_triples = [
-                t for t in _get_edges_for_nodes(conn, current_node_ids)
-                if t.edge_id not in visited_edge_ids
-            ]
-
-            if not mentions and not edge_triples:
+            if not mentions:
                 break
 
             if use_llm:
                 filtered_m = _llm_filter_mentions(question, mentions)
-                filtered_e = _llm_filter_edges(question, edge_triples)
             else:
                 filtered_m = mentions
-                filtered_e = edge_triples
 
-            if not filtered_m and not filtered_e:
+            if not filtered_m:
                 break
 
             all_mentions.extend(filtered_m)
-            all_edges.extend(filtered_e)
             for m in filtered_m:
                 visited_sentence_ids.add(m.sentence_id)
-            for t in filtered_e:
-                visited_edge_ids.add(t.edge_id)
-                if t.sentence_id is not None:
-                    visited_sentence_ids.add(t.sentence_id)
 
-            # 다음 레이어: 공출현 노드 + 엣지 인접 노드
+            # 다음 레이어: 같은 sentence 바구니의 다른 노드
             new_ids: set[int] = set()
             co_map = _get_co_mentioned_node_ids(
                 conn, {m.sentence_id for m in filtered_m}
@@ -478,17 +402,13 @@ def retrieve(
                 for nid, _name in nodes_in_sentence:
                     if nid not in visited_node_ids:
                         new_ids.add(nid)
-            for t in filtered_e:
-                for nid in (t.src_id, t.tgt_id):
-                    if nid not in visited_node_ids:
-                        new_ids.add(nid)
 
             if not new_ids:
                 break
             visited_node_ids.update(new_ids)
             current_node_ids = new_ids
 
-        # 3. 카테고리 보완 (mentions + edges 양쪽 모두 시도)
+        # 3. 카테고리 바구니 보완 (인접 맵으로 한 홉 확장)
         if use_llm:
             cat_node_ids = _get_category_supplement_nodes(
                 conn, set(start_nodes.values()), visited_node_ids
@@ -498,22 +418,11 @@ def retrieve(
                     m for m in _get_mentions_for_nodes(conn, cat_node_ids)
                     if m.sentence_id not in visited_sentence_ids
                 ]
-                cat_edges = [
-                    t for t in _get_edges_for_nodes(conn, cat_node_ids)
-                    if t.edge_id not in visited_edge_ids
-                ]
                 if cat_mentions:
                     fm = _llm_filter_mentions(question, cat_mentions)
                     all_mentions.extend(fm)
                     for m in fm:
                         visited_sentence_ids.add(m.sentence_id)
-                if cat_edges:
-                    fe = _llm_filter_edges(question, cat_edges)
-                    all_edges.extend(fe)
-                    for t in fe:
-                        visited_edge_ids.add(t.edge_id)
-                        if t.sentence_id is not None:
-                            visited_sentence_ids.add(t.sentence_id)
 
         # 4. 결과 정리: sentence 단위 dedup
         seen_sids: set[int] = set()
@@ -522,14 +431,9 @@ def retrieve(
             if m.sentence_id not in seen_sids:
                 seen_sids.add(m.sentence_id)
                 context_sentences.append((m.sentence_id, m.sentence_text))
-        # 의미 엣지의 근거 sentence도 컨텍스트에 포함
-        for t in all_edges:
-            if t.sentence_id and t.sentence_id not in seen_sids and t.sentence_text:
-                seen_sids.add(t.sentence_id)
-                context_sentences.append((t.sentence_id, t.sentence_text))
         result.context_sentences = context_sentences
 
-        # 하위 호환: sentence 공출현은 트리플로 펼치고 + 의미 엣지는 그대로 추가
+        # 5. 하위 호환: context_triples — 같은 sentence 공출현 노드 페어를 Triple로 펼침
         co_map = _get_co_mentioned_node_ids(conn, {sid for sid, _ in context_sentences})
         triples: list[Triple] = []
         for sid, text in context_sentences:
@@ -552,31 +456,16 @@ def retrieve(
                         src_id=s_nid, tgt_id=t_nid,
                         sentence_id=sid, sentence_text=text,
                     ))
-        # 의미 엣지는 label과 함께 그대로 추가 (시각화·근거 표시용)
-        triples.extend(all_edges)
         result.context_triples = triples
 
-        # 5. last_used 배치 업데이트 (의미 엣지 사용 통계)
-        if visited_edge_ids:
-            ph = ",".join("?" * len(visited_edge_ids))
-            conn.execute(
-                f"UPDATE edges SET last_used=datetime('now') WHERE id IN ({ph})",
-                list(visited_edge_ids),
-            )
-            conn.commit()
-
-        # 6. LLM 답변 (sentence + 의미 엣지 모두 컨텍스트로)
+        # 6. LLM 답변
         if use_llm:
             result.answer = _llm_answer(
-                question, context_sentences, all_edges,
+                question, context_sentences,
                 images=images, history=history,
             )
         else:
             lines = [t for _, t in context_sentences]
-            for t in all_edges:
-                if not (t.sentence_text and t.sentence_text in {s for _, s in context_sentences}):
-                    rel = f"({t.label})" if t.label else "관련"
-                    lines.append(f"{t.src} ─{rel}→ {t.tgt}")
             result.answer = "\n".join(lines) or "관련 정보 없음"
 
     finally:

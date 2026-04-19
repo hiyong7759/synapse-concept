@@ -1,4 +1,4 @@
-import type { ChatResponse, HistoryItem, NodeItem, EdgeItem, StatsResponse } from './types';
+import type { ChatResponse, HistoryItem, NodeItem, HyperedgesResponse, StatsResponse } from './types';
 
 const BASE = 'http://localhost:8000';
 
@@ -50,7 +50,7 @@ export interface SentencesResponse {
 
 export interface SentenceImpact {
   sentence_id: number;
-  affected_edges: { id: number; source: string; label: string | null; target: string }[];
+  affected_mentions: { node_id: number; node_name: string }[];
 }
 
 export interface NodeCategoriesResponse {
@@ -73,26 +73,6 @@ export interface ReviewUnresolvedItem {
   post_position: number;
   post_markdown: string;
   post_created_at: string | null;
-  question: string;
-  options: string[];
-  allow_free_input: boolean;
-}
-
-export interface ReviewUncategorizedItem {
-  node_id: number;
-  node_name: string;
-  question: string;
-  options: string[];
-  allow_free_input: boolean;
-}
-
-export interface ReviewCooccurItem {
-  source_id: number;
-  source_name: string;
-  target_id: number;
-  target_name: string;
-  cooccur_count: number;
-  sample_sentence: string | null;
   question: string;
   options: string[];
   allow_free_input: boolean;
@@ -143,8 +123,6 @@ export interface ReviewBasicInfoItem {
 
 export interface ReviewAllResponse {
   unresolved?: ReviewUnresolvedItem[];
-  uncategorized?: ReviewUncategorizedItem[];
-  cooccur_pairs?: ReviewCooccurItem[];
   suspected_typos?: ReviewTypoItem[];
   missing_basic_info?: ReviewBasicInfoItem[];
   stale_nodes?: ReviewStaleItem[];
@@ -155,8 +133,6 @@ export interface ReviewAllResponse {
 export interface ReviewCount {
   total: number;
   unresolved: number;
-  uncategorized: number;
-  cooccur_pairs: number;
   suspected_typos: number;
   missing_basic_info: number;
 }
@@ -164,11 +140,11 @@ export interface ReviewCount {
 export const api = {
   chat: (text: string, images?: string[], history?: HistoryItem[]) =>
     post<ChatResponse>('/chat', { text, images: images ?? [], history: history ?? [] }),
-  rollback: (edge_ids: number[], node_ids: number[]) =>
-    post<{ edges_deleted: number; nodes_deleted: number }>('/rollback', { edge_ids, node_ids }),
+  rollback: (sentence_ids: number[], node_ids: number[]) =>
+    post<{ sentences_deleted: number; nodes_deleted: number }>('/rollback', { sentence_ids, node_ids }),
   stats: () => get<StatsResponse>('/stats'),
   nodes: () => get<NodeItem[]>('/nodes'),
-  edges: () => get<EdgeItem[]>('/edges'),
+  hyperedges: () => get<HyperedgesResponse>('/hyperedges'),
 
   // 대화 탐색
   sentences: (params: { q?: string; date_from?: string; date_to?: string; role?: string; offset?: number; limit?: number } = {}) => {
@@ -201,10 +177,6 @@ export const api = {
     return get<ReviewAllResponse>(`/review${qs}`);
   },
   reviewCount: () => get<ReviewCount>('/review/count'),
-  reviewAliasSuggestions: (nodeId: number) =>
-    get<{ node_id: number; node_name: string; question: string; options: string[]; allow_free_input: boolean }>(
-      `/review/alias-suggestions/${nodeId}`,
-    ),
   reviewApply: (type: string, params: Record<string, unknown>) =>
     post<{ ok: boolean; [k: string]: unknown }>(`/review/apply`, { type, params }),
 };

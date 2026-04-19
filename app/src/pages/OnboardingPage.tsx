@@ -273,7 +273,7 @@ function StepSimulation({ onNext, onBack }: { onNext: () => void; onBack: () => 
 }
 
 // ── 3. 실사용 전환 ────────────────────────────────────────────
-function StepDone({ onGraph, onChat, onBack }: { onGraph: () => void; onChat: () => void; onBack: () => void }) {
+function StepDone({ onHypergraph, onChat, onBack }: { onHypergraph: () => void; onChat: () => void; onBack: () => void }) {
   return (
     <>
       <div className={styles.header}>
@@ -292,7 +292,7 @@ function StepDone({ onGraph, onChat, onBack }: { onGraph: () => void; onChat: ()
             그래야 그래프에 의미가 쌓입니다.
           </span>
         </div>
-        <button className={styles.welcomeBtn} onClick={onGraph}>그래프 보기</button>
+        <button className={styles.welcomeBtn} onClick={onHypergraph}>하이퍼그래프 보기</button>
         <button className={styles.welcomeBtn} style={{ background: 'transparent' }} onClick={onChat}>채팅으로 시작</button>
         <div className={styles.welcomeDivider} />
       </div>
@@ -312,7 +312,7 @@ export function OnboardingPage() {
       {step === 'welcome'    && <StepWelcome    onNext={() => setStep('chat')} />}
       {step === 'chat'       && <StepChat       onNext={() => setStep('simulation')} onBack={() => setStep('welcome')} />}
       {step === 'simulation' && <StepSimulation onNext={() => setStep('done')}       onBack={() => setStep('chat')} />}
-      {step === 'done'       && <StepDone       onGraph={() => navigate('/graph')} onChat={() => navigate('/chat/new')} onBack={() => setStep('simulation')} />}
+      {step === 'done'       && <StepDone       onHypergraph={() => navigate('/hypergraph')} onChat={() => navigate('/chat/new')} onBack={() => setStep('simulation')} />}
     </div>
   );
 }

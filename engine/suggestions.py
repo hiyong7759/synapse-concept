@@ -1,10 +1,16 @@
-"""검토 대상 런타임 도출기 — review target generator (v12 Phase 5).
+"""검토 대상 런타임 도출기 — review target generator (v15).
 
 원칙:
 - 각 함수는 DB 쿼리 + 필요 시 LLM 호출로 제안 리스트를 반환한다.
 - DB에 쓰지 않는다. 저장은 사용자가 승인한 시점에만 (api/routes/graph.py /review/apply).
 - 유일한 저장 예외는 `unresolved_tokens` (Phase 3에서 INSERT됨, 여기서는 읽기만).
 - LLM 의존 섹션은 use_llm=False일 때 빈 결과 또는 LLM 없는 fallback 반환.
+
+v15 폐기 섹션 (DESIGN_REVIEW.md §폐기된 섹션 참고):
+- `uncategorized` — 저장 시점에 origin='ai'/'rule'로 자동 분류 (예정)
+- `cooccur_pairs` — 문장 하이퍼엣지(node_mentions)에 이미 자동 포함되므로 별도 제안 불필요
+- `alias_suggestions` — origin='ai' 별칭으로 자동 등록 (예정)
+- 의미 엣지 관련 섹션 — edges 테이블 폐기로 전체 제거
 """
 
 from __future__ import annotations
@@ -103,145 +109,6 @@ def unresolved(db_path: str = DB_PATH, limit: int = 30) -> list[dict]:
     return result
 
 
-def uncategorized(db_path: str = DB_PATH, use_llm: bool = True, limit: int = 30) -> list[dict]:
-    """미분류 노드 (node_categories에 행 없음).
-
-    LLM이 켜져 있으면 분류 제안을 추가. 없어도 사용자 정의 경로는 옵션으로 제공.
-    """
-    conn = get_connection(db_path)
-    try:
-        rows = conn.execute(
-            """SELECT n.id, n.name
-               FROM nodes n
-               LEFT JOIN node_categories nc ON nc.node_id = n.id
-               WHERE nc.node_id IS NULL AND n.status='active'
-               ORDER BY n.updated_at DESC LIMIT ?""",
-            (limit,),
-        ).fetchall()
-
-        # 사용자 정의 경로 상위
-        path_rows = conn.execute(
-            """SELECT category, COUNT(*) AS cnt FROM node_categories
-               GROUP BY category ORDER BY cnt DESC LIMIT 10"""
-        ).fetchall()
-    finally:
-        conn.close()
-
-    user_paths = [r["category"] for r in path_rows]
-
-    result: list[dict] = []
-    for r in rows:
-        options = list(user_paths)
-        if use_llm:
-            try:
-                suggestion = chat(
-                    "한국어 노드명에 가장 적절한 분류 경로 하나를 제안하세요. "
-                    "형식: '대분류.소분류' (예: BOD.disease, WRK.role). "
-                    "기존 사용자 경로가 더 적절하면 그걸 그대로 추천하세요. "
-                    "다른 설명 없이 분류 경로 한 줄만 출력.",
-                    f"노드: {r['name']}\n사용자 정의 경로: {', '.join(user_paths) if user_paths else '없음'}",
-                    temperature=0,
-                    max_tokens=64,
-                )
-                suggestion = suggestion.strip().split("\n")[0].strip()
-                if suggestion and suggestion not in options:
-                    options.insert(0, suggestion)
-            except LLMError:
-                pass
-        result.append({
-            "node_id": r["id"],
-            "node_name": r["name"],
-            "question": f"'{r['name']}'은(는) 어떤 분류에 속하나요?",
-            "options": options[:8],
-            "allow_free_input": True,
-        })
-    return result
-
-
-def cooccur_pairs(
-    db_path: str = DB_PATH,
-    use_llm: bool = True,
-    limit: int = 10,
-    min_cooccur: int = 2,
-) -> list[dict]:
-    """공출현 노드 쌍 — 같은 sentence에 N회 이상 함께 언급되었지만 edges에 없는 쌍.
-
-    필터:
-    - min_cooccur (기본 2): 우연 1회 공출현은 노이즈로 보고 제외
-    - limit (기본 10): 한 번에 사용자에게 보여줄 카드 수 상한 (cooccur_count 내림차순 상위)
-
-    사용자가 처리할수록 다음 호출에서 다음 상위 쌍이 올라옴 — 점진적 검토.
-    """
-    conn = get_connection(db_path)
-    try:
-        rows = conn.execute(
-            """SELECT m1.node_id AS a_id, n1.name AS a_name,
-                      m2.node_id AS b_id, n2.name AS b_name,
-                      COUNT(*) AS cooccur_count,
-                      MIN(m1.sentence_id) AS sample_sentence_id
-               FROM node_mentions m1
-               JOIN node_mentions m2
-                 ON m1.sentence_id = m2.sentence_id AND m1.node_id < m2.node_id
-               JOIN nodes n1 ON n1.id = m1.node_id AND n1.status='active'
-               JOIN nodes n2 ON n2.id = m2.node_id AND n2.status='active'
-               WHERE NOT EXISTS (
-                   SELECT 1 FROM edges e
-                   WHERE (e.source_node_id = m1.node_id AND e.target_node_id = m2.node_id)
-                      OR (e.source_node_id = m2.node_id AND e.target_node_id = m1.node_id)
-               )
-               GROUP BY m1.node_id, m2.node_id
-               HAVING COUNT(*) >= ?
-               ORDER BY cooccur_count DESC, MAX(m1.created_at) DESC
-               LIMIT ?""",
-            (min_cooccur, limit),
-        ).fetchall()
-
-        sample_texts: dict[int, str] = {}
-        if rows:
-            sids = list({r["sample_sentence_id"] for r in rows})
-            ph = ",".join("?" * len(sids))
-            for s in conn.execute(
-                f"SELECT id, text FROM sentences WHERE id IN ({ph})", sids,
-            ).fetchall():
-                sample_texts[s["id"]] = s["text"]
-    finally:
-        conn.close()
-
-    _LABELS = ["similar", "cause", "contain", "avoid", "cooccur"]
-
-    result: list[dict] = []
-    for r in rows:
-        options = list(_LABELS)
-        if use_llm:
-            try:
-                sample = sample_texts.get(r["sample_sentence_id"], "")
-                rec = chat(
-                    "두 노드의 의미 관계 종류를 가장 적절한 한 단어로 추천. "
-                    "후보: similar / cause / contain / avoid / cooccur. "
-                    "한 단어만 출력.",
-                    f"A: {r['a_name']}\nB: {r['b_name']}\n근거 문장: {sample}",
-                    temperature=0,
-                    max_tokens=16,
-                )
-                rec = rec.strip().split()[0].strip().lower() if rec.strip() else ""
-                if rec in _LABELS:
-                    options = [rec] + [l for l in _LABELS if l != rec]
-            except LLMError:
-                pass
-        result.append({
-            "source_id": r["a_id"],
-            "source_name": r["a_name"],
-            "target_id": r["b_id"],
-            "target_name": r["b_name"],
-            "cooccur_count": r["cooccur_count"],
-            "sample_sentence": sample_texts.get(r["sample_sentence_id"]),
-            "question": f"'{r['a_name']}'와(과) '{r['b_name']}'의 관계는?",
-            "options": options,
-            "allow_free_input": True,
-        })
-    return result
-
-
 def suspected_typos(db_path: str = DB_PATH, limit: int = 20) -> list[dict]:
     """오타 의심 쌍 — find_suspected_typos 재사용."""
     pairs = find_suspected_typos(db_path=db_path)[:limit]
@@ -258,44 +125,6 @@ def suspected_typos(db_path: str = DB_PATH, limit: int = 20) -> list[dict]:
         }
         for p in pairs
     ]
-
-
-def alias_suggestions(node_id: int, db_path: str = DB_PATH, use_llm: bool = True) -> dict:
-    """노드 상세에서 사용자가 '별칭 추천' 요청 시에만 호출. LLM 필수."""
-    conn = get_connection(db_path)
-    try:
-        row = conn.execute(
-            "SELECT id, name FROM nodes WHERE id=?", (node_id,)
-        ).fetchone()
-        if not row:
-            return {"node_id": node_id, "options": []}
-    finally:
-        conn.close()
-
-    options: list[str] = []
-    if use_llm:
-        try:
-            import json as _json
-            import re as _re
-            raw = chat(
-                "노드 이름의 별칭(줄임말, 영어 원문, 다국어 표기, 흔한 오타)을 JSON 배열로 출력. "
-                "100% 확실한 동의어만. 없으면 [] 반환. 다른 텍스트 금지.",
-                row["name"],
-                temperature=0,
-                max_tokens=128,
-            )
-            m = _re.search(r"\[.*?\]", raw, _re.DOTALL)
-            if m:
-                options = [a for a in _json.loads(m.group()) if isinstance(a, str) and a != row["name"]]
-        except (LLMError, ValueError):
-            pass
-    return {
-        "node_id": row["id"],
-        "node_name": row["name"],
-        "question": f"'{row['name']}'의 별칭으로 등록할 표현을 골라주세요",
-        "options": options,
-        "allow_free_input": True,
-    }
 
 
 def stale_nodes(db_path: str = DB_PATH, days: int = 90, limit: int = 20) -> list[dict]:
@@ -440,8 +269,6 @@ def all_sections(
     """전체 섹션 호출. sections 인자로 일부만 선택 가능."""
     available = {
         "unresolved":         lambda: unresolved(db_path=db_path),
-        "uncategorized":      lambda: uncategorized(db_path=db_path, use_llm=use_llm),
-        "cooccur_pairs":      lambda: cooccur_pairs(db_path=db_path, use_llm=use_llm),
         "suspected_typos":    lambda: suspected_typos(db_path=db_path),
         "missing_basic_info": lambda: missing_basic_info(db_path=db_path),
         "stale_nodes":        lambda: stale_nodes(db_path=db_path),
@@ -457,36 +284,14 @@ def counts(db_path: str = DB_PATH) -> dict:
     conn = get_connection(db_path)
     try:
         unresolved_n = conn.execute("SELECT COUNT(*) FROM unresolved_tokens").fetchone()[0]
-        uncategorized_n = conn.execute(
-            """SELECT COUNT(*) FROM nodes n
-               LEFT JOIN node_categories nc ON nc.node_id = n.id
-               WHERE nc.node_id IS NULL AND n.status='active'"""
-        ).fetchone()[0]
-        cooccur_n = conn.execute(
-            """SELECT COUNT(*) FROM (
-                 SELECT m1.node_id, m2.node_id
-                 FROM node_mentions m1
-                 JOIN node_mentions m2
-                   ON m1.sentence_id = m2.sentence_id AND m1.node_id < m2.node_id
-                 WHERE NOT EXISTS (
-                     SELECT 1 FROM edges e
-                     WHERE (e.source_node_id = m1.node_id AND e.target_node_id = m2.node_id)
-                        OR (e.source_node_id = m2.node_id AND e.target_node_id = m1.node_id)
-                 )
-                 GROUP BY m1.node_id, m2.node_id
-                 HAVING COUNT(*) >= 2
-               )"""
-        ).fetchone()[0]
     finally:
         conn.close()
     typos_n = len(find_suspected_typos(db_path=db_path))
     basic_n = len(missing_basic_info(db_path=db_path))
-    total = unresolved_n + uncategorized_n + cooccur_n + typos_n + basic_n
+    total = unresolved_n + typos_n + basic_n
     return {
         "total":              total,
         "unresolved":         unresolved_n,
-        "uncategorized":      uncategorized_n,
-        "cooccur_pairs":      cooccur_n,
         "suspected_typos":    typos_n,
         "missing_basic_info": basic_n,
     }
