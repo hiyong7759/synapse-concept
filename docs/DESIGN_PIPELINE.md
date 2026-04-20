@@ -87,7 +87,7 @@ heading 경로(`더나은.개발팀`)가 사용자 명시 카테고리 경로가
   [extract — 베이스 모델]  temperature=0, max_tokens=2048
     프롬프트: docs/EXTRACT_SYSTEMPROMPT.md
     엔진 전처리: ()[] 공백 치환 (반복 루프 방지)
-    후속 deactivate 탐지는 [synapse/extract-state] 어댑터가 담당
+    후속 deactivate 탐지는 베이스 모델 + docs/EXTRACT_STATE_SYSTEMPROMPT.md 가 담당
   ↓
   [규칙 — 부정부사 후처리]
     문장 내 '안'·'못'을 감지해 노드 추출 결과에 추가 (노드 자체는 일반 노드와 동일 처리)
@@ -408,7 +408,7 @@ DB 경량화가 필요한 시점에 별도 정책 재설계 예정. 후보: `las
 | 태스크 | 처리 방식 | 프롬프트 파일 / 어댑터 경로 |
 |--------|-----------|------|
 | extract | 베이스 모델 | `docs/EXTRACT_SYSTEMPROMPT.md` |
-| extract-state | 어댑터 | `synapse/extract-state` |
+| extract-state | 베이스 모델 | `docs/EXTRACT_STATE_SYSTEMPROMPT.md` |
 | retrieve-filter | 베이스 모델 | `docs/RETRIEVE_FILTER_SYSTEMPROMPT.md` |
 | retrieve-expand | 어댑터 | `synapse/retrieve-expand` |
 | retrieve-expand-org | 어댑터 | `synapse/retrieve-expand-org` |
@@ -428,7 +428,7 @@ DB 경량화가 필요한 시점에 별도 정책 재설계 예정. 후보: `las
 | 라우팅 | 베이스 + ROUTING_SYSTEMPROMPT.md | 0 | 32 |
 | 전처리 치환 | 베이스 + SAVE_PRONOUN_SYSTEMPROMPT.md | 0 | 256 |
 | 노드 추출 | 베이스 + EXTRACT_SYSTEMPROMPT.md | 0 | 2048 |
-| 모순 탐지 | synapse/extract-state | 0 | 256 |
+| 모순 탐지 | 베이스 + EXTRACT_STATE_SYSTEMPROMPT.md | 0 | 256 |
 | 카테고리 분류 (백그라운드) | 베이스 + CATEGORY_SYSTEMPROMPT.md | 0 | 512 |
 | 인출 확장 | synapse/retrieve-expand | 0 | 256 |
 | 인출 필터 | 베이스 + RETRIEVE_FILTER_SYSTEMPROMPT.md | 0 | 8 |

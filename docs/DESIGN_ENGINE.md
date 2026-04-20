@@ -2,7 +2,7 @@
 
 스키마: v15 (`node_mentions`, `node_categories`, `aliases`, `unresolved_tokens`). 의미 엣지 테이블·retention 폐기. 연결은 문장·카테고리·별칭 하이퍼엣지로만 표현.
 
-LLM 구성: 베이스 모델(Gemma 4 E2B-it) + `docs/*_SYSTEMPROMPT.md` + 파인튜닝 어댑터 3종(`extract-state`, `retrieve-expand`, `retrieve-expand-org`). 태스크 분담은 `docs/DESIGN_PIPELINE.md` §"태스크 처리 방식".
+LLM 구성: 베이스 모델(Gemma 4 E2B-it) + `docs/*_SYSTEMPROMPT.md` + 파인튜닝 어댑터 2종(`retrieve-expand`, `retrieve-expand-org`). 태스크 분담은 `docs/DESIGN_PIPELINE.md` §"태스크 처리 방식".
 
 ## Context
 

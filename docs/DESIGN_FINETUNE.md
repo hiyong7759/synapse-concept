@@ -92,7 +92,7 @@ Gemma 4 E2B-it + `enable_thinking=False` + 학습 데이터 system 메시지를 
 | 태스크 | 처리 방식 | 용도 |
 |--------|-----------|------|
 | extract | 베이스 + `docs/EXTRACT_SYSTEMPROMPT.md` | 문장 → 노드 추출 |
-| extract-state | 파인튜닝 어댑터 | 현재 발화가 무효화하는 기존 사실 탐지 |
+| extract-state | 베이스 + `docs/EXTRACT_STATE_SYSTEMPROMPT.md` | 현재 발화가 무효화하는 기존 사실 탐지 |
 | retrieve-filter | 베이스 + `docs/RETRIEVE_FILTER_SYSTEMPROMPT.md` | 인출된 문장의 질문 관련성 |
 | retrieve-expand | 파인튜닝 어댑터 | 질문 → BFS 탐색 노드 후보 |
 | retrieve-expand-org | 파인튜닝 어댑터 | retrieve-expand 조직 버전 |
@@ -100,7 +100,7 @@ Gemma 4 E2B-it + `enable_thinking=False` + 학습 데이터 system 메시지를 
 | security-context | 베이스 + 자체 프롬프트 | 인출 컨텍스트 민감정보 노출 여부 |
 | category (백그라운드 워커) | 베이스 + `docs/CATEGORY_SYSTEMPROMPT.md` | 노드 카테고리 자동 분류 |
 
-**파인튜닝 어댑터 3종**: `extract-state`, `retrieve-expand`, `retrieve-expand-org`.
+**파인튜닝 어댑터 2종**: `retrieve-expand`, `retrieve-expand-org`.
 
 ---
 
@@ -654,7 +654,6 @@ PER BOD MND FOD LIV MON WRK TEC EDU LAW TRV NAT CUL HOB SOC REL REG
 
 | 구분 | 태스크 | 건수 (train / valid) |
 |------|--------|---------------------|
-| Personal | extract-state | 490 / 52 |
 | Personal | retrieve-expand | 468 / 37 |
 | Org | retrieve-expand-org | 30 이상 / — |
 
@@ -698,7 +697,6 @@ iters = max(150, (n_train × 3 epochs) // effective_batch)
 
 | 어댑터 | n_train | iters |
 |---|---|---|
-| extract-state | 490 | 367 |
 | retrieve-expand | 468 | 351 |
 | retrieve-expand-org | — | — |
 

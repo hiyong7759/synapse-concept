@@ -48,7 +48,7 @@ def _mlx_post(model: str, messages: list[dict], max_tokens: int, temperature: fl
 
 
 # 베이스 모델 + 시스템 프롬프트로 전환 완료된 태스크 (어댑터 불필요)
-_BASE_MODEL_TASKS = {"retrieve-filter", "security-context", "save-pronoun", "extract"}
+_BASE_MODEL_TASKS = {"retrieve-filter", "security-context", "save-pronoun", "extract", "extract-state"}
 
 
 def mlx_chat(task: str, user: str, max_tokens: int = 32768) -> str:
