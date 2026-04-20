@@ -179,6 +179,29 @@ def _detect_negation_tokens(text: str) -> list[str]:
     return tokens
 
 
+def _detect_unresolved_tokens(text: str) -> list[str]:
+    """지시대명사·모호 부사(시간/장소/인물/사물) 감지. 중복 제거한 원형 리스트 반환.
+
+    어절 단위로 분할 후 각 어절의 시작이 사전의 토큰과 일치하고, 토큰 뒤가
+    비어있거나 한글(조사·접미어)이 이어지면 매칭. 영숫자·기호가 바로 붙으면
+    다른 단어로 간주해 거부.
+    """
+    from .suggestions import DEMONSTRATIVE_TOKENS
+    found: list[str] = []
+    for raw in re.split(r"\s+", text):
+        word = re.sub(r"^[.,!?()\[\]\"'“”‘’]+|[.,!?()\[\]\"'“”‘’]+$", "", raw)
+        if not word:
+            continue
+        for tok in DEMONSTRATIVE_TOKENS:
+            if word.startswith(tok):
+                rest = word[len(tok):]
+                if not rest or ("\uAC00" <= rest[0] <= "\uD7AF"):
+                    if tok not in found:
+                        found.append(tok)
+                    break
+    return found
+
+
 # ─── 날짜 정규화·분할 ────────────────────────────────────
 
 def _normalize_dates_to_korean(text: str) -> str:
@@ -314,6 +337,14 @@ def _save_one_item(
 
     # 1-1. ISO 날짜 → 한국어 정규화 (사용자 언급 공간 = 한국어)
     effective_text = _normalize_dates_to_korean(effective_text)
+
+    # 1-2. 규칙 기반 지시어·모호 부사 감지 (LLM 반환 unresolved 와 병합)
+    #      LLM 은 날짜만 치환하고 장소/지시어/시간 모호 부사는 원문 유지.
+    #      엔진이 정규 사전으로 스캔해 unresolved_tokens 테이블에 적재.
+    rule_unresolved = _detect_unresolved_tokens(effective_text)
+    for tok in rule_unresolved:
+        if tok not in unresolved_tokens:
+            unresolved_tokens.append(tok)
 
     # 2. sentence 저장 (post_id + position)
     sid = _insert_sentence(conn, effective_text, post_id=post_id, position=position)

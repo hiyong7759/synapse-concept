@@ -26,6 +26,15 @@ from .save import find_suspected_typos
 from .llm import chat, LLMError
 
 
+# ─── 지시어·모호 부사 사전 ─────────────────────────────────
+# save.py 의 규칙 기반 unresolved 감지와 /review 의 옵션 구성 양쪽에서 사용.
+TIME_TOKENS = {"요즘", "최근", "그때", "당시", "주말", "이번에"}
+PLACE_TOKENS = {"여기", "거기", "저기", "이곳", "그곳", "저곳"}
+PERSON_TOKENS = {"이분", "그분", "저분", "걔", "쟤", "얘", "그녀"}
+THING_TOKENS = {"이거", "그거", "저거", "이것", "그것", "저것"}
+DEMONSTRATIVE_TOKENS = TIME_TOKENS | PLACE_TOKENS | PERSON_TOKENS | THING_TOKENS
+
+
 # ─── 도출기들 ────────────────────────────────────────────
 
 def unresolved(db_path: str = DB_PATH, limit: int = 30) -> list[dict]:
@@ -64,10 +73,6 @@ def unresolved(db_path: str = DB_PATH, limit: int = 30) -> list[dict]:
     finally:
         conn.close()
 
-    _TIME_TOKENS = {"요즘", "최근", "그때", "당시", "주말", "이번에"}
-    _PLACE_TOKENS = {"여기", "거기", "저기", "이곳", "그곳", "저곳"}
-    _PERSON_TOKENS = {"이분", "그분", "저분", "걔", "쟤", "얘", "그녀"}
-
     today = date.today()
     result: list[dict] = []
     for r in rows:
@@ -88,20 +93,20 @@ def unresolved(db_path: str = DB_PATH, limit: int = 30) -> list[dict]:
             "options": [],
             "allow_free_input": True,
         }
-        if token in _TIME_TOKENS:
+        if token in TIME_TOKENS:
             item["question"] = f"'{token}'은 언제부터 언제까지인가요?"
             item["options"] = [
                 today.isoformat(),
                 f"{(today - timedelta(days=7)).isoformat()}~{today.isoformat()}",
                 today.strftime("%Y-%m"),
             ]
-        elif token in _PLACE_TOKENS:
+        elif token in PLACE_TOKENS:
             item["question"] = f"'{token}'은 어디인가요?"
             for path, names in recent_by_cat.items():
                 if any(k in path for k in ("장소", "REG", "TRV", "병원")):
                     item["options"].extend(names[:3])
                     break
-        elif token in _PERSON_TOKENS:
+        elif token in PERSON_TOKENS:
             item["question"] = f"'{token}'은 누구인가요?"
             for path, names in recent_by_cat.items():
                 if path.startswith("PER") or any(k in path for k in ("인물", "사람")):
