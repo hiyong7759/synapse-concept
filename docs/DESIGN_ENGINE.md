@@ -1,6 +1,6 @@
 # Synapse Engine — 범용 온디바이스 지식 하이퍼그래프 패키지 설계
 
-**최종 업데이트**: 2026-04-19 — 엔진 MVP 포팅 기준이 v15 스키마(node_mentions, node_categories, aliases, unresolved_tokens, **edges 테이블 폐기**, retention 폐기)로 확정. 의미 엣지 관련 구현(edge label 추출, edge JOIN 경로)은 모두 제거. 연결은 문장·카테고리·별칭 하이퍼엣지로만 표현. `/review` 런타임 제안 도출기(`suggestions.dart`)가 신규 추가. 자세한 배경은 `docs/DESIGN_PIPELINE.md` 참고.
+**최종 업데이트**: 2026-04-20 — (1) v15 스키마(node_mentions, node_categories, aliases, unresolved_tokens, **edges 테이블 폐기**, retention 폐기) 기준. 연결은 문장·카테고리·별칭 하이퍼엣지로만 표현. (2) **어댑터 세트 축소** — extract, save-pronoun, retrieve-filter, routing, security-context 는 베이스 모델 + `docs/*_SYSTEMPROMPT.md` 로 전환 완료 (`engine/prompts.py` 로더). 번들할 어댑터는 `extract-state`, `retrieve-expand`, `retrieve-expand-org`, `save-subject-org` 4종. 아래 본문의 "기본 어댑터(extract, save-pronoun, retrieve-filter)" 서술은 역사적 맥락 — 현행은 `api/mlx_server.py` 와 `docs/DESIGN_PIPELINE.md` §"태스크 처리 방식" 참고.
 
 ## Context
 

@@ -256,7 +256,7 @@ GET /review?sections=ai_generated&kind=category&limit=20
 LLM 없이도 모든 검토 섹션이 작동한다:
 
 - **쿼리만으로 완결**: `unresolved`(옵션 구성 제외), `ai_generated`, `rule_generated`, `suspected_typos`, `stale_nodes`, `daily`, `gaps`
-- **LLM 호출은 저장 시점에만** — extract 어댑터가 `origin='ai'`로 카테고리·별칭을 자동 생성할 때 1회. 이후 검토는 LLM 없이 가능.
+- **LLM 호출은 저장 시점에만** — 베이스 모델(extract) + 백그라운드 워커(category 분류)가 `origin='ai'` 로 자동 생성할 때. 별칭은 Wikidata(`origin='external'`)로 전환되어 LLM 추론 안 씀. 이후 검토는 LLM 없이 가능.
 
 사용자는 여전히 카테고리·별칭을 자유 입력으로 직접 추가할 수 있다 (`origin='user'`).
 
