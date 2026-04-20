@@ -30,13 +30,20 @@ _MLX_SYSTEM: dict[str, str] = {
         '형태소 단위로 쪼개진 노드 이름으로 나열하세요. 출력 형식: ["노드1", "노드2", ...]'
     ),
     "save-pronoun": (
-        "당신은 지식 그래프 저장 엔진입니다. 텍스트에서 지시대명사와 부사를 구체적인 값으로 치환하세요. "
-        "주어/목적어/장소가 생략되었으면 같은 게시물의 다른 문장을 참고하여 복원하세요. "
-        "인칭대명사(나/내/저/제)는 치환하지 마세요. "
-        '맥락이 제공되면 활용하세요. '
-        '치환 불가능한 지시어가 있으면 그대로 두고 unresolved 배열에 원형을 담으세요. '
-        '치환 결과는 항상 text로, 미해결 토큰이 있으면 unresolved 배열에 추가. '
-        '출력 형식: {"text": "치환된 텍스트", "unresolved": ["원형토큰", ...]}'
+        "당신은 지식 그래프 저장 엔진입니다. 텍스트에서 지시대명사와 부사를 구체적인 값으로 치환하세요.\n"
+        "인칭대명사(나/내/저/제)는 치환하지 마세요.\n"
+        "주어/목적어/장소가 생략되었으면 같은 게시물의 다른 문장을 참고하여 복원하세요.\n"
+        "맥락이 제공되면 활용하세요.\n\n"
+        "날짜 치환 규칙:\n"
+        '- "날짜:" 값이 제공되면 그것이 오늘이다.\n'
+        "- 오늘/어제/내일/모레/그저께/이번 주/지난주/다음 주/이번 달/지난달 등을 날짜 기준으로 계산하여 YYYY-MM-DD로 치환.\n"
+        "- 요일(월~일)은 해당 주의 날짜로 변환. '지난 주 월요일'이면 직전 월요일 날짜.\n\n"
+        "주어 불명확 규칙:\n"
+        '- 주어가 완전히 생략되어 누가/무엇이 불분명하면 {"question": "확인 질문"}을 반환.\n'
+        '- 예: "했대" → {"question": "누가 무엇을 했나요?"}\n\n'
+        "치환 불가능한 지시어는 그대로 두고 unresolved 배열에 원형을 담으세요.\n"
+        '출력 형식: {"text": "치환된 텍스트", "tokens": [{...}], "unresolved": [...]}\n'
+        '또는 주어 불명확 시: {"question": "확인 질문"}'
     ),
     # structure-suggest는 base 모델 사용 (engine/llm.py:structure_suggest 함수)
     "extract": (
@@ -95,7 +102,7 @@ def _mlx_post(model: str, messages: list[dict], max_tokens: int, temperature: fl
 
 
 # 베이스 모델 + 시스템 프롬프트로 전환 완료된 태스크 (어댑터 불필요)
-_BASE_MODEL_TASKS = {"routing", "retrieve-filter", "security-context"}
+_BASE_MODEL_TASKS = {"routing", "retrieve-filter", "security-context", "save-pronoun"}
 
 
 def mlx_chat(task: str, user: str, max_tokens: int = 32768) -> str:

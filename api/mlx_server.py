@@ -37,11 +37,10 @@ TASKS = [
     "extract-state",
     "retrieve-expand",
     "retrieve-expand-org",
-    "save-pronoun",
     "save-state-personal",
     "save-state-org",
     "save-subject-org",
-    # 베이스 모델 전환 완료 (어댑터 불필요): routing, retrieve-filter, security-context
+    # 베이스 모델 전환 완료 (어댑터 불필요): routing, retrieve-filter, security-context, save-pronoun
 ]
 
 # ── 모델 상태 ──────────────────────────────────────────────
