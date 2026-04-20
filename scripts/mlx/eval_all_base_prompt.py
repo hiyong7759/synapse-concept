@@ -26,6 +26,10 @@ TASKS = [
     "security-access",
     "save-pronoun",
     "save-subject-org",
+    "extract-state",
+    "retrieve-expand-org",
+    "security-org",
+    "security-personal",
 ]
 
 
@@ -94,6 +98,34 @@ def score_result_field(out: str, expected: dict) -> float:
     return 1.0 if data.get("result") == expected.get("result") else 0.0
 
 
+def score_deactivate(out: str, expected: dict) -> float:
+    """extract-state: deactivate id 집합 완전 일치."""
+    data = find_last_json(strip_thinking(out))
+    if not isinstance(data, dict):
+        return 0.0
+    actual = set(data.get("deactivate", []))
+    exp = set(expected.get("deactivate", []))
+    if not exp and not actual:
+        return 1.0
+    if not exp or not actual:
+        return 0.0
+    return 1.0 if actual == exp else len(actual & exp) / max(len(actual | exp), 1)
+
+
+def score_label(out: str, expected: str) -> float:
+    """security-org/personal: safe/sensitive 라벨 전체 일치."""
+    tail = strip_thinking(out).strip().lower()
+    exp = expected.strip().lower()
+    # 전체 일치
+    if exp in tail[:200]:
+        return 1.0
+    # safe/sensitive 이진만 맞으면 0.5
+    exp_prefix = exp.split(":")[0]
+    if exp_prefix in tail[:80]:
+        return 0.5
+    return 0.0
+
+
 def score_pronoun(out: str, expected: dict) -> float:
     """save-pronoun: text 공백 정규화 후 일치."""
     data = find_last_json(strip_thinking(out))
@@ -107,7 +139,7 @@ def score_pronoun(out: str, expected: dict) -> float:
 def score_task(task: str, out: str, expected: Any) -> float:
     if task in ("routing", "retrieve-filter"):
         return score_oneword(out, str(expected))
-    if task == "retrieve-expand":
+    if task in ("retrieve-expand", "retrieve-expand-org"):
         return score_list_recall(out, expected if isinstance(expected, list) else [])
     if task in ("security-context", "security-access"):
         return score_result_field(out, expected if isinstance(expected, dict) else {})
@@ -115,6 +147,10 @@ def score_task(task: str, out: str, expected: Any) -> float:
         return score_pronoun(out, expected if isinstance(expected, dict) else {})
     if task == "save-subject-org":
         return score_keys_match(out, expected if isinstance(expected, dict) else {})
+    if task == "extract-state":
+        return score_deactivate(out, expected if isinstance(expected, dict) else {})
+    if task in ("security-org", "security-personal"):
+        return score_label(out, str(expected))
     return 0.0
 
 
