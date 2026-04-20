@@ -191,7 +191,8 @@ def nodes():
                 COUNT(DISTINCT co.node_id) AS degree
             FROM nodes n
             LEFT JOIN node_mentions m  ON m.node_id = n.id
-            LEFT JOIN node_mentions co ON co.sentence_id = m.sentence_id AND co.node_id != n.id
+            LEFT JOIN sentences s      ON s.id = m.sentence_id AND s.status = 'active'
+            LEFT JOIN node_mentions co ON co.sentence_id = s.id AND co.node_id != n.id
             WHERE n.status = 'active'
             GROUP BY n.id
             ORDER BY degree DESC
@@ -219,6 +220,7 @@ def hyperedges():
             FROM sentences s
             JOIN node_mentions m ON m.sentence_id = s.id
             JOIN nodes n ON n.id = m.node_id AND n.status='active'
+            WHERE s.status='active'
             GROUP BY s.id
             HAVING COUNT(m.node_id) >= 2
             """
