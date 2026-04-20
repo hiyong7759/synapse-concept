@@ -41,7 +41,8 @@ CREATE TABLE IF NOT EXISTS sentences (
     text            TEXT    NOT NULL,
     role            TEXT    NOT NULL DEFAULT 'user' CHECK(role IN ('user', 'assistant')),
     status          TEXT    NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'pending')),
-    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS nodes (
@@ -148,6 +149,9 @@ def _is_current_schema(conn: sqlite3.Connection) -> bool:
         return False
     # PLAN-002 Phase 1: sentences.status 컬럼 필요 (active|inactive|pending)
     if "status" not in sent_cols:
+        return False
+    # PLAN-002 F5a: sentences.updated_at 컬럼 필요 (텍스트·상태 변경 시점 추적)
+    if "updated_at" not in sent_cols:
         return False
     return True
 
@@ -268,6 +272,48 @@ def _migrate_add_sentences_status(db_path: str) -> None:
         conn.close()
 
 
+def _can_add_sentences_updated_at(conn: sqlite3.Connection) -> bool:
+    """sentences 에 updated_at 컬럼이 없는지 확인 (F5a)."""
+    tables = _get_tables(conn)
+    if "edges" in tables or "sentences" not in tables:
+        return False
+    return "updated_at" not in _get_cols(conn, "sentences")
+
+
+def _migrate_add_sentences_updated_at(db_path: str) -> None:
+    """sentences.updated_at 컬럼 추가. SQLite 가 non-constant DEFAULT(datetime('now'))
+    를 ADD COLUMN 으로 허용하지 않아 테이블 재생성 방식 사용. 기존 레코드는
+    created_at 값으로 updated_at 백필(생성==마지막 변경 관계 유지)."""
+    backup = _backup_db(db_path)
+    print(f"[db] PLAN-002 F5a: sentences.updated_at 테이블 재생성 마이그레이션. 백업={backup}")
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        conn.executescript("""
+            CREATE TABLE sentences_new (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_id         INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+                position        INTEGER NOT NULL DEFAULT 0,
+                text            TEXT    NOT NULL,
+                role            TEXT    NOT NULL DEFAULT 'user' CHECK(role IN ('user', 'assistant')),
+                status          TEXT    NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'pending')),
+                created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+                updated_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+            );
+            INSERT INTO sentences_new (id, post_id, position, text, role, status, created_at, updated_at)
+                SELECT id, post_id, position, text, role, status, created_at, created_at FROM sentences;
+            DROP TABLE sentences;
+            ALTER TABLE sentences_new RENAME TO sentences;
+            CREATE INDEX IF NOT EXISTS idx_sentences_role   ON sentences(role);
+            CREATE INDEX IF NOT EXISTS idx_sentences_post   ON sentences(post_id, position);
+            CREATE INDEX IF NOT EXISTS idx_sentences_status ON sentences(status);
+        """)
+        conn.commit()
+        conn.execute("PRAGMA foreign_keys = ON")
+    finally:
+        conn.close()
+
+
 def _backup_db(db_path: str) -> str:
     """DB 파일을 타임스탬프 붙여 복사."""
     timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -341,6 +387,12 @@ def init_db(db_path: str = DB_PATH) -> str:
                 conn.close()
                 conn = None
                 _migrate_add_sentences_status(db_path)
+                conn = sqlite3.connect(db_path)
+            # PLAN-002 F5a: sentences.updated_at 컬럼 추가 (상태·텍스트 변경 시점)
+            if conn is not None and _can_add_sentences_updated_at(conn):
+                conn.close()
+                conn = None
+                _migrate_add_sentences_updated_at(db_path)
                 conn = sqlite3.connect(db_path)
             # 그래도 v15 스키마가 아니면 구형 DB로 판정 → 백업 후 재생성
             if not _is_current_schema(conn):

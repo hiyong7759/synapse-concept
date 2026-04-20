@@ -157,7 +157,7 @@ def _update_sentence_status(conn, sentence_ids: list[int], new_status: str) -> l
         return []
     ph2 = ",".join("?" * len(changed))
     conn.execute(
-        f"UPDATE sentences SET status=? WHERE id IN ({ph2})",
+        f"UPDATE sentences SET status=?, updated_at=datetime('now') WHERE id IN ({ph2})",
         [new_status, *changed],
     )
     return changed
@@ -795,7 +795,7 @@ def update_sentence(
     try:
         conn.execute("DELETE FROM node_mentions WHERE sentence_id = ?", (sentence_id,))
         conn.execute(
-            "UPDATE sentences SET text = ? WHERE id = ?",
+            "UPDATE sentences SET text = ?, updated_at = datetime('now') WHERE id = ?",
             (new_text, sentence_id),
         )
         conn.commit()
