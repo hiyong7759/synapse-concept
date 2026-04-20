@@ -67,11 +67,10 @@ heading 경로(`더나은.개발팀`)가 사용자 명시 카테고리 경로가
   ↓
 각 (heading 경로, 항목)마다:
   ↓
-  [_preprocess — synapse/save-pronoun]  temperature=0
+  [_preprocess — save-pronoun, 베이스 모델]  temperature=0
     세션리스 — 직전 대화 context 주입 없음
     인칭대명사(나/내/저/제)는 치환하지 않음
-    치환 가능한 부분만 tokens[{name, category?}]로 담아 반환
-      category는 규칙 기반 분명한 것만 부여 (시간/장소/인물/사물/부정 등 모두 허용. 모호하면 생략)
+    치환 가능한 부분만 tokens[{name}]로 담아 반환
     치환할 수 없는 지시어/부사는 원문에 그대로 남김 (LLM이 따로 표기하지 않음)
     저장 자체가 불가능한 완전 모호 케이스만 {"question": "..."} 반환 → 저장 중단
   ↓
