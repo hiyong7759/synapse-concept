@@ -19,12 +19,10 @@ BASE_MODEL = "unsloth/gemma-4-E2B-it-UD-MLX-4bit"
 TASKS_DIR = ROOT / "data/finetune/tasks"
 
 TASKS = [
-    "routing",
     "retrieve-filter",
     "retrieve-expand",
     "security-context",
     "save-pronoun",
-    "save-subject-org",
     "extract-state",
     "retrieve-expand-org",
 ]

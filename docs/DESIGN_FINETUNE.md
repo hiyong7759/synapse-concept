@@ -92,13 +92,13 @@ Gemma 4 E2B-it 의 thinking 모드를 OFF로 고정(`enable_thinking=False`)한 
 | 태스크 | 처리 방식 | 2026-04-20 실측 | 근거 |
 |--------|-----------|-----------------|------|
 | extract (노드 추출) | 베이스 + `docs/EXTRACT_SYSTEMPROMPT.md` | **94.4%** | 72건 골드셋. 파인튜닝 최고 84.7% 대비 +9.7%p |
-| routing | 베이스 + `docs/ROUTING_SYSTEMPROMPT.md` | 70.0% | n=30 |
+| ~~routing~~ | **폐기** — archive 이관 | — | 조직 모드 미구현, 실사용 호출부 없어 재개 시 재평가 |
 | retrieve-filter | 베이스 + `docs/RETRIEVE_FILTER_SYSTEMPROMPT.md` | **96.7%** | n=30 |
 | security-context | 베이스 모델 | **90.0%** | n=30 |
 | save-pronoun | 베이스 + `docs/SAVE_PRONOUN_SYSTEMPROMPT.md` | 63.3% | n=30 (파인튜닝 대비 비교 예정) |
 | category (백그라운드 워커) | 베이스 + `docs/CATEGORY_SYSTEMPROMPT.md` | — | 기존 전환 완료 |
 | retrieve-expand(/-org) | 어댑터 유지 | — | 채점 완화 재평가 필요 |
-| save-subject-org | 어댑터 유지 | 53.3% | n=30 |
+| ~~save-subject-org~~ | **폐기** — archive 이관 | — | 조직 모드 미구현. 재개 시 재평가 |
 | extract-state | **어댑터 유지** | 53.3% (avg 0.692) | 번호 참조 추론 필요, 파인튜닝 유리 |
 
 **폐기된 태스크** (백엔드 권한 체계로 대체, `archive/finetune/tasks/` 이동):
@@ -126,7 +126,7 @@ Gemma 4 E2B-it 의 thinking 모드를 OFF로 고정(`enable_thinking=False`)한 
 | ~~0-org~~ | ~~augment 필요 여부~~ | 질문 | personal_only / augment_org | **베이스 모델 전환** (routing, 70%) |
 | 2-org | 주어 해소 (save-subject-org) | 조직 발화 | question / subject+text / text | **어댑터 유지** |
 
-→ **남은 파인튜닝 어댑터 4종**: `retrieve-expand`, `retrieve-expand-org`, `extract-state`, `save-subject-org`.
+→ **남은 파인튜닝 어댑터 3종**: `retrieve-expand`, `retrieve-expand-org`, `extract-state`.
 
 ---
 
@@ -691,8 +691,8 @@ PER BOD MND FOD LIV MON WRK TEC EDU LAW TRV NAT CUL HOB SOC REL REG
 | Personal | ~~Task 5A/5B security-*~~ | ~900건 | security-context 베이스 전환 / security-access·personal 백엔드 이관 (archive) |
 | Personal | ~~Task 6A extract-core~~ | 1,998건 | 베이스 전환 (94.4%) — 데이터 보존 |
 | Personal | Task 6B extract-state | 542건 | **유지** (어댑터) |
-| Org | Task 0-org (routing) | 265건 | 베이스 전환 — 데이터 보존 |
-| Org | Task 2-org (save-subject-org) | 358건 | **유지** (어댑터) |
+| Org | ~~Task 0-org (routing)~~ | 265건 | **폐기** — archive 이관 (조직 모드 미구현) |
+| Org | ~~Task 2-org (save-subject-org)~~ | 358건 | **폐기** — archive 이관 (조직 모드 미구현) |
 | Org | retrieve-expand-org | 30건 이상 | **유지** (어댑터) |
 | Org | ~~security-org / security-personal~~ | — | 백엔드 이관 (archive) |
 
@@ -742,8 +742,8 @@ iters = max(150, (n_train × 3 epochs) // effective_batch)
 | ~~save-pronoun~~ | ~~660~~ | ~~495~~ | **폐기** — 베이스 모델 전환 |
 | retrieve-expand | 468 | 351 | **유지** |
 | retrieve-expand-org | — | — | **유지** (조직용) |
-| save-subject-org | — | — | **유지** (조직용) |
-| ~~routing~~ | ~~265~~ | ~~198~~ | **폐기** — 베이스 모델 전환 (70%) |
+| ~~save-subject-org~~ | ~~269~~ | — | **폐기** — archive 이관 |
+| ~~routing~~ | ~~265~~ | ~~198~~ | **폐기** — archive 이관 |
 | ~~save-state-personal~~ | ~~438~~ | ~~328~~ | v15 폐기 |
 | ~~save-state-org~~ | — | — | v15 폐기 |
 | ~~security-context~~ | ~~415~~ | ~~311~~ | **폐기** — 베이스 모델 전환 (90%) |
@@ -788,5 +788,5 @@ iters = max(150, (n_train × 3 epochs) // effective_batch)
 
 1. **retrieve-expand / retrieve-expand-org 평가 채점 완화** — 부분 문자열·형태소 루트 허용으로 재측정. 현재 full match 0% 이나 평균 점수 0.27~0.33 이라 실제 품질은 더 높을 가능성.
 2. **save-pronoun 베이스 모델 품질 정밀 측정** — 현재 63.3% 는 text 완전 일치 채점 기준. 실제 `tokens` 필드 포함 품질 측정 후 어댑터 재도입 여부 결정.
-3. **남은 4개 어댑터 (`retrieve-expand`, `retrieve-expand-org`, `extract-state`, `save-subject-org`) 재학습 필요 여부 판단** — 현재 학습 파이프라인(MLX LoRA)로 재현 가능한지 검증.
-4. **Org 데이터셋 생성** — 남은 어댑터 중 조직용 2종(retrieve-expand-org, save-subject-org) 보강.
+3. **남은 3개 어댑터 (`retrieve-expand`, `retrieve-expand-org`, `extract-state`) 재학습 필요 여부 판단** — 현재 학습 파이프라인(MLX LoRA)로 재현 가능한지 검증.
+4. **조직 모드 구현 시 routing · save-subject-org 재도입 검토** — archive 에 데이터 보존됨. 조직 파이프라인(`engine/retrieve.py` 에 augment_org 분기 + 조직 서버 클라이언트) 구현 시점에 필요 여부 재평가.

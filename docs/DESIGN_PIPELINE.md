@@ -412,12 +412,12 @@ DB 경량화가 필요한 시점에 별도 정책 재설계 예정. 후보: `las
 
 | 태스크 | 처리 방식 | 프롬프트 파일 / 어댑터 경로 |
 |--------|-----------|------|
-| routing | 베이스 모델 | `docs/ROUTING_SYSTEMPROMPT.md` |
+| ~~routing~~ | **폐기** — `archive/` 이관 | 조직 모드 미구현. 구현 시 재개 |
 | retrieve-filter | 베이스 모델 | `docs/RETRIEVE_FILTER_SYSTEMPROMPT.md` |
 | retrieve-expand | 어댑터 | `synapse/retrieve-expand` |
 | retrieve-expand-org | 어댑터 | `synapse/retrieve-expand-org` |
 | save-pronoun | 베이스 모델 | `docs/SAVE_PRONOUN_SYSTEMPROMPT.md` |
-| save-subject-org | 어댑터 | `synapse/save-subject-org` |
+| ~~save-subject-org~~ | **폐기** — `archive/` 이관 | 조직 모드 미구현. 구현 시 재개 |
 | extract (노드 추출) | 베이스 모델 | `docs/EXTRACT_SYSTEMPROMPT.md` |
 | extract-state (deactivate) | 어댑터 | `synapse/extract-state` |
 | category (백그라운드) | 베이스 모델 | `docs/CATEGORY_SYSTEMPROMPT.md` |
