@@ -400,7 +400,7 @@ DB 경량화가 필요한 시점에 별도 정책 재설계 예정. 후보: `las
 
 모든 LLM 호출은 `tokenizer.apply_chat_template(..., enable_thinking=False)` 로 thinking 블록을 차단한다.
 
-- **이유**: 학습 데이터 system 메시지에 `<|think|>` 토큰이 없어 thinking 없이 학습됐고, ON 상태에서는 추론 시간 10배 + 한 단어 출력 태스크에서 오답률 급증. 2026-04-20 실측 — 동일 골드셋에서 thinking ON: routing 0% / retrieve-filter 13% / save-pronoun 0% → OFF: routing 70% / retrieve-filter 96.7% / save-pronoun 63.3%.
+- **이유**: 학습 데이터 system 메시지에 `<|think|>` 토큰이 없어 thinking 없이 학습됐고, ON 상태에서는 추론 시간이 약 10배 길어지며 한 단어 출력 태스크에서 오답률이 급증한다.
 - **적용 위치**: `api/mlx_server.py` 의 `apply_chat_template` 호출, `scripts/mlx/eval_*.py`.
 - **주의**: Gemma 4 4bit (E2B/E4B) 변종은 OFF 설정 시 빈 thought 블록도 출력하지 않음 (공식 문서 확인).
 
@@ -408,24 +408,21 @@ DB 경량화가 필요한 시점에 별도 정책 재설계 예정. 후보: `las
 
 ## 태스크 처리 방식
 
-베이스 모델 + 시스템 프롬프트로 충분한 태스크는 어댑터 폐기. 규칙 추출·패턴 매칭이 필수적인 태스크만 파인튜닝 유지.
+베이스 모델 + 시스템 프롬프트로 충분한 태스크는 어댑터 없이, 규칙 추출·패턴 매칭이 필수적인 태스크만 파인튜닝 어댑터로 운영.
 
 | 태스크 | 처리 방식 | 프롬프트 파일 / 어댑터 경로 |
 |--------|-----------|------|
-| ~~routing~~ | **폐기** — `archive/` 이관 | 조직 모드 미구현. 구현 시 재개 |
+| extract | 베이스 모델 | `docs/EXTRACT_SYSTEMPROMPT.md` |
+| extract-state | 어댑터 | `synapse/extract-state` |
 | retrieve-filter | 베이스 모델 | `docs/RETRIEVE_FILTER_SYSTEMPROMPT.md` |
 | retrieve-expand | 어댑터 | `synapse/retrieve-expand` |
 | retrieve-expand-org | 어댑터 | `synapse/retrieve-expand-org` |
 | save-pronoun | 베이스 모델 | `docs/SAVE_PRONOUN_SYSTEMPROMPT.md` |
-| ~~save-subject-org~~ | **폐기** — `archive/` 이관 | 조직 모드 미구현. 구현 시 재개 |
-| extract (노드 추출) | 베이스 모델 | `docs/EXTRACT_SYSTEMPROMPT.md` |
-| extract-state (deactivate) | 어댑터 | `synapse/extract-state` |
-| category (백그라운드) | 베이스 모델 | `docs/CATEGORY_SYSTEMPROMPT.md` |
 | security-context | 베이스 모델 | (개인 민감정보 노출 여부 판단) |
-| security-access / security-org / security-personal | **폐기** | 백엔드 권한 체계로 대체 (`archive/finetune/tasks/` 이동) |
+| category (백그라운드) | 베이스 모델 | `docs/CATEGORY_SYSTEMPROMPT.md` |
 | chat (응답 생성) | 베이스 모델 | — |
 
-시스템 프롬프트 파일 로더는 `engine/prompts.py`.
+시스템 프롬프트 파일 로더는 `engine/prompts.py`. 권한 판단(security-access 등)은 결정론적 백엔드 로직 소관이라 LLM 태스크에서 제외.
 
 ---
 
