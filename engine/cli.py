@@ -127,9 +127,12 @@ def _print_save_result(r) -> None:
         print(f"  [노드 신규] {', '.join(r.nodes_added)}")
     if r.mentions_added:
         print(f"  [언급 기록] {r.mentions_added}건")
-    for marker in r.nodes_deactivated:
-        print(f"  [상태변경] {marker}")
-    if not r.nodes_added and not r.mentions_added and not r.nodes_deactivated:
+    for sid in r.sentences_deactivated:
+        print(f"  [무효] sentence#{sid}")
+    for sid in r.sentences_pending:
+        print(f"  [보류] sentence#{sid} (review 확인 필요)")
+    if not (r.nodes_added or r.mentions_added
+            or r.sentences_deactivated or r.sentences_pending):
         print("  (변경 없음)")
 
 

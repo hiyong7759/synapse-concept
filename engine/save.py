@@ -38,7 +38,10 @@ class SaveResult:
     node_ids_added: list[int] = field(default_factory=list)
     mentions_added: int = 0
     unresolved_added: list[tuple[int, str]] = field(default_factory=list)  # (sentence_id, token)
-    nodes_deactivated: list[str] = field(default_factory=list)  # 상태 변경된 노드 이름
+    # PLAN-002: sentences.status 자동 전이 결과
+    sentences_deactivated: list[int] = field(default_factory=list)  # status→inactive 된 sentence_id
+    sentences_pending: list[int] = field(default_factory=list)      # status→pending  된 sentence_id
+    nodes_deactivated: list[str] = field(default_factory=list)      # UI 표시용 (sentence#N)
     markdown_draft: Optional[str] = None  # structure-suggest 초안 (저장 보류 시)
     question: Optional[str] = None
 
@@ -133,16 +136,37 @@ def _add_unresolved(conn, sentence_id: int, token: str) -> bool:
     return cur.rowcount > 0
 
 
-def _deactivate_by_sentence_ids(conn, sentence_ids: list[int]) -> list[str]:
-    """v15: deactivate 기능 축소 — Task 6B 어댑터 재학습 + 의미 재설계 대기 중.
+def _update_sentence_status(conn, sentence_ids: list[int], new_status: str) -> list[int]:
+    """sentences.status 를 new_status 로 일괄 UPDATE. 실제 바뀐 sentence_id 반환.
 
-    이전(v14)에는 edges 테이블을 통해 특정 대상 노드만 선택적으로 비활성화했으나,
-    edges 폐기로 타겟팅 수단이 사라짐. 전체 공출현 노드를 비활성화하는 건 너무 공격적.
-    현재는 no-op — sentence_id 목록만 문자열로 변환해 UI 표시용으로 반환.
+    PLAN-002 Phase 2: deactivate/pending 판정을 DB 에 반영.
+    - new_status='inactive' → BFS 인출·공출현 계산에서 제외 (F2)
+    - new_status='pending'  → 사용자 검토 대기 (/review 의 pending_sentences)
+    이미 같은 상태였던 레코드는 반환 목록에서 제외(UI 시끄러움 방지).
     """
-    if not sentence_ids:
+    sids = [s for s in sentence_ids if isinstance(s, int)]
+    if not sids or new_status not in ("active", "inactive", "pending"):
         return []
-    return [f"sentence#{sid}" for sid in sentence_ids if isinstance(sid, int)]
+    ph = ",".join("?" * len(sids))
+    rows = conn.execute(
+        f"SELECT id FROM sentences WHERE id IN ({ph}) AND status != ?",
+        [*sids, new_status],
+    ).fetchall()
+    changed = [r[0] for r in rows]
+    if not changed:
+        return []
+    ph2 = ",".join("?" * len(changed))
+    conn.execute(
+        f"UPDATE sentences SET status=? WHERE id IN ({ph2})",
+        [new_status, *changed],
+    )
+    return changed
+
+
+def _deactivate_by_sentence_ids(conn, sentence_ids: list[int]) -> list[str]:
+    """deactivate 대상 sentences 를 inactive 로 내리고 UI 표시용 문자열 반환."""
+    changed = _update_sentence_status(conn, sentence_ids, "inactive")
+    return [f"sentence#{sid}" for sid in changed]
 
 
 # ─── 토큰 감지 ────────────────────────────────────────────
@@ -355,27 +379,36 @@ def _save_one_item(
         if _add_unresolved(conn, sid, token):
             result.unresolved_added.append((sid, token))
 
-    # 3. extract (v15-A2: nodes + deactivate만. 카테고리/별칭은 저장 후 백그라운드 워커)
+    # 3. extract (v15-A2: nodes + deactivate + pending. 카테고리/별칭은 백그라운드 워커)
+    _EMPTY = {"nodes": [], "deactivate": [], "pending": []}
     if use_llm:
         try:
             extracted = llm_extract(effective_text, context_sentences=retrieve_context_sentences)
         except LLMError:
-            extracted = {"nodes": [], "deactivate": []}
+            extracted = _EMPTY
     else:
-        extracted = {"nodes": [], "deactivate": []}
+        extracted = _EMPTY
 
     ext_nodes = extracted.get("nodes", [])
     ext_deactivate = extracted.get("deactivate", [])
+    ext_pending = extracted.get("pending", [])
 
     # 4. 규칙 기반 토큰 감지 (부정부사 + 날짜 분할)
     neg_tokens = _detect_negation_tokens(effective_text)
     date_tokens = _expand_date_tokens(effective_text)
     ext_nodes = _merge_nodes_extracted(ext_nodes, neg_tokens + date_tokens)
 
-    # 5. deactivate — v15에선 no-op + 식별자 수집만 (재설계 대기)
+    # 5. 상태 전이 — sentences.status UPDATE (PLAN-002 Phase 2)
     if ext_deactivate:
-        deact_sids = [s for s in ext_deactivate if isinstance(s, int)]
-        result.nodes_deactivated.extend(_deactivate_by_sentence_ids(conn, deact_sids))
+        changed = _update_sentence_status(conn, ext_deactivate, "inactive")
+        result.sentences_deactivated.extend(changed)
+        result.nodes_deactivated.extend(f"sentence#{s}" for s in changed)
+    if ext_pending:
+        # deactivate 가 이미 잡은 sid 는 중복 처리 안 함
+        deact_set = set(result.sentences_deactivated)
+        candidates = [s for s in ext_pending if s not in deact_set]
+        changed = _update_sentence_status(conn, candidates, "pending")
+        result.sentences_pending.extend(changed)
 
     # 6. 노드 upsert + mentions + (heading 경로) category
     for node in ext_nodes:
