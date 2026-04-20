@@ -45,21 +45,32 @@ _MLX_SYSTEM: dict[str, str] = {
         '출력 형식: {"text": "치환된 텍스트", "tokens": [{...}], "unresolved": [...]}\n'
         '또는 주어 불명확 시: {"question": "확인 질문"}'
     ),
-    # structure-suggest는 base 모델 사용 (engine/llm.py:structure_suggest 함수)
     "extract": (
-        "한국어 문장에서 지식 그래프의 노드와 상태변경을 추출하라.\n"
-        "JSON만 출력. 다른 텍스트 금지.\n\n"
-        "출력 형식:\n"
-        '{"nodes":[{"name":"노드명"}],'
-        '"deactivate":[sentence_id, ...]}\n\n'
-        "규칙:\n"
+        "너는 형태소 분석기다.\n"
+        "한국어 문장에서 노드를 추출하라.\n\n"
+        "노드 원칙:\n"
         "- 노드는 원자. 하나의 개념 = 하나의 노드.\n"
-        "- 1인칭(나/내/저/제)이 문장에 명시된 경우 \"나\" 노드로 추출. 문장에 없는 1인칭 추가 금지.\n"
-        "- 3인칭 주어는 원문 그대로 노드 추출.\n"
-        "- 부정부사(안, 못)는 독립 노드다. 예: \"스타벅스 안 좋아\" → 노드 [스타벅스, 안, 좋아].\n"
-        "- 엣지는 저장하지 않는다. 노드 간의 의미 관계는 사용자 승인을 거쳐 사후에 편입된다.\n"
-        "- \"알려진 사실:\"이 제공된 경우: 각 문장에 [번호]가 붙어 있다. 현재 입력과 상충되는 문장의 번호를 deactivate에 포함. 없으면 [].\n"
-        "- 추출할 노드가 없는 대화 → {\"nodes\":[],\"deactivate\":[]}\n"
+        "- 품사 무관 (명사·동사·형용사·부정부사 모두 가능)\n"
+        "- 조사·어미 제거 (예: \"허리디스크를\" → \"허리디스크\")\n"
+        "- 1인칭 명시 시 반드시 \"나\"로 통일 (내/저/제도 \"나\"로)\n"
+        "- 부정부사(안, 못)는 독립 노드\n"
+        "- 법인 접두어(㈜, (주)) 포함 통째로 유지 (예: \"㈜한솔\" → \"㈜한솔\", 분리 금지)\n"
+        "- 영문·숫자 포함 고유명사는 분리 금지 (예: \"A프로젝트\", \"L4-L5\", \"갤럭시 S25 울트라\")\n\n"
+        '출력: {"nodes": ["노드1", "노드2", ...]}\n'
+        "JSON 한 줄만 출력. 설명·주석 금지.\n\n"
+        "예시:\n"
+        "입력: 어제 김치찌개 먹었어\n"
+        '출력: {"nodes":["김치찌개","먹"]}\n\n'
+        "입력: 스타벅스 안 좋아\n"
+        '출력: {"nodes":["스타벅스","안","좋"]}\n\n'
+        "입력: 나 허리디스크 L4-L5 진단받았어\n"
+        '출력: {"nodes":["나","허리디스크","L4-L5","진단받"]}\n\n'
+        "입력: 내 맥북 고장났어\n"
+        '출력: {"nodes":["나","맥북","고장나"]}\n\n'
+        "입력: ㈜한솔이랑 B프로젝트 계약 체결했어\n"
+        '출력: {"nodes":["㈜한솔","B프로젝트","계약","체결"]}\n\n'
+        "입력: 안녕 잘 지내?\n"
+        '출력: {"nodes":[]}'
     ),
     "extract-state": (
         "알려진 사실 목록에서 현재 입력으로 인해 더 이상 유효하지 않은 문장을 찾아 sentence_id를 반환하라.\n"
@@ -102,7 +113,7 @@ def _mlx_post(model: str, messages: list[dict], max_tokens: int, temperature: fl
 
 
 # 베이스 모델 + 시스템 프롬프트로 전환 완료된 태스크 (어댑터 불필요)
-_BASE_MODEL_TASKS = {"routing", "retrieve-filter", "security-context", "save-pronoun"}
+_BASE_MODEL_TASKS = {"routing", "retrieve-filter", "security-context", "save-pronoun", "extract"}
 
 
 def mlx_chat(task: str, user: str, max_tokens: int = 32768) -> str:
@@ -251,39 +262,43 @@ def structure_suggest(text: str, known_paths: Optional[list[str]] = None) -> str
 
 
 def llm_extract(text: str, context_sentences: Optional[list[tuple[int, str]]] = None) -> dict:
-    """LLM으로 노드/상태변경만 추출 (v15-A2: {nodes, deactivate}로 축소).
+    """LLM으로 노드 추출 + 상태변경 탐지 (베이스 모델 전환).
 
-    v15-A2 설계:
-    - 출력 필드는 오직 `nodes`(노드 이름)과 `deactivate`(상충 sentence_id)뿐.
-    - 카테고리 분류 · 별칭 수집은 저장 완료 후 백그라운드 워커로 이전
-      (`engine/workers.py` — 카테고리 워커는 LLM, 별칭 워커는 Wikidata altLabel).
-    - 구 어댑터가 남긴 edges / category / retention / aliases 필드는 전부 드롭한다
-      (재학습 전 호환 방어). 의미 관계는 sentence 원문에 담겨 있고 외부 지능체 몫.
+    베이스 모델 전환 (2026-04-20):
+    - extract: 노드 추출만 담당 (EXTRACT_SYSTEMPROMPT.md, 94.4%)
+    - extract-state: deactivate만 담당 (별도 어댑터)
+    - 카테고리·별칭은 백그라운드 워커 (engine/workers.py)
 
     context_sentences: retrieve에서 가져온 (sentence_id, text) 쌍. deactivate 판단용.
     반환: {"nodes": [{"name": str}, ...], "deactivate": [sentence_id, ...]}
     """
     try:
-        # ()[] 가 포함되면 2B 모델이 반복 루프에 빠짐 — 공백으로 치환
-        text = re.sub(r"[()\[\]]", " ", text)
+        # 노드 추출 (베이스 모델 + 시스템 프롬프트)
+        raw = mlx_chat("extract", text, max_tokens=1024)
+        match = re.search(r"\{.*\}", raw, re.DOTALL)
+        nodes = []
+        if match:
+            result = json.loads(match.group())
+            for n in result.get("nodes", []):
+                if isinstance(n, dict) and n.get("name"):
+                    nodes.append({"name": n["name"]})
+                elif isinstance(n, str):
+                    nodes.append({"name": n})
+
+        # 상태변경 탐지 (extract-state 어댑터)
+        deactivate: list[int] = []
         if context_sentences:
             ctx = "\n".join(f"- [{sid}] {s}" for sid, s in context_sentences)
-            input_text = f"{text}\n알려진 사실:\n{ctx}"
-        else:
-            input_text = text
-        raw = mlx_chat("extract", input_text)
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        if not match:
-            return {"nodes": [], "deactivate": []}
-        result = json.loads(match.group())
-        # v15-A2: name만 보존. 어댑터가 뱉은 aliases/categories/edges/retention 전부 드롭.
-        nodes = []
-        for n in result.get("nodes", []):
-            if isinstance(n, dict) and n.get("name"):
-                nodes.append({"name": n["name"]})
-            elif isinstance(n, str):
-                nodes.append({"name": n})
-        deactivate = [s for s in result.get("deactivate", []) if isinstance(s, int)]
+            state_input = f"{text}\n알려진 사실:\n{ctx}"
+            try:
+                state_raw = mlx_chat("extract-state", state_input)
+                state_match = re.search(r"\{.*\}", state_raw, re.DOTALL)
+                if state_match:
+                    state_result = json.loads(state_match.group())
+                    deactivate = [s for s in state_result.get("deactivate", []) if isinstance(s, int)]
+            except Exception:
+                pass
+
         return {"nodes": nodes, "deactivate": deactivate}
     except Exception:
         return {"nodes": [], "deactivate": []}
