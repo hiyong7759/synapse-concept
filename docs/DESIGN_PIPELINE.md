@@ -11,7 +11,7 @@
 ## DB 스키마 (v15 — 엣지 폐기, 하이퍼엣지 기반)
 
 ```sql
-sentences:         id, text, role('user'|'assistant'), created_at
+sentences:         id, text, role('user'|'assistant'), status('active'|'inactive'|'pending'), created_at
 nodes:             id, name, status('active'|'inactive'), created_at, updated_at
 node_mentions:     node_id, sentence_id, created_at                                   — PK(node_id, sentence_id)
 node_categories:   node_id, category, origin('user'|'ai'|'rule'|'external'), created_at — PK(node_id, category)
@@ -34,6 +34,8 @@ unresolved_tokens: sentence_id, token, created_at                               
 **sentences.role**: `user`(하이퍼그래프 추출 대상) / `assistant`(대화 기록).
 
 **sentences.retention 폐기 (v13~)**: 모든 sentence는 동등하게 영구 보관한다. 과거 memory/daily 분류는 (1) 2B 어댑터의 "daily → 빈 nodes" 과적합 원인, (2) 오분류 시 중요 기억 소실 위험, (3) 실제 인출·검색에서 쓰이지 않음 — 세 가지 이유로 제거.
+
+**sentences.status**: extract-state 가 새 발화로 인해 무효화된 문장을 `inactive`, 판단 애매 문장을 `pending` 으로 표시. 삭제 아님(영구 보관 유지), BFS 쿼리에서 `status='active'` 필터로만 배제. 사용자는 `/review` 에서 pending 확정 / inactive 되돌리기 가능.
 
 ---
 
@@ -114,7 +116,10 @@ heading 경로(`더나은.개발팀`)가 사용자 명시 카테고리 경로가
       · 사용자 수동 등록 → origin='user'
       · 인칭대명사 시드 → origin='rule'
       · Wikidata·LLM 추천은 여기서 생성하지 않음 → 백그라운드 워커로 이전
-    deactivate 필드 → _deactivate_by_sentence_ids (선택, 사용자가 취소한 과거 기록 표시)
+    deactivate / pending 필드 → sentences.status UPDATE
+      · deactivate → status='inactive' (BFS 에서 배제)
+      · pending    → status='pending' (BFS 에서 배제 + /review 에서 사용자 확인 대기)
+      · 삭제 아님 — 영구 보관 유지
   ↓
   unresolved_tokens INSERT (치환 실패 토큰 — 유일한 승인 대기 테이블)
   ↓

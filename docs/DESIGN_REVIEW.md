@@ -110,6 +110,24 @@ def suspected_typos() -> list[Suggestion]:
 - "다르지만 관련" → `type=category` (양 노드에 공통 사용자 정의 카테고리 INSERT, origin='user')
 - "다름" → 무시 (이 쌍을 다음 번 도출에서 제외하는 상태는 별도 필요 시 추가)
 
+### sentence_status — extract-state 자동 판정 검수
+
+```python
+def pending_sentences(limit: int) -> list[Suggestion]:
+    # sentences.status='pending' — extract-state 가 "애매" 로 판단한 문장
+    # 옵션: "유효 (active 복귀)", "무효 (inactive 로 확정)"
+
+def recent_deactivated(days: int, limit: int) -> list[Suggestion]:
+    # 최근 N일 내 status='inactive' 로 자동 비활성화된 문장
+    # 옵션: "유지 (inactive)", "되돌리기 (active 복귀)"
+```
+
+AI 가 저장 시점에 `inactive` / `pending` 으로 태그한 결과를 사용자가 확정·되돌림. 삭제되지 않으므로 되돌리기 언제든 가능. 잘못된 자동 판정도 `/review` 에서 고칠 수 있다는 전제 하에 저장 시점에는 `inactive` 가 무조건 반영된다.
+
+승인 흐름: `POST /review/apply kind=sentence_status` payload `{sentence_id, new_status: 'active'|'inactive'}`.
+
+---
+
 ### stale_nodes(days) — 노드 생존 (아카이브 승인)
 
 ```python
