@@ -23,7 +23,6 @@ TASKS = [
     "retrieve-filter",
     "retrieve-expand",
     "security-context",
-    "security-access",
     "save-pronoun",
     "save-subject-org",
     "extract-state",
@@ -202,7 +201,8 @@ def run(n_per_task: int, verbose: bool) -> None:
                 {"role": "user", "content": user},
             ]
             prompt = tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
+                messages, tokenize=False, add_generation_prompt=True,
+                enable_thinking=False,
             )
             kwargs: dict[str, Any] = {"max_tokens": 2048, "verbose": False}
             if sampler is not None:
@@ -214,8 +214,12 @@ def run(n_per_task: int, verbose: bool) -> None:
                 full_correct += 1
             mark = "✓" if s >= 0.999 else ("△" if s > 0 else "✗")
             if verbose:
-                snippet = strip_thinking(out)[:80].replace("\n", " ")
-                print(f"  [{i:2d}/{total}] {mark} s={s:.2f} | exp={str(expected)[:40]} | got={snippet}")
+                raw_snippet = out[:400].replace("\n", " ⏎ ")
+                stripped = strip_thinking(out)[:200].replace("\n", " ⏎ ")
+                print(f"  [{i:2d}/{total}] {mark} s={s:.2f}")
+                print(f"       exp    = {str(expected)[:120]}")
+                print(f"       raw    = {raw_snippet}")
+                print(f"       strip  = {stripped}")
             else:
                 print(f"  [{i:2d}/{total}] {mark} s={s:.2f}")
         elapsed = time.time() - t_task

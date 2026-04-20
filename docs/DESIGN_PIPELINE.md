@@ -87,11 +87,12 @@ heading 경로(`더나은.개발팀`)가 사용자 명시 카테고리 경로가
   ↓
   sentences INSERT (정규화된 effective_text, role='user', post_id, position)
   ↓
-  [synapse/extract]  temperature=0, max_tokens=32768
-    입력: 정규화된 텍스트 + "알려진 사실:" (인출 원본 문장들, 있을 때)
-    출력: {nodes, deactivate}  ← v15 축소 (categories·aliases 폐기, 백그라운드 워커로 이전)
+  [extract — 베이스 모델 + docs/EXTRACT_SYSTEMPROMPT.md]  temperature=0, max_tokens=2048
+    입력: 정규화된 텍스트
+    출력: {nodes}  ← v15 축소 (categories·aliases 폐기 → 백그라운드 워커)
+    deactivate 탐지는 후속 [synapse/extract-state] 어댑터가 담당
     의미 관계(cause/avoid/similar)는 추출하지 않음 — sentence 원문에 이미 있음
-    전처리: ()[] 공백 치환 (2B 모델 반복 루프 방지)
+    전처리: ()[] 공백 치환 (반복 루프 방지)
   ↓
   [규칙 — 부정부사 후처리]
     문장 내 '안'·'못'을 감지해 노드 추출 결과에 추가 (노드 자체는 일반 노드와 동일 처리)
@@ -390,37 +391,57 @@ DB 경량화가 필요한 시점에 별도 정책 재설계 예정. 후보: `las
 - 컨텍스트 윈도우: 양자화 32K / 원본 128K
 
 ```
-앱 → HTTP → MLX 서버 (localhost:8765) → gemma4:e2b (태스크별 어댑터)
+앱 → HTTP → MLX 서버 (localhost:8765) → gemma-4-E2B-it (베이스 모델 ± 태스크 어댑터)
 ```
 
 ---
 
-## 어댑터 구성
+## Gemma 4 thinking 모드 OFF (전역 설정)
 
-| 엔드포인트 (model) | 태스크 | 상태 |
-|--------------------|--------|------|
-| `synapse/retrieve-filter` | 인출 관련성 판단 (pass/reject). 입력 단위는 sentence | 재학습 예정 |
-| `synapse/retrieve-expand` | 질문 → 노드 후보 키워드 확장 | 완료 |
-| `synapse/save-pronoun` | 지시어·시간부사·부정부사 치환. `tokens` + `unresolved` 분리 반환 | 재학습 예정 |
-| `synapse/extract` | **{nodes, deactivate}만** (v15 축소: categories·aliases는 백그라운드 워커로 이전) | **재학습 필요 — v15 스키마** |
-| `synapse/structure-suggest` | 평문 → 마크다운 구조화 초안 | 초기 base 모델 |
-| `synapse/chat` | 응답 생성 (답변 컨텍스트는 인출 sentences 원문) | 베이스 모델 |
+모든 LLM 호출은 `tokenizer.apply_chat_template(..., enable_thinking=False)` 로 thinking 블록을 차단한다.
 
-> v15 재학습 시 extract 출력은 `{nodes, categories, aliases, deactivate}`. 의미 엣지(cause/avoid/similar)는 더 이상 추출하지 않는다 — sentence 원문에 이미 있고 외부 지능체가 해석한다.
+- **이유**: 학습 데이터 system 메시지에 `<|think|>` 토큰이 없어 thinking 없이 학습됐고, ON 상태에서는 추론 시간 10배 + 한 단어 출력 태스크에서 오답률 급증. 2026-04-20 실측 — 동일 골드셋에서 thinking ON: routing 0% / retrieve-filter 13% / save-pronoun 0% → OFF: routing 70% / retrieve-filter 96.7% / save-pronoun 63.3%.
+- **적용 위치**: `api/mlx_server.py` 의 `apply_chat_template` 호출, `scripts/mlx/eval_*.py`.
+- **주의**: Gemma 4 4bit (E2B/E4B) 변종은 OFF 설정 시 빈 thought 블록도 출력하지 않음 (공식 문서 확인).
+
+---
+
+## 태스크 처리 방식
+
+베이스 모델 + 시스템 프롬프트로 충분한 태스크는 어댑터 폐기. 규칙 추출·패턴 매칭이 필수적인 태스크만 파인튜닝 유지.
+
+| 태스크 | 처리 방식 | 프롬프트 파일 / 어댑터 경로 |
+|--------|-----------|------|
+| routing | 베이스 모델 | `docs/ROUTING_SYSTEMPROMPT.md` |
+| retrieve-filter | 베이스 모델 | `docs/RETRIEVE_FILTER_SYSTEMPROMPT.md` |
+| retrieve-expand | 어댑터 | `synapse/retrieve-expand` |
+| retrieve-expand-org | 어댑터 | `synapse/retrieve-expand-org` |
+| save-pronoun | 베이스 모델 | `docs/SAVE_PRONOUN_SYSTEMPROMPT.md` |
+| save-subject-org | 어댑터 | `synapse/save-subject-org` |
+| extract (노드 추출) | 베이스 모델 | `docs/EXTRACT_SYSTEMPROMPT.md` |
+| extract-state (deactivate) | 어댑터 | `synapse/extract-state` |
+| category (백그라운드) | 베이스 모델 | `docs/CATEGORY_SYSTEMPROMPT.md` |
+| security-context | 베이스 모델 | (개인 민감정보 노출 여부 판단) |
+| security-access / security-org / security-personal | **폐기** | 백엔드 권한 체계로 대체 (`archive/finetune/tasks/` 이동) |
+| chat (응답 생성) | 베이스 모델 | — |
+
+시스템 프롬프트 파일 로더는 `engine/prompts.py`.
 
 ---
 
 ## LLM 설정값
 
-| 단계 | 어댑터 | temperature | max_tokens |
-|------|--------|-------------|------------|
-| 전처리 치환 | synapse/save-pronoun | 0 | 256 |
-| 노드/deactivate 추출 | synapse/extract | 0 | 32768 |
-| 평문 → 마크다운 구조 제안 | synapse/structure-suggest | 0 | 1024 |
+| 단계 | 처리 방식 | temperature | max_tokens |
+|------|-----------|-------------|------------|
+| 라우팅 | 베이스 + ROUTING_SYSTEMPROMPT.md | 0 | 32 |
+| 전처리 치환 | 베이스 + SAVE_PRONOUN_SYSTEMPROMPT.md | 0 | 256 |
+| 노드 추출 | 베이스 + EXTRACT_SYSTEMPROMPT.md | 0 | 2048 |
+| 모순 탐지 | synapse/extract-state | 0 | 256 |
+| 카테고리 분류 (백그라운드) | 베이스 + CATEGORY_SYSTEMPROMPT.md | 0 | 512 |
 | 인출 확장 | synapse/retrieve-expand | 0 | 256 |
-| 인출 필터 | synapse/retrieve-filter | 0 | 8 |
-| /review `suspected_typos` 관계 옵션 | synapse/chat (base) | 0 | 256 |
-| 응답 생성 | synapse/chat (base) | 0.3 | 4096 |
+| 인출 필터 | 베이스 + RETRIEVE_FILTER_SYSTEMPROMPT.md | 0 | 8 |
+| 민감정보 확인 | 베이스 모델 | 0 | 512 |
+| 응답 생성 | 베이스 모델 (chat) | 0.3 | 4096 |
 
 ---
 

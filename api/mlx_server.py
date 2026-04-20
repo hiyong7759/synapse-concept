@@ -118,8 +118,11 @@ async def chat(req: ChatRequest):
             raise HTTPException(404, str(e))
 
     messages = [{"role": m.role, "content": m.content} for m in req.messages]
+    # Gemma 4 thinking 모드 OFF — 학습 데이터 system 메시지에 <|think|> 없음.
+    # ON 상태면 추론 시간 10배 + 한 단어 출력 태스크에서 오답률 급증 (2026-04-20 실측).
     prompt = state.tokenizer.apply_chat_template(
-        messages, add_generation_prompt=True, tokenize=False
+        messages, add_generation_prompt=True, tokenize=False,
+        enable_thinking=False,
     )
 
     t0 = time.time()
