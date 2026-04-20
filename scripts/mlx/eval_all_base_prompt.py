@@ -28,8 +28,6 @@ TASKS = [
     "save-subject-org",
     "extract-state",
     "retrieve-expand-org",
-    "security-org",
-    "security-personal",
 ]
 
 

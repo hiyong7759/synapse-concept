@@ -43,10 +43,7 @@ TASKS = [
     "save-state-personal",
     "save-state-org",
     "save-subject-org",
-    "security-access",
     "security-context",
-    "security-org",
-    "security-personal",
 ]
 
 # ── 모델 상태 ──────────────────────────────────────────────
