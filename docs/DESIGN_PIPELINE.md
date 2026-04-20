@@ -67,12 +67,10 @@ heading 경로(`더나은.개발팀`)가 사용자 명시 카테고리 경로가
   ↓
 각 (heading 경로, 항목)마다:
   ↓
-  [_preprocess — save-pronoun, 베이스 모델]  temperature=0
+  [_preprocess — save-pronoun, 베이스 모델]  temperature=0, max_tokens=256
+    프롬프트: docs/SAVE_PRONOUN_SYSTEMPROMPT.md
     세션리스 — 직전 대화 context 주입 없음
-    인칭대명사(나/내/저/제)는 치환하지 않음
-    치환 가능한 부분만 tokens[{name}]로 담아 반환
-    치환할 수 없는 지시어/부사는 원문에 그대로 남김 (LLM이 따로 표기하지 않음)
-    저장 자체가 불가능한 완전 모호 케이스만 {"question": "..."} 반환 → 저장 중단
+    모호 케이스(`{"question": "..."}` 반환) → 저장 중단
   ↓
   [규칙 — unresolved 감지]  LLM 출력의 text를 받아
     지시대명사/지시부사/시간 모호 부사/장소부사 사전 정규식으로 스캔
@@ -86,12 +84,10 @@ heading 경로(`더나은.개발팀`)가 사용자 명시 카테고리 경로가
   ↓
   sentences INSERT (정규화된 effective_text, role='user', post_id, position)
   ↓
-  [extract — 베이스 모델 + docs/EXTRACT_SYSTEMPROMPT.md]  temperature=0, max_tokens=2048
-    입력: 정규화된 텍스트
-    출력: {nodes}  ← v15 축소 (categories·aliases 폐기 → 백그라운드 워커)
-    deactivate 탐지는 후속 [synapse/extract-state] 어댑터가 담당
-    의미 관계(cause/avoid/similar)는 추출하지 않음 — sentence 원문에 이미 있음
-    전처리: ()[] 공백 치환 (반복 루프 방지)
+  [extract — 베이스 모델]  temperature=0, max_tokens=2048
+    프롬프트: docs/EXTRACT_SYSTEMPROMPT.md
+    엔진 전처리: ()[] 공백 치환 (반복 루프 방지)
+    후속 deactivate 탐지는 [synapse/extract-state] 어댑터가 담당
   ↓
   [규칙 — 부정부사 후처리]
     문장 내 '안'·'못'을 감지해 노드 추출 결과에 추가 (노드 자체는 일반 노드와 동일 처리)
