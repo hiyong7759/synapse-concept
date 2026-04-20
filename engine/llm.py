@@ -201,11 +201,14 @@ def llm_extract(text: str, context_sentences: Optional[list[tuple[int, str]]] = 
 
     베이스 모델 전환 (2026-04-20):
     - extract: 노드 추출만 담당 (EXTRACT_SYSTEMPROMPT.md, 94.4%)
-    - extract-state: deactivate만 담당 (별도 어댑터)
+    - extract-state: deactivate/pending 3분류 담당 (PLAN-002 Phase 2)
     - 카테고리·별칭은 백그라운드 워커 (engine/workers.py)
 
-    context_sentences: retrieve에서 가져온 (sentence_id, text) 쌍. deactivate 판단용.
-    반환: {"nodes": [{"name": str}, ...], "deactivate": [sentence_id, ...]}
+    context_sentences: retrieve에서 가져온 (sentence_id, text) 쌍. 상태변경 판단용.
+    반환: {"nodes": [{"name": str}, ...],
+          "deactivate": [sentence_id, ...],
+          "pending":    [sentence_id, ...]}
+    pending 은 선택(모델이 안 내도 []). 이진 fallback 시 자연 호환.
     """
     try:
         # 노드 추출 (베이스 모델 + 시스템 프롬프트)
@@ -220,8 +223,9 @@ def llm_extract(text: str, context_sentences: Optional[list[tuple[int, str]]] = 
                 elif isinstance(n, str):
                     nodes.append({"name": n})
 
-        # 상태변경 탐지 (extract-state 어댑터)
+        # 상태변경 3분류 (extract-state 베이스 모델)
         deactivate: list[int] = []
+        pending: list[int] = []
         if context_sentences:
             ctx = "\n".join(f"- [{sid}] {s}" for sid, s in context_sentences)
             state_input = f"{text}\n알려진 사실:\n{ctx}"
@@ -231,12 +235,13 @@ def llm_extract(text: str, context_sentences: Optional[list[tuple[int, str]]] = 
                 if state_match:
                     state_result = json.loads(state_match.group())
                     deactivate = [s for s in state_result.get("deactivate", []) if isinstance(s, int)]
+                    pending    = [s for s in state_result.get("pending", [])    if isinstance(s, int)]
             except Exception:
                 pass
 
-        return {"nodes": nodes, "deactivate": deactivate}
+        return {"nodes": nodes, "deactivate": deactivate, "pending": pending}
     except Exception:
-        return {"nodes": [], "deactivate": []}
+        return {"nodes": [], "deactivate": [], "pending": []}
 
 
 # 하위 호환을 위한 별칭
