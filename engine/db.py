@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS sentences (
     position        INTEGER NOT NULL DEFAULT 0,
     text            TEXT    NOT NULL,
     role            TEXT    NOT NULL DEFAULT 'user' CHECK(role IN ('user', 'assistant')),
+    status          TEXT    NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'pending')),
     created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -82,6 +83,7 @@ CREATE TABLE IF NOT EXISTS unresolved_tokens (
 
 CREATE INDEX IF NOT EXISTS idx_sentences_role       ON sentences(role);
 CREATE INDEX IF NOT EXISTS idx_sentences_post       ON sentences(post_id, position);
+CREATE INDEX IF NOT EXISTS idx_sentences_status     ON sentences(status);
 CREATE INDEX IF NOT EXISTS idx_nodes_name           ON nodes(name);
 CREATE INDEX IF NOT EXISTS idx_nodes_status         ON nodes(status);
 CREATE INDEX IF NOT EXISTS idx_mentions_node        ON node_mentions(node_id);
@@ -143,6 +145,9 @@ def _is_current_schema(conn: sqlite3.Connection) -> bool:
     if not _check_allows_external(conn, "node_categories"):
         return False
     if not _check_allows_external(conn, "aliases"):
+        return False
+    # PLAN-002 Phase 1: sentences.status 컬럼 필요 (active|inactive|pending)
+    if "status" not in sent_cols:
         return False
     return True
 
@@ -237,6 +242,32 @@ def _migrate_check_to_external(db_path: str) -> None:
         conn.close()
 
 
+def _can_add_sentences_status(conn: sqlite3.Connection) -> bool:
+    """sentences 에 status 컬럼이 없고 기존 스키마는 v15-A2 이상인지 확인."""
+    tables = _get_tables(conn)
+    if "edges" in tables or "sentences" not in tables:
+        return False
+    return "status" not in _get_cols(conn, "sentences")
+
+
+def _migrate_add_sentences_status(db_path: str) -> None:
+    """sentences.status 컬럼 추가 + 인덱스. 기존 레코드는 DEFAULT 'active'."""
+    backup = _backup_db(db_path)
+    print(f"[db] PLAN-002: sentences.status 컬럼 추가 마이그레이션. 백업={backup}")
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "ALTER TABLE sentences ADD COLUMN status TEXT NOT NULL DEFAULT 'active' "
+            "CHECK(status IN ('active', 'inactive', 'pending'))"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sentences_status ON sentences(status)"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def _backup_db(db_path: str) -> str:
     """DB 파일을 타임스탬프 붙여 복사."""
     timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -305,6 +336,12 @@ def init_db(db_path: str = DB_PATH) -> str:
                 conn = None
                 _migrate_check_to_external(db_path)
                 conn = sqlite3.connect(db_path)
+            # PLAN-002: sentences.status 컬럼 추가 (기존 레코드 전부 active)
+            if conn is not None and _can_add_sentences_status(conn):
+                conn.close()
+                conn = None
+                _migrate_add_sentences_status(db_path)
+                conn = sqlite3.connect(db_path)
             # 그래도 v15 스키마가 아니면 구형 DB로 판정 → 백업 후 재생성
             if not _is_current_schema(conn):
                 conn.close()
@@ -349,6 +386,9 @@ def get_stats(db_path: str = DB_PATH) -> dict:
         sentences_total   = conn.execute("SELECT COUNT(*) FROM sentences").fetchone()[0]
         sentences_user    = conn.execute("SELECT COUNT(*) FROM sentences WHERE role='user'").fetchone()[0]
         sentences_asst    = conn.execute("SELECT COUNT(*) FROM sentences WHERE role='assistant'").fetchone()[0]
+        sentences_active  = conn.execute("SELECT COUNT(*) FROM sentences WHERE status='active'").fetchone()[0]
+        sentences_pending = conn.execute("SELECT COUNT(*) FROM sentences WHERE status='pending'").fetchone()[0]
+        sentences_inactive= conn.execute("SELECT COUNT(*) FROM sentences WHERE status='inactive'").fetchone()[0]
         unresolved_total  = conn.execute("SELECT COUNT(*) FROM unresolved_tokens").fetchone()[0]
     finally:
         conn.close()
@@ -362,6 +402,9 @@ def get_stats(db_path: str = DB_PATH) -> dict:
         "sentences_total":      sentences_total,
         "sentences_user":       sentences_user,
         "sentences_assistant":  sentences_asst,
+        "sentences_active":     sentences_active,
+        "sentences_pending":    sentences_pending,
+        "sentences_inactive":   sentences_inactive,
         "unresolved_total":     unresolved_total,
     }
 
