@@ -30,11 +30,21 @@ TASKS = [
 
 
 def strip_thinking(out: str) -> str:
-    """Gemma 4 thinking 블록 제거 — 마지막 채널 메시지만 남긴다."""
-    if "<|channel>final" in out:
+    """Gemma 4 thinking 블록 제거 — 마지막 채널 구분자 뒤 텍스트만 남긴다.
+
+    Gemma 4 출력 형태:
+      <|channel>thought ... <channel|>{실제 응답}
+      <|channel>thought ... <|channel>final<|message|>{실제 응답}
+    두 패턴 모두 처리한다.
+    """
+    # 패턴 1: <channel|> 뒤 (가장 일반적)
+    if "<channel|>" in out:
+        out = out.rsplit("<channel|>", 1)[-1]
+    # 패턴 2: <|channel>final ... <|message|> 뒤
+    elif "<|channel>final" in out:
         out = out.split("<|channel>final", 1)[-1]
-    if "<|message|>" in out:
-        out = out.split("<|message|>", 1)[-1]
+        if "<|message|>" in out:
+            out = out.split("<|message|>", 1)[-1]
     return out.strip()
 
 
@@ -160,7 +170,7 @@ def run(n_per_task: int, verbose: bool) -> None:
             prompt = tokenizer.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True
             )
-            kwargs: dict[str, Any] = {"max_tokens": 512, "verbose": False}
+            kwargs: dict[str, Any] = {"max_tokens": 2048, "verbose": False}
             if sampler is not None:
                 kwargs["sampler"] = sampler
             out = generate(model, tokenizer, prompt=prompt, **kwargs)
