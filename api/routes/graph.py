@@ -600,6 +600,23 @@ def review_apply(req: ReviewApplyRequest):
             conn.commit()
             return {"ok": True, "deleted": cur.rowcount}
 
+        if t == "sentence_status":
+            # PLAN-002 Phase 3: pending/recent_deactivated 섹션의 사용자 확정 액션.
+            # new_status 는 active/inactive/pending 중 하나 (자동 판정 되돌리기 포함).
+            sentence_id = p.get("sentence_id")
+            new_status = (p.get("new_status") or "").strip()
+            if sentence_id is None or new_status not in ("active", "inactive", "pending"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="sentence_id/new_status(active|inactive|pending) 필요",
+                )
+            cur = conn.execute(
+                "UPDATE sentences SET status=?, updated_at=datetime('now') WHERE id=?",
+                (new_status, sentence_id),
+            )
+            conn.commit()
+            return {"ok": True, "updated": cur.rowcount, "new_status": new_status}
+
         if t == "token_dismiss":
             sentence_id = p.get("sentence_id")
             token = (p.get("token") or "").strip()
