@@ -35,15 +35,13 @@ PORT = int(os.getenv("SYNAPSE_PORT", "8765"))
 TASKS = [
     "extract",
     "extract-state",
-    "retrieve-filter",
     "retrieve-expand",
     "retrieve-expand-org",
-    "routing",
     "save-pronoun",
     "save-state-personal",
     "save-state-org",
     "save-subject-org",
-    "security-context",
+    # 베이스 모델 전환 완료 (어댑터 불필요): routing, retrieve-filter, security-context
 ]
 
 # ── 모델 상태 ──────────────────────────────────────────────

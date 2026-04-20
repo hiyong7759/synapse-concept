@@ -94,24 +94,28 @@ def _mlx_post(model: str, messages: list[dict], max_tokens: int, temperature: fl
         ) from e
 
 
+# 베이스 모델 + 시스템 프롬프트로 전환 완료된 태스크 (어댑터 불필요)
+_BASE_MODEL_TASKS = {"routing", "retrieve-filter", "security-context"}
+
+
 def mlx_chat(task: str, user: str, max_tokens: int = 32768) -> str:
     """MLX 서버에 태스크별 추론 요청. 응답 텍스트 반환.
 
     task: _MLX_SYSTEM 키 (예: "retrieve-filter", "save-pronoun")
 
-    어댑터 미학습 환경 fallback: 어댑터 404 시 base 모델(synapse/chat)에
-    동일한 system prompt + user 메시지로 재시도. 정확도는 어댑터보다 떨어지지만
-    빈 결과 대신 base 모델이 system prompt 따라 답변하게 됨.
+    _BASE_MODEL_TASKS 에 등록된 태스크는 베이스 모델(synapse/chat)로 직접 호출.
+    나머지는 어댑터(synapse/{task}) 시도 후 404 시 베이스 모델로 fallback.
     """
     system = _MLX_SYSTEM.get(task, "")
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": user},
     ]
+    if task in _BASE_MODEL_TASKS:
+        return _mlx_post("synapse/chat", messages, max_tokens)
     try:
         return _mlx_post(f"synapse/{task}", messages, max_tokens)
     except LLMError as e:
-        # 어댑터 파일이 디스크에 없으면 mlx_server가 404 반환
         if "404" in str(e):
             return _mlx_post("synapse/chat", messages, max_tokens)
         raise
