@@ -12,78 +12,13 @@ import urllib.request
 import urllib.error
 from typing import Optional
 
+from .prompts import load_prompt
+
 MLX_BASE = os.getenv("SYNAPSE_MLX_BASE", "http://127.0.0.1:8765")
 
 
 class LLMError(RuntimeError):
     pass
-
-
-# ── MLX 태스크별 시스템 프롬프트 ───────────────────────────
-_MLX_SYSTEM: dict[str, str] = {
-    "retrieve-filter": (
-        "당신은 지식 그래프 인출 필터입니다. 질문과 문장을 보고, 이 문장이 질문과 관련 있는지 판단하세요. "
-        "불확실하면 pass로 판단하세요 (제외보다 포함이 안전). 출력: pass 또는 reject (한 단어만)"
-    ),
-    "retrieve-expand": (
-        "당신은 지식 그래프 검색 엔진입니다. 질문을 보고 그래프에서 검색해야 할 관련 노드 후보를 생성하세요. "
-        '형태소 단위로 쪼개진 노드 이름으로 나열하세요. 출력 형식: ["노드1", "노드2", ...]'
-    ),
-    "save-pronoun": (
-        "당신은 지식 그래프 저장 엔진입니다. 텍스트에서 지시대명사와 부사를 구체적인 값으로 치환하세요.\n"
-        "인칭대명사(나/내/저/제)는 치환하지 마세요.\n"
-        "주어/목적어/장소가 생략되었으면 같은 게시물의 다른 문장을 참고하여 복원하세요.\n"
-        "맥락이 제공되면 활용하세요.\n\n"
-        "날짜 치환 규칙:\n"
-        '- "날짜:" 값이 제공되면 그것이 오늘이다.\n'
-        "- 오늘/어제/내일/모레/그저께/이번 주/지난주/다음 주/이번 달/지난달 등을 날짜 기준으로 계산하여 YYYY-MM-DD로 치환.\n"
-        "- 요일(월~일)은 해당 주의 날짜로 변환. '지난 주 월요일'이면 직전 월요일 날짜.\n\n"
-        "주어 불명확 규칙:\n"
-        '- 주어가 완전히 생략되어 누가/무엇이 불분명하면 {"question": "확인 질문"}을 반환.\n'
-        '- 예: "했대" → {"question": "누가 무엇을 했나요?"}\n\n'
-        "치환 불가능한 지시어는 그대로 두고 unresolved 배열에 원형을 담으세요.\n"
-        '출력 형식: {"text": "치환된 텍스트", "tokens": [{...}], "unresolved": [...]}\n'
-        '또는 주어 불명확 시: {"question": "확인 질문"}'
-    ),
-    "extract": (
-        "너는 형태소 분석기다.\n"
-        "한국어 문장에서 노드를 추출하라.\n\n"
-        "노드 원칙:\n"
-        "- 노드는 원자. 하나의 개념 = 하나의 노드.\n"
-        "- 품사 무관 (명사·동사·형용사·부정부사 모두 가능)\n"
-        "- 조사·어미 제거 (예: \"허리디스크를\" → \"허리디스크\")\n"
-        "- 1인칭 명시 시 반드시 \"나\"로 통일 (내/저/제도 \"나\"로)\n"
-        "- 부정부사(안, 못)는 독립 노드\n"
-        "- 법인 접두어(㈜, (주)) 포함 통째로 유지 (예: \"㈜한솔\" → \"㈜한솔\", 분리 금지)\n"
-        "- 영문·숫자 포함 고유명사는 분리 금지 (예: \"A프로젝트\", \"L4-L5\", \"갤럭시 S25 울트라\")\n\n"
-        '출력: {"nodes": ["노드1", "노드2", ...]}\n'
-        "JSON 한 줄만 출력. 설명·주석 금지.\n\n"
-        "예시:\n"
-        "입력: 어제 김치찌개 먹었어\n"
-        '출력: {"nodes":["김치찌개","먹"]}\n\n'
-        "입력: 스타벅스 안 좋아\n"
-        '출력: {"nodes":["스타벅스","안","좋"]}\n\n'
-        "입력: 나 허리디스크 L4-L5 진단받았어\n"
-        '출력: {"nodes":["나","허리디스크","L4-L5","진단받"]}\n\n'
-        "입력: 내 맥북 고장났어\n"
-        '출력: {"nodes":["나","맥북","고장나"]}\n\n'
-        "입력: ㈜한솔이랑 B프로젝트 계약 체결했어\n"
-        '출력: {"nodes":["㈜한솔","B프로젝트","계약","체결"]}\n\n'
-        "입력: 안녕 잘 지내?\n"
-        '출력: {"nodes":[]}'
-    ),
-    "extract-state": (
-        "알려진 사실 목록에서 현재 입력으로 인해 더 이상 유효하지 않은 문장을 찾아 sentence_id를 반환하라.\n"
-        "JSON만 출력. 다른 텍스트 금지.\n\n"
-        "출력 형식:\n"
-        '{"deactivate":[sentence_id, ...]}\n\n'
-        "규칙:\n"
-        "- 각 알려진 사실에는 [번호]가 붙어 있다.\n"
-        "- 현재 입력이 기존 사실을 무효화하면 해당 번호를 deactivate에 포함.\n"
-        "- 무효화할 사실이 없으면 {\"deactivate\":[]}.\n"
-        "- 무효화 판단 기준: 동일 주체의 상태/소속/위치/습관 등이 바뀐 경우.\n"
-    ),
-}
 
 
 def _mlx_post(model: str, messages: list[dict], max_tokens: int, temperature: float = 0.0) -> str:
@@ -119,12 +54,12 @@ _BASE_MODEL_TASKS = {"routing", "retrieve-filter", "security-context", "save-pro
 def mlx_chat(task: str, user: str, max_tokens: int = 32768) -> str:
     """MLX 서버에 태스크별 추론 요청. 응답 텍스트 반환.
 
-    task: _MLX_SYSTEM 키 (예: "retrieve-filter", "save-pronoun")
+    task: docs/{TASK}_SYSTEMPROMPT.md 파일명 키 (예: "retrieve-filter", "save-pronoun")
 
     _BASE_MODEL_TASKS 에 등록된 태스크는 베이스 모델(synapse/chat)로 직접 호출.
     나머지는 어댑터(synapse/{task}) 시도 후 404 시 베이스 모델로 fallback.
     """
-    system = _MLX_SYSTEM.get(task, "")
+    system = load_prompt(task)
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": user},

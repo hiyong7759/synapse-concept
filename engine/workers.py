@@ -27,7 +27,7 @@ WIKIDATA_UA = os.getenv(
     "SYNAPSE_WIKIDATA_UA",
     "synapse/0.1 (https://github.com/hiyong; hiyong@deonaeun.com)",
 )
-_CATEGORY_PROMPT_PATH = os.path.join(os.path.dirname(__file__), "..", "docs", "CATEGORY_SYSTEMPROMPT.md")
+from .prompts import load_prompt
 
 
 def _node_name(db_path: str, node_id: int) -> Optional[str]:
@@ -57,10 +57,8 @@ def _recent_sentences(db_path: str, node_id: int, limit: int = 5) -> list[str]:
 def _default_category_llm(node_name: str, sentences: list[str]) -> list[str]:
     """베이스 모델 + CATEGORY_SYSTEMPROMPT.md 로 분류."""
     from .llm import chat
-    try:
-        with open(_CATEGORY_PROMPT_PATH, encoding="utf-8") as f:
-            system = f.read()
-    except FileNotFoundError:
+    system = load_prompt("category")
+    if not system:
         return []
     user = f"노드: {node_name}\n최근 문장:\n" + "\n".join(f"- {s}" for s in sentences)
     try:
