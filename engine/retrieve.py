@@ -23,6 +23,7 @@ from .llm import (
     chat, SYSTEM_CHAT, LLMError,
     retrieve_expand, retrieve_filter_sentence,
 )
+from .tokenizer import extract_for_retrieve as kiwi_extract_for_retrieve
 
 
 @dataclass
@@ -353,12 +354,18 @@ def retrieve(
 
     conn = get_connection(db_path)
     try:
-        # 1. 키워드 확장
+        # 1. 키워드 확장 — retrieve-expand(LLM) ∪ question.split() ∪ Kiwi 형태소
+        #    Kiwi 는 LLM 사용 여부와 무관하게 항상 실행: 조사·어미가 붙은 질문에서
+        #    명사·용언 lemma 를 분리해 재현율을 높인다. 어댑터 실패·비활성 시 폴백 역할.
         if use_llm:
             keywords = _llm_expand_keywords(question)
         else:
-            keywords = question.split()
-        keywords = list(dict.fromkeys(keywords + question.split()))
+            keywords = []
+        try:
+            kiwi_kws = kiwi_extract_for_retrieve(question)
+        except Exception:
+            kiwi_kws = []
+        keywords = list(dict.fromkeys(keywords + question.split() + kiwi_kws))
 
         start_nodes = _match_start_nodes(conn, keywords, question=question)
         if not start_nodes:
