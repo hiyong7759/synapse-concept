@@ -91,14 +91,16 @@ Gemma 4 E2B-it + `enable_thinking=False` + 학습 데이터 system 메시지를 
 
 | 태스크 | 처리 방식 | 용도 |
 |--------|-----------|------|
-| extract | 베이스 + `docs/EXTRACT_SYSTEMPROMPT.md` | 문장 → 노드 추출 |
+| filter-meta | 베이스 + `docs/META_FILTER_SYSTEMPROMPT.md` | 게시물 단위 메타 대화 idx 판정 (v17 신설) |
+| save-pronoun | 베이스 + `docs/SAVE_PRONOUN_SYSTEMPROMPT.md` | 지시어·시간부사·주어 치환 |
 | extract-state | 베이스 + `docs/EXTRACT_STATE_SYSTEMPROMPT.md` | 현재 발화가 무효화하는 기존 사실 탐지 |
 | retrieve-filter | 베이스 + `docs/RETRIEVE_FILTER_SYSTEMPROMPT.md` | 인출된 문장의 질문 관련성 |
 | retrieve-expand | 파인튜닝 어댑터 | 질문 → BFS 탐색 노드 후보 |
 | retrieve-expand-org | 파인튜닝 어댑터 | retrieve-expand 조직 버전 |
-| save-pronoun | 베이스 + `docs/SAVE_PRONOUN_SYSTEMPROMPT.md` | 지시어·시간부사·주어 치환 |
 | security-context | 베이스 + 자체 프롬프트 | 인출 컨텍스트 민감정보 노출 여부 |
 | category (백그라운드 워커) | 베이스 + `docs/CATEGORY_SYSTEMPROMPT.md` | 노드 카테고리 자동 분류 |
+
+v17 폐기: `extract`, `extract-merge`, `structure-suggest` — Kiwi 단독이 저장 기본 경로. 파인튜닝 어댑터 재학습 필요 시 Kiwi-first 포맷 기준으로 재레이블링 (PLAN-1 범위 외, 후속 작업).
 
 **파인튜닝 어댑터 2종**: `retrieve-expand`, `retrieve-expand-org`.
 

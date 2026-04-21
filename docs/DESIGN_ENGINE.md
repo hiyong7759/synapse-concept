@@ -370,9 +370,10 @@ EngineConfig(
 | 기능 | 원본 | 포팅 | gabjil |
 |------|------|------|--------|
 | 하이퍼그래프 저장 (nodes/node_mentions/node_categories/aliases/sentences/unresolved_tokens) | db.py, save.py | db.dart, save.dart | ★★★ |
-| extract 어댑터 (v15: edges 출력 필드 제거, nodes/categories/aliases만) | llm.py extract | inference.dart | ★★★ |
+| Kiwi 형태소 분석 (v17: 저장 기본 경로 — 서버 kiwipiepy, 모바일 kiwi-nlp) | tokenizer.py | tokenizer.dart | ★★★ |
 | save-pronoun 어댑터 (tokens + unresolved 분리 반환) | llm.py save-pronoun | inference.dart | ★★★ |
-| structure-suggest 어댑터 (평문 → 마크다운 초안) | llm.py | inference.dart | ★★ |
+| filter-meta (v17: 메타 대화 사전필터 + LLM 배치) | llm.py filter-meta | inference.dart | ★★ |
+| extract-state (현재 발화 ↔ 기존 사실 상태 전이) | llm.py extract-state | inference.dart | ★★ |
 | BFS 인출 (node_mentions JOIN + node_categories 공유 + 인접 맵) + retrieve-filter | retrieve.py | retrieve.dart | ★★★ |
 | retrieve-expand | retrieve.py | retrieve.dart | ★★★ |
 | 부정부사 규칙 감지(노드화, 엣지 아님) | save.py | save.dart 내 규칙 | ★★★ |
