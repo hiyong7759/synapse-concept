@@ -1,10 +1,15 @@
-"""Synapse DB — SQLite v15 스키마.
+"""Synapse DB — SQLite v17 스키마.
 
-v15 변경점:
+v17 변경점 (2026-04-22):
+- node_categories / aliases origin CHECK 제약 `'rule'` → `'system'` 으로 리네이밍.
+  출처는 데이터 생성 '주체'이며 규칙은 수단이기 때문 (엔진이 주체 = 'system').
+- 허용값: ('user', 'ai', 'system', 'external').
+- 구 스키마(v15-A2 등) → v17 자동 마이그레이션 없음. DB 파일 자동 백업 후 재생성.
+
+v15 변경점 (참고):
 - edges 테이블 폐기. 노드 간 연결은 node_mentions(문장 바구니) + node_categories(카테고리 바구니)
   + aliases(별칭 바구니) 세 종류의 하이퍼엣지로만 표현.
 - 의미 관계(cause/avoid/similar)는 sentences.text 원문에 이미 담겨 있고, 해석은 외부 지능체 몫.
-- v14 DB → v15 자동 마이그레이션: edges 테이블만 DROP, 다른 테이블 전부 보존.
 
 v13 변경점 (참고):
 - sentences.retention 컬럼 폐기 (memory/daily 분류 제거)
@@ -15,7 +20,8 @@ v12 변경점 (참고):
 
 마이그레이션 정책:
 - v14 → v15: edges DROP만 수행 (기존 노드·문장·카테고리 데이터 보존). 자동 백업 생성.
-- 그 이전 구 스키마 → v15: DB 파일 자동 백업 후 재생성.
+- v15-A2 → v17: origin 리터럴 변경으로 무손실 마이그레이션 지원 안 함. DB 백업 후 재생성.
+- 그 이전 구 스키마 → v17: DB 파일 자동 백업 후 재생성.
 """
 
 import os
@@ -63,7 +69,7 @@ CREATE TABLE IF NOT EXISTS node_mentions (
 CREATE TABLE IF NOT EXISTS node_categories (
     node_id    INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
     category   TEXT    NOT NULL,
-    origin     TEXT    NOT NULL DEFAULT 'user' CHECK(origin IN ('user', 'ai', 'rule', 'external')),
+    origin     TEXT    NOT NULL DEFAULT 'user' CHECK(origin IN ('user', 'ai', 'system', 'external')),
     created_at TEXT    NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (node_id, category)
 );
@@ -71,7 +77,7 @@ CREATE TABLE IF NOT EXISTS node_categories (
 CREATE TABLE IF NOT EXISTS aliases (
     alias   TEXT    PRIMARY KEY,
     node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-    origin  TEXT    NOT NULL DEFAULT 'user' CHECK(origin IN ('user', 'ai', 'rule', 'external')),
+    origin  TEXT    NOT NULL DEFAULT 'user' CHECK(origin IN ('user', 'ai', 'system', 'external')),
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -116,8 +122,20 @@ def _check_allows_external(conn: sqlite3.Connection, table: str) -> bool:
     return "'external'" in row[0]
 
 
+def _check_allows_system(conn: sqlite3.Connection, table: str) -> bool:
+    """v17: CHECK 제약이 'system' origin 값을 허용하는지 검사.
+    구 스키마(rule 만 허용) 는 False 반환 → 자동 백업 + 재생성 경로로 유도."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone()
+    if not row or not row[0]:
+        return False
+    return "'system'" in row[0]
+
+
 def _is_current_schema(conn: sqlite3.Connection) -> bool:
-    """v15 스키마 여부 확인: edges 테이블 없음 + origin 컬럼 존재 + 필수 테이블."""
+    """v17 스키마 여부 확인: edges 테이블 없음 + origin 컬럼 존재 + 필수 테이블 +
+    CHECK 제약에 'system' origin 허용."""
     tables = _get_tables(conn)
     for required in ("sentences", "nodes", "node_mentions", "node_categories",
                      "aliases", "unresolved_tokens", "posts"):
@@ -146,6 +164,11 @@ def _is_current_schema(conn: sqlite3.Connection) -> bool:
     if not _check_allows_external(conn, "node_categories"):
         return False
     if not _check_allows_external(conn, "aliases"):
+        return False
+    # v17: CHECK 제약이 'system' origin 값을 허용해야 함 (rule → system 리네이밍)
+    if not _check_allows_system(conn, "node_categories"):
+        return False
+    if not _check_allows_system(conn, "aliases"):
         return False
     # PLAN-002 Phase 1: sentences.status 컬럼 필요 (active|inactive|pending)
     if "status" not in sent_cols:
@@ -400,7 +423,7 @@ def init_db(db_path: str = DB_PATH) -> str:
                 conn = None
                 backup = _backup_db(db_path)
                 os.remove(db_path)
-                print(f"[db] 구 스키마 감지 → 백업({backup}) 후 v15 재생성: {db_path}")
+                print(f"[db] 구 스키마 감지 → 백업({backup}) 후 v17 재생성: {db_path}")
         finally:
             if conn:
                 conn.close()

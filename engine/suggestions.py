@@ -7,7 +7,7 @@
 - LLM 의존 섹션은 use_llm=False일 때 빈 결과 또는 LLM 없는 fallback 반환.
 
 v15 폐기 섹션 (DESIGN_REVIEW.md §폐기된 섹션 참고):
-- `uncategorized` — 저장 시점에 origin='ai'/'rule'로 자동 분류 (예정)
+- `uncategorized` — 저장 시점에 origin='ai'/'system'로 자동 분류 (예정)
 - `cooccur_pairs` — 문장 하이퍼엣지(node_mentions)에 이미 자동 포함되므로 별도 제안 불필요
 - `alias_suggestions` — 저장 후 백그라운드 워커가 origin='external' 별칭 자동 등록 (v15-A2)
 - 의미 엣지 관련 섹션 — edges 테이블 폐기로 전체 제거

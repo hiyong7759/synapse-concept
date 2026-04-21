@@ -8,9 +8,9 @@
 - 의미 관계(cause/avoid/similar)는 sentence 원문에 이미 있고, 해석은 외부 지능체 몫.
 - 평문 입력 → structure-suggest 게이트 → SaveResult.markdown_draft 반환 (저장 보류)
 
-v15-A2 저장 정책:
-- 동기 단계에서 aliases는 user·rule origin만 INSERT (Wikidata·LLM 추천 경로 없음).
-- 동기 단계에서 node_categories는 user·rule origin만 INSERT (AI 분류 경로 없음).
+v15-A2 저장 정책 (v17: origin rule→system 리네이밍):
+- 동기 단계에서 aliases는 user·system origin만 INSERT (Wikidata·LLM 추천 경로 없음).
+- 동기 단계에서 node_categories는 user·system origin만 INSERT (AI 분류 경로 없음).
 - AI 카테고리 분류와 external 별칭 수집은 저장 완료 이벤트로 넘기고 백그라운드 워커가
   담당. save() 는 commit 성공 후 등록된 훅을 호출한다 (register_post_save_hook).
 
@@ -119,7 +119,7 @@ def _upsert_node(conn, name: str) -> tuple[int, bool]:
 def _add_node_category(
     conn, node_id: int, category: Optional[str], origin: str = "user"
 ) -> None:
-    """카테고리 INSERT. origin: 'user' (heading·수동) / 'ai' (LLM 추론) / 'rule' (규칙)."""
+    """카테고리 INSERT. origin: 'user' (heading·수동) / 'ai' (LLM 추론) / 'system' (엔진 규칙)."""
     if not category:
         return
     conn.execute(
@@ -290,10 +290,10 @@ _FIRST_PERSON_ALIASES = (
 
 
 def _register_first_person_aliases(conn, node_id: int) -> None:
-    """인칭대명사 11개 시드 — origin='rule'."""
+    """인칭대명사 11개 시드 — origin='system' (v17: 이전 'rule')."""
     for alias in _FIRST_PERSON_ALIASES:
         conn.execute(
-            "INSERT OR IGNORE INTO aliases (alias, node_id, origin) VALUES (?,?, 'rule')",
+            "INSERT OR IGNORE INTO aliases (alias, node_id, origin) VALUES (?,?, 'system')",
             (alias, node_id),
         )
 
