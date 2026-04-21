@@ -670,6 +670,7 @@ def merge_nodes(
 
 def find_suspected_typos(db_path: str = DB_PATH) -> list[dict]:
     from .jamo import decompose, levenshtein
+    from .tokenizer import lemmatize_word
 
     conn = get_connection(db_path)
     try:
@@ -683,6 +684,8 @@ def find_suspected_typos(db_path: str = DB_PATH) -> list[dict]:
 
     nodes = [{"id": r["id"], "name": r["name"], "mention_count": r["mention_count"]} for r in rows]
     jamo_cache = {n["name"]: decompose(n["name"]) for n in nodes}
+    # L3: Kiwi lemma 로 활용형 쌍을 오타 의심에서 제외하기 위한 캐시
+    lemma_cache = {n["name"]: lemmatize_word(n["name"]) for n in nodes}
 
     suspects = []
     for i, a in enumerate(nodes):
@@ -696,6 +699,10 @@ def find_suspected_typos(db_path: str = DB_PATH) -> list[dict]:
             if abs(len(ja) - len(jb)) > 1:
                 continue
             if levenshtein(ja, jb) == 1:
+                # lemma 동일 쌍은 활용형 차이 — 오타로 보지 않는다.
+                # 예: '배고파' vs '배고프' → 둘 다 lemma '배고프'.
+                if lemma_cache[a["name"]] == lemma_cache[b["name"]]:
+                    continue
                 suspects.append({
                     "node_a": a,
                     "node_b": b,
