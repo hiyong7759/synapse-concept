@@ -226,22 +226,14 @@ def _parse_nodes_field(raw: str) -> list[dict]:
     return out
 
 
-def llm_extract(
-    text: str,
-    context_sentences: Optional[list[tuple[int, str]]] = None,
-) -> dict:
+def llm_extract(text: str) -> dict:
     """① LLM 노드 추출 (2-step 파이프라인 ①단계, base 모델).
 
     원문 기반으로 외래어·고유명사 원형을 유지한 노드 후보를 뽑는다. 상태 전이
     판정은 llm_extract_state() 가 담당 (v16 에서 분리).
 
     반환: {"nodes": [{"name": str}, ...]}
-
-    context_sentences: 레거시 인자. v15 호환성 유지용 — K4 에서 save.py 가
-    llm_extract_state() 를 직접 호출하도록 전환되면 이 파라미터는 제거된다.
-    현재는 받되 무시한다.
     """
-    del context_sentences  # K4 에서 삭제 예정
     try:
         raw = mlx_chat("extract", text, max_tokens=1024)
         return {"nodes": _parse_nodes_field(raw)}

@@ -26,8 +26,17 @@ from datetime import date
 from typing import Callable, Optional
 
 from .db import get_connection, DB_PATH
-from .llm import chat, LLMError, save_pronoun, llm_extract, structure_suggest
+from .llm import (
+    LLMError,
+    chat,
+    llm_extract,
+    llm_extract_merge,
+    llm_extract_state,
+    save_pronoun,
+    structure_suggest,
+)
 from .markdown import parse_markdown, has_heading
+from .tokenizer import extract_for_save as kiwi_extract_for_save
 
 
 @dataclass
@@ -379,24 +388,49 @@ def _save_one_item(
         if _add_unresolved(conn, sid, token):
             result.unresolved_added.append((sid, token))
 
-    # 3. extract (v15-A2: nodes + deactivate + pending. 카테고리/별칭은 백그라운드 워커)
-    _EMPTY = {"nodes": [], "deactivate": [], "pending": []}
+    # 3. 2-step 노드 추출 (v16): LLM extract → Kiwi → LLM 병합 → extract-state
+    #    ② Kiwi 는 LLM 사용 여부와 무관하게 항상 실행. 서버가 없어도 엔진이
+    #    독립 동작하도록 하기 위한 원칙(DESIGN_PRINCIPLES §11 지능체 분리).
+    try:
+        kiwi = kiwi_extract_for_save(effective_text)
+    except Exception:
+        kiwi = {"nouns": [], "lemmas": [], "negations": []}
+    kiwi_nodes = kiwi["nouns"] + kiwi["lemmas"]
+    kiwi_negations = kiwi["negations"]
+
+    ext_nodes_candidates: list[dict] = []
+    ext_deactivate: list[int] = []
+    ext_pending: list[int] = []
+
     if use_llm:
         try:
-            extracted = llm_extract(effective_text, context_sentences=retrieve_context_sentences)
+            # ① LLM extract — 외래어·고유명사 원형 유지 경향
+            llm_result = llm_extract(effective_text)
+            llm_names = [n["name"] for n in llm_result.get("nodes", [])]
+            # ③ LLM 병합 — 활용형→lemma 정규화, 외래어 원형 복원
+            ext_nodes_candidates = llm_extract_merge(
+                effective_text, llm_names, kiwi_nodes
+            )
         except LLMError:
-            extracted = _EMPTY
+            # LLM 실패 시 Kiwi 결과만 사용 (엔진 독립 동작 보장)
+            ext_nodes_candidates = [{"name": n} for n in kiwi_nodes]
+        # ④ 상태 전이 — context_sentences 있을 때만 호출
+        if retrieve_context_sentences:
+            try:
+                state = llm_extract_state(effective_text, retrieve_context_sentences)
+                ext_deactivate = state.get("deactivate", [])
+                ext_pending = state.get("pending", [])
+            except LLMError:
+                pass
     else:
-        extracted = _EMPTY
+        # LLM 미사용 — Kiwi 결과만 그대로 사용 (cli --no-llm 모드)
+        ext_nodes_candidates = [{"name": n} for n in kiwi_nodes]
 
-    ext_nodes = extracted.get("nodes", [])
-    ext_deactivate = extracted.get("deactivate", [])
-    ext_pending = extracted.get("pending", [])
-
-    # 4. 규칙 기반 토큰 감지 (부정부사 + 날짜 분할)
-    neg_tokens = _detect_negation_tokens(effective_text)
+    # 4. 규칙 기반 토큰 추가 (Kiwi 부정부사 + 날짜 분할)
     date_tokens = _expand_date_tokens(effective_text)
-    ext_nodes = _merge_nodes_extracted(ext_nodes, neg_tokens + date_tokens)
+    ext_nodes = _merge_nodes_extracted(
+        ext_nodes_candidates, kiwi_negations + date_tokens
+    )
 
     # 5. 상태 전이 — sentences.status UPDATE (PLAN-002 Phase 2)
     if ext_deactivate:
