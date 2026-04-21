@@ -1,30 +1,31 @@
 # Synapse 설계 — 저장/인출/대화 파이프라인
 
-**최종 업데이트**: 2026-04-21 (v16 — Kiwi 형태소 분석 도입, 2-step extract + 어간 정규화)
+**최종 업데이트**: 2026-04-22 (v17 — Kiwi-first 저장 경로, LLM extract/merge/structure-suggest 폐기, 메타 필터 신설, origin `rule→system` 리네이밍)
 
 ## 근본 목표
 
-> **저장은 자동, 출처는 기록한다.** 카테고리·별칭은 전부 자동 저장하되 `origin` 컬럼으로 `user` / `ai` / `rule` 출처를 식별한다. 사용자는 `/review`에서 AI·규칙 생성물을 훑어보고 잘못된 것을 즉시 삭제할 수 있다. 노드 간 연결은 별도 엣지 테이블이 아니라 sentence·category·alias 세 종류의 **하이퍼엣지**(지식 바구니)로 표현된다.
+> **저장은 자동, 출처는 기록한다.** 카테고리·별칭은 전부 자동 저장하되 `origin` 컬럼으로 `user` / `ai` / `system` / `external` 출처를 식별한다. 사용자는 `/review`에서 AI·시스템 생성물을 훑어보고 잘못된 것을 즉시 삭제할 수 있다. 노드 간 연결은 별도 엣지 테이블이 아니라 sentence·category·alias 세 종류의 **하이퍼엣지**(지식 바구니)로 표현된다.
 
 ---
 
-## DB 스키마 (v15 — 엣지 폐기, 하이퍼엣지 기반)
+## DB 스키마 (v17 — Kiwi-first, origin `rule→system`)
 
 ```sql
-sentences:         id, text, role('user'|'assistant'), status('active'|'inactive'|'pending'), created_at
+posts:             id, markdown, created_at, updated_at
+sentences:         id, post_id, position, text, role('user'|'assistant'), status('active'|'inactive'|'pending'), created_at, updated_at
 nodes:             id, name, status('active'|'inactive'), created_at, updated_at
-node_mentions:     node_id, sentence_id, created_at                                   — PK(node_id, sentence_id)
-node_categories:   node_id, category, origin('user'|'ai'|'rule'|'external'), created_at — PK(node_id, category)
-aliases:           alias TEXT PRIMARY KEY, node_id, origin('user'|'rule'|'external'), created_at
-unresolved_tokens: sentence_id, token, created_at                                     — PK(sentence_id, token)
+node_mentions:     node_id, sentence_id, created_at                                       — PK(node_id, sentence_id)
+node_categories:   node_id, category, origin('user'|'ai'|'system'|'external'), created_at — PK(node_id, category)
+aliases:           alias TEXT PRIMARY KEY, node_id, origin('user'|'ai'|'system'|'external'), created_at
+unresolved_tokens: sentence_id, token, created_at                                         — PK(sentence_id, token)
 ```
 
 **핵심 원칙:** `node_categories` / `aliases`는 **자동 저장**되며 `origin` 컬럼으로 출처가 식별된다. 유일한 승인 대기 예외는 `unresolved_tokens` — 저장 시점에만 감지되는 일회성 이벤트라 재생성 불가. **엣지 테이블(`edges`) 폐기(v15)** — 노드 간 연결은 sentence 공출현·category 공유·alias 묶음이라는 세 종류의 하이퍼엣지로만 표현.
 
-**origin 값**:
+**origin 값** (v17 에서 `rule` → `system` 으로 리네이밍):
 - `user` — 사용자 직접 입력 (마크다운 heading, 수동 등록)
 - `ai` — LLM 추론 (카테고리 분류 워커. 베이스 모델 + 시스템 프롬프트)
-- `rule` — 결정론적 규칙 (날짜 정규화, 부정부사 감지, doc_mode 계층 카테고리, 인칭대명사 별칭 시드)
+- `system` — 결정론적 엔진 규칙 (Kiwi lemma 정규화, 날짜 분할, 부정부사 감지, doc_mode 계층 카테고리, 인칭대명사 별칭 시드)
 - `external` — 외부 API (Wikidata altLabel로 가져온 별칭)
 
 **node_mentions**: 문장 하이퍼엣지의 멤버십. 모든 노드에 동일 적용되는 노드↔문장 역참조. 시간·장소·부정 같은 특수 노드도 별도 취급 없이 여기만 참조한다.
@@ -43,12 +44,14 @@ unresolved_tokens: sentence_id, token, created_at                               
 
 모든 하이퍼그래프 변경은 **자동 저장**된다. 카테고리·별칭도 저장 시점에 `origin`을 부여받아 즉시 DB에 들어간다. 사용자는 `/review`의 AI·규칙 목록 뷰에서 잘못된 항목을 삭제할 수 있다. 유일한 예외는 `unresolved_tokens`(치환 실패 지시어) + 파괴적 작업(`merge_nodes`, 아카이브)이다.
 
-### 입력 모드
+### 입력 모드 (v17)
 
-사용자 입력은 마크다운 파서(`engine/markdown.py`)를 먼저 거친다.
+사용자 입력은 모두 마크다운 파서(`engine/markdown.py`)를 거치고 **그대로 저장**된다.
 
-- **heading·list 구조가 있는 마크다운** → 마크다운 모드로 즉시 저장
-- **heading·list 없는 평문** → `synapse/structure-suggest` 어댑터가 마크다운 초안을 제안. 사용자가 편집·확정 후 마크다운 모드로 재진입. 확정 전까지 저장되지 않음
+- **heading·list 구조가 있는 마크다운** → heading 경로는 `node_categories`(origin='user'), list·본문은 sentence 로 저장
+- **heading·list 없는 평문** → `markdown.py` 가 `category_path=None` 으로 처리, 평문 줄들이 그대로 sentence 단위로 저장됨
+
+**`structure-suggest` 폐기 (v17)** — 기존 v16 까지는 평문 입력 시 LLM 이 heading 초안을 강제로 달아 마크다운 모드로 재진입시켰으나, 2026-04-21 dogfood 에서 14건 중 6건이 같은 날짜 heading 으로 뭉쳐 "카테고리 공유 = 연결" 원칙을 무력화. 평문은 평문인 채로 저장하는 것이 원칙 4·원칙 9 와 일치.
 
 ### 마크다운 모드
 
@@ -61,99 +64,84 @@ unresolved_tokens: sentence_id, token, created_at                               
 
 heading 경로(`더나은.개발팀`)가 사용자 명시 카테고리 경로가 된다.
 
-### 파이프라인 흐름 (마크다운 모드)
+### 파이프라인 흐름 (v17 — Kiwi-first)
 
 ```
-사용자 입력(마크다운)
-  ↓ parse_markdown(text)
+사용자 입력 (마크다운 or 평문)
+  ↓ parse_markdown(text) — heading/list/평문 분리
   ↓
-각 (heading 경로, 항목)마다:
+  [메타 필터 — 게시물 단위 1회]                                     ← NEW (v17)
+    (b) 규칙 사전필터: Kiwi 명사 0개 + '?' 종결 → 즉시 메타 확정
+    (a) 나머지 줄을 한 번에 LLM 배치 호출
+        프롬프트: docs/META_FILTER_SYSTEMPROMPT.md
+        temp=0, max_tokens=2048
+        출력: {"meta": [idx, ...]}  — 저장 제외할 줄 idx
+    MLX 서버 다운 시 → 필터 skip (모든 문장 저장 진행, 과포함은 UI 삭제로 해소)
   ↓
-  [_preprocess — save-pronoun, 베이스 모델]  temperature=0, max_tokens=256
-    프롬프트: docs/SAVE_PRONOUN_SYSTEMPROMPT.md
-    세션리스 — 직전 대화 context 주입 없음
-    모호 케이스(`{"question": "..."}` 반환) → 저장 중단
+문장별로 (메타 idx 제외):
   ↓
-  [규칙 — unresolved 감지]  LLM 출력의 text를 받아
-    지시대명사/지시부사/시간 모호 부사/장소부사 사전 정규식으로 스캔
-    빈도·정도 부사(자주/많이 등)는 지시 의미 없어 제외
-    매칭된 토큰 → (sentence_id, token)으로 unresolved_tokens INSERT
+  ① [save-pronoun — 베이스 모델]  temp=0, max_tokens=256
+      프롬프트: docs/SAVE_PRONOUN_SYSTEMPROMPT.md
+      세션리스 — 직전 대화 context 주입 없음
+      모호 케이스(`{"question": "..."}` 반환) → 저장 중단
+      실패·MLX 다운 시 → 원문 그대로 진행 (skip)
   ↓
-  [규칙 — ISO 날짜 → 한국어 정규화]
-    '2026-04-18' → '2026년 4월 18일', '2026-04' → '2026년 4월'
-    한글 조사 뒤(예: '2026-04-18에')에서도 매칭되도록 negative lookbehind/lookahead 사용
-    이 단계 이후 본문은 항상 한국어 표기 (사용자 언급 공간 = 한국어)
+  ② [규칙 — ISO 날짜 → 한국어 정규화]
+      '2026-04-18' → '2026년 4월 18일'
+      이 단계 이후 본문은 항상 한국어 표기
   ↓
-  sentences INSERT (정규화된 effective_text, role='user', post_id, position)
+  ③ [규칙 — unresolved 감지]
+      지시대명사/지시부사/시간 모호 부사/장소부사 정규식 스캔
+      매칭된 토큰 → (sentence_id, token) 로 unresolved_tokens INSERT
   ↓
-  ┌─── 2-step 노드 추출 (v16) ────────────────────────────┐
-  │                                                       │
-  │  [① LLM extract — 베이스 모델]  temp=0, max_tokens=1024 │
-  │    프롬프트: docs/EXTRACT_SYSTEMPROMPT.md              │
-  │    출력: {"nodes": [...]} — 외래어·영문 고유명사 원형 유지 │
-  │                                                       │
-  │  [② Kiwi 형태소 분석]                                   │
-  │    서버(조직): kiwipiepy (C++ 네이티브)                  │
-  │    모바일·웹(개인): kiwi-nlp (WASM)                      │
-  │    추출: NNG/NNP/NP 명사 + VV/VA lemma + MAG(안/못)     │
-  │                                                       │
-  │  [③ LLM 병합 — 베이스 모델]  temp=0, max_tokens=512     │
-  │    프롬프트: docs/EXTRACT_MERGE_SYSTEMPROMPT.md        │
-  │    입력: 원문 + ① 후보 + ② 후보                          │
-  │    출력: {"nodes": [...]} — 두 후보 통합                  │
-  │      · 공통 항목 포함                                    │
-  │      · 한쪽만 잡은 중요 개념 포함                          │
-  │      · 같은 개념의 활용형은 Kiwi lemma 로 정규화           │
-  │        ("아파서/아프" → "아프")                          │
-  │      · Kiwi 가 분리한 외래어·복합명사는 원문 원형 복원      │
-  │        ("React/Native" → "React Native")              │
-  │      · 메타 대화·인사는 빈 배열                           │
-  │  [④ LLM extract-state]  temp=0  (context_sentences 있을 때만)│
-  │    프롬프트: docs/EXTRACT_STATE_SYSTEMPROMPT.md        │
-  │    입력: 원문 + Kiwi(②) 명사·용언 + 알려진 사실 목록        │
-  │    출력: {"deactivate":[...], "pending":[...]}         │
-  │    Kiwi 주입 효과: 주체(명사) 공통 + 용언 대립 판정을 모델이    │
-  │      형태소 수준에서 직접 비교 가능 → base 모델 정확도 ↑     │
-  └────────────────────────────────────────────────────────┘
+  ④ sentences INSERT (정규화된 text, role='user', post_id, position)
   ↓
-  [Kiwi MAG 기반 부정부사 감지]
-    ②의 Kiwi 결과에서 MAG 태그의 '안'·'못' 추출 → 노드 후보 추가
-    (기존 정규식 _NEG_PATTERN 폐기)
+  ⑤ [Kiwi 형태소 분석 — 저장 기본 경로]
+      서버(조직): kiwipiepy (C++ 네이티브)
+      모바일·웹(개인): kiwi-nlp (WASM)
+      추출: NNG/NNP/NP 명사 + VV/VA lemma + MAG(안/못)
+      원칙 2 적용:
+        · 한국어 용언 → lemma 로 정규화 ("아파서/아프" → "아프")
+        · 외래어·복합명사 → Kiwi 가 쪼갠 조각 그대로 수용
+          ("React Native" → "React", "Native" 두 노드. 같은 sentence 공출현으로 연결 창발)
+      LLM extract / extract-merge 없음 (v17 폐기)
   ↓
-  [규칙 — 날짜 노드 분할]
-    '2026년 4월 18일' → ['2026년', '4월', '18일'] 노드 후보 추가
-    '2026년 4월' → ['2026년', '4월']
-    '2026년' → ['2026년']
-    '4월 18일' → ['4월', '18일']  (년 미상)
-    한 sentence 안의 모든 단위(년·월·일)가 같은 sentence_id에 mention 연결됨
-    → 시간 범위 쿼리 지원 ("4월에 뭐 있었지?", "2026년 기록", BFS 교집합으로 정밀 좁힘)
-    식별 조건: 명시적 키워드('년/월/일') 또는 ISO 구분자('-')가 있을 때만.
-    단독 4자리 숫자(2026)는 오탐 위험으로 제외.
-    분할된 날짜 노드는 category='TIM.*'에 origin='rule'로 자동 등록.
+  ⑥ [규칙 — 날짜 노드 분할]
+      '2026년 4월 18일' → ['2026년', '4월', '18일'] 노드 후보 추가
+      한 sentence 안의 모든 단위(년·월·일) 같은 sentence_id 에 mention 연결
+      식별 조건: '년/월/일' 키워드 또는 ISO 구분자 '-' 있을 때만
+      분할된 날짜 노드는 category='TIM.*' 에 origin='system' 으로 자동 등록
+  ⑦ DB 저장 (동기 — 즉시 반영):
+      nodes upsert — 같은 이름은 기존 id 재사용
+      node_mentions INSERT OR IGNORE (node_id, sentence_id)
+      node_categories INSERT — 동기 origin 처리:
+        · heading 경로 → origin='user'
+        · 규칙 분류(날짜 TIM.* · doc_mode 계층 등) → origin='system'
+        · AI 추론 카테고리는 여기서 생성하지 않음 → 백그라운드 워커로 이전
+      aliases INSERT — 동기 origin 처리:
+        · 사용자 수동 등록 → origin='user'
+        · 인칭대명사 시드 → origin='system'
+        · Wikidata·LLM 추천은 여기서 생성하지 않음 → 백그라운드 워커로 이전
+  ⑧ [extract-state — 베이스 모델]  temp=0  (context_sentences 있을 때만)
+      프롬프트: docs/EXTRACT_STATE_SYSTEMPROMPT.md
+      입력: 원문 + Kiwi 명사·용언 + 알려진 사실 목록
+      출력: {"deactivate":[...], "pending":[...]}
+      실패·MLX 다운 시 → skip (기존 상태 유지)
+      sentences.status UPDATE:
+        · deactivate → status='inactive' (BFS 에서 배제)
+        · pending    → status='pending' (BFS 에서 배제 + /review 대기)
   ↓
-  DB 저장 (동기 — 즉시 반영):
-    nodes upsert — 같은 이름은 기존 id 재사용.
-      · 한국어 용언은 ②의 Kiwi lemma 로 정규화해 upsert('아파서/아프' → '아프')
-      · 외래어·영문·복합명사는 원형 그대로 upsert('React Native')
-      · '2026년' 같은 규칙 분할 노드는 모든 게시물에서 같은 노드
-    node_mentions INSERT OR IGNORE (node_id, sentence_id)  — 문장 하이퍼엣지 멤버십
-    node_categories INSERT — 동기 origin 처리:
-      · heading 경로 → origin='user'
-      · 규칙 분류(날짜 TIM.*·doc_mode 계층 등) → origin='rule'
-      · AI 추론 카테고리는 여기서 생성하지 않음 → 백그라운드 워커로 이전
-    aliases INSERT — 동기 origin 처리:
-      · 사용자 수동 등록 → origin='user'
-      · 인칭대명사 시드 → origin='rule'
-      · Wikidata·LLM 추천은 여기서 생성하지 않음 → 백그라운드 워커로 이전
-    deactivate / pending 필드 → sentences.status UPDATE
-      · deactivate → status='inactive' (BFS 에서 배제)
-      · pending    → status='pending' (BFS 에서 배제 + /review 에서 사용자 확인 대기)
-      · 삭제 아님 — 영구 보관 유지
-  ↓
-  unresolved_tokens INSERT (치환 실패 토큰 — 유일한 승인 대기 테이블)
-  ↓
-  [저장 완료 이벤트 발생] → 백그라운드 워커 체인 트리거 (아래 "백그라운드 워커" 섹션)
+  commit + 훅 발화 → 백그라운드 워커 체인 트리거 (아래 "백그라운드 워커" 섹션)
 ```
+
+### v17 폐기 단계 — 왜 뺐나
+
+| 폐기된 단계 | 이유 (2026-04-22 분리 진단) |
+|---|---|
+| `llm_extract` | Kiwi 단독으로 노드 추출 커버. LLM 호출 줄당 1회 절감 |
+| `llm_extract_merge` | dogfood 수량·단위 누락(`1주`·`12시간`·`150%`·`15일`·`80퍼센트`) 의 **범인**. base 모델 프롬프트 튜닝으로 해결 불가 (외래어 원형 복원 task 좁혀도 숫자·단위 결합 실패) |
+| `structure-suggest` | 평문 14건 중 6건을 같은 날짜 heading 으로 뭉쳐 저장해 카테고리 공유 원칙 무력화. 평문은 평문대로 저장이 원칙 4·9 와 일치 |
+| 외래어 원형 복원 LLM | Kiwi 쪼갠 채 저장이 원칙 2·4 에 부합 (공출현이 연결을 만든다) |
 
 ### 날짜 처리 — 사용자 언급 공간 원칙
 
@@ -169,23 +157,6 @@ heading 경로(`더나은.개발팀`)가 사용자 명시 카테고리 경로가
 
 같은 `2026년` 노드는 게시물 횟수만큼 자동으로 mention이 누적. 사용자가 한 번도 카드 승인 안 해도 시간 단위로 BFS 가능.
 
-### 파이프라인 흐름 (평문 모드)
-
-```
-사용자 입력(평문)
-  ↓ parse_markdown — heading·list 없음 확인
-  ↓
-  [synapse/structure-suggest]  temperature=0, max_tokens=1024
-    기존 사용자 카테고리 경로 목록을 컨텍스트로 받음
-    출력: 마크다운 초안 (heading + list)
-  ↓
-  SaveResult.markdown_draft 반환 (DB 변경 없음)
-  ↓
-  프론트: 사용자가 초안 편집·확정
-  ↓
-  확정된 마크다운으로 save() 재호출 → 마크다운 모드 플로우
-```
-
 ### 자동 저장되지 않는 것 (승인 유지)
 
 다음은 저장 파이프라인에서 자동 처리하지 않는다 — `/review` 승인 흐름을 거침:
@@ -197,7 +168,7 @@ heading 경로(`더나은.개발팀`)가 사용자 명시 카테고리 경로가
 
 ### 자동 시드 예외
 
-- `_FIRST_PERSON_ALIASES` — 인칭대명사 11개는 origin='rule'로 자동 시드 (모든 사용자 공통).
+- `_FIRST_PERSON_ALIASES` — 인칭대명사 11개는 origin='system'로 자동 시드 (모든 사용자 공통).
 
 ---
 
@@ -243,7 +214,7 @@ heading 경로(`더나은.개발팀`)가 사용자 명시 카테고리 경로가
 ```
 
 - 입력에 포함할 문장 선택: `node_mentions` JOIN `sentences` ORDER BY `created_at` DESC LIMIT N.
-- 이미 user/rule origin 카테고리가 있는 노드도 대상 (AI 분류는 보완적으로 함께 쌓임).
+- 이미 user/system origin 카테고리가 있는 노드도 대상 (AI 분류는 보완적으로 함께 쌓임).
 
 ### 워커 ②: Wikidata 별칭 워커
 
@@ -285,8 +256,9 @@ background_tasks.add_task(alias_worker, new_node_ids)
 
 ### `--no-llm` 모드 대응
 
-- 카테고리 분류 워커: LLM 호출 불가 → 아예 실행 안 됨. `origin='rule'`·`'user'` 카테고리만 DB에 쌓임.
+- 카테고리 분류 워커: LLM 호출 불가 → 아예 실행 안 됨. `origin='system'`·`'user'` 카테고리만 DB에 쌓임.
 - Wikidata 별칭 워커: LLM과 무관하게 동작. 인터넷 없으면 스킵.
+- 저장 파이프라인: 메타 필터 skip(모든 문장 저장 진행), save-pronoun skip(원문 그대로), extract-state skip. Kiwi 경로는 LLM 과 무관하게 항상 동작.
 
 ---
 
@@ -351,7 +323,7 @@ background_tasks.add_task(alias_worker, new_node_ids)
 | `unresolved` | `unresolved_tokens` | 승인 대기 해소 |
 | `ai_generated` | `node_categories WHERE origin='ai'` | 검수 뷰 (유지/삭제) |
 | `external_generated` | `aliases WHERE origin='external'` | Wikidata 별칭 검수 뷰 |
-| `rule_generated` | `WHERE origin='rule'` | 검수 뷰 (규칙 오류 추적) |
+| `system_generated` | `WHERE origin='system'` | 검수 뷰 (규칙 오류 추적) |
 | `suspected_typos` | `find_suspected_typos` | 병합 승인 (파괴적) |
 | `stale_nodes` | `nodes.updated_at` | 아카이브 승인 |
 | `daily` / `gaps` | `sentences.created_at` | 정보 뷰 |
@@ -444,15 +416,17 @@ DB 경량화가 필요한 시점에 별도 정책 재설계 예정. 후보: `las
 
 | 태스크 | 처리 방식 | 프롬프트 파일 / 어댑터 경로 |
 |--------|-----------|------|
-| extract | 베이스 모델 | `docs/EXTRACT_SYSTEMPROMPT.md` |
+| filter-meta | 베이스 모델 | `docs/META_FILTER_SYSTEMPROMPT.md` |
+| save-pronoun | 베이스 모델 | `docs/SAVE_PRONOUN_SYSTEMPROMPT.md` |
 | extract-state | 베이스 모델 | `docs/EXTRACT_STATE_SYSTEMPROMPT.md` |
 | retrieve-filter | 베이스 모델 | `docs/RETRIEVE_FILTER_SYSTEMPROMPT.md` |
 | retrieve-expand | 어댑터 | `synapse/retrieve-expand` |
 | retrieve-expand-org | 어댑터 | `synapse/retrieve-expand-org` |
-| save-pronoun | 베이스 모델 | `docs/SAVE_PRONOUN_SYSTEMPROMPT.md` |
 | security-context | 베이스 모델 | (개인 민감정보 노출 여부 판단) |
 | category (백그라운드) | 베이스 모델 | `docs/CATEGORY_SYSTEMPROMPT.md` |
 | chat (응답 생성) | 베이스 모델 | — |
+
+v17 폐기: `extract`, `extract-merge`, `structure-suggest` — `llm_extract()`·`llm_extract_merge()`·`structure_suggest()` 함수와 프롬프트 파일(`EXTRACT_SYSTEMPROMPT.md`·`EXTRACT_MERGE_SYSTEMPROMPT.md`) 모두 제거. Kiwi 단독이 저장 기본 경로.
 
 시스템 프롬프트 파일 로더는 `engine/prompts.py`. 권한 판단(security-access 등)은 결정론적 백엔드 로직 소관이라 LLM 태스크에서 제외.
 
@@ -463,8 +437,8 @@ DB 경량화가 필요한 시점에 별도 정책 재설계 예정. 후보: `las
 | 단계 | 처리 방식 | temperature | max_tokens |
 |------|-----------|-------------|------------|
 | 라우팅 | 베이스 + ROUTING_SYSTEMPROMPT.md | 0 | 32 |
+| 메타 필터 (저장 진입부) | 베이스 + META_FILTER_SYSTEMPROMPT.md | 0 | 2048 |
 | 전처리 치환 | 베이스 + SAVE_PRONOUN_SYSTEMPROMPT.md | 0 | 256 |
-| 노드 추출 | 베이스 + EXTRACT_SYSTEMPROMPT.md | 0 | 2048 |
 | 모순 탐지 | 베이스 + EXTRACT_STATE_SYSTEMPROMPT.md | 0 | 256 |
 | 카테고리 분류 (백그라운드) | 베이스 + CATEGORY_SYSTEMPROMPT.md | 0 | 512 |
 | 인출 확장 | synapse/retrieve-expand | 0 | 256 |
@@ -476,12 +450,12 @@ DB 경량화가 필요한 시점에 별도 정책 재설계 예정. 후보: `las
 
 ## 독립 동작 (`--no-llm`)
 
-시냅스는 LLM 없이도 기본 동작을 보장한다.
+시냅스는 LLM 없이도 기본 동작을 보장한다 (원칙 11).
 
-- 저장: `_preprocess` 규칙 기반 감지만 동작. 지시어 치환 불가 시 `unresolved_tokens` 기록
+- 저장: Kiwi 형태소 분석으로 노드 추출 + 규칙 기반 날짜 분할·unresolved 감지. 메타 필터·save-pronoun·extract-state 는 skip. 평문 저장 자체는 완결됨
 - 백그라운드 워커: 카테고리 분류 워커는 LLM 호출 불가로 비활성 (`origin='ai'` 카테고리 발생 안 함). Wikidata 별칭 워커는 **인터넷만 있으면 동작** (LLM과 무관)
-- 인출: `retrieve-expand`·`retrieve-filter` 생략하고 키워드 정확 매칭 + BFS만
-- `/review`: `unresolved`, `ai_generated`(빈 결과), `external_generated`, `rule_generated`, `suspected_typos`, `stale_nodes`, `daily`, `gaps` 모두 쿼리만으로 동작
+- 인출: `retrieve-expand`·`retrieve-filter` 생략하고 Kiwi 키워드 매칭 + BFS만
+- `/review`: `unresolved`, `ai_generated`(빈 결과), `external_generated`, `system_generated`, `suspected_typos`, `stale_nodes`, `daily`, `gaps` 모두 쿼리만으로 동작
 
 ---
 

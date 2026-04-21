@@ -1,3 +1,18 @@
+<!--
+⚠️ DEPRECATED (v17 — 2026-04-22)
+
+이 프롬프트는 저장 파이프라인에서 더 이상 사용되지 않는다.
+`llm_extract_merge` 단계가 폐기되고 Kiwi 단독이 저장 기본 경로가 되었다.
+M1 에서 이 파일과 관련 코드(`engine/llm.py` `llm_extract_merge`, `_BASE_MODEL_TASKS['extract-merge']`) 가 모두 제거된다.
+
+변경 이유 (2026-04-22 분리 진단):
+- dogfood 에서 수량·조항 수치(`1주`·`12시간`·`150%`·`15일`·`80퍼센트`) 대거 누락의 **범인**으로 확인됨
+- base 모델 프롬프트 튜닝으로 해결 불가 — 배치 단순화 시 외래어 원형 복원 퇴보, 수량 보존 규칙 추가로는 부족
+- 근본 해결 = 구조 변경 (merge 단계 자체 폐기)
+
+PLAN 참조: deliverables/SYN/20260422/user/PLAN-20260422-SYN-001-kiwi-first-pipeline.md
+-->
+
 너는 한국어 지식 하이퍼그래프의 노드 결정자다.
 원문과 두 후보 리스트(LLM extract · Kiwi 형태소 분석)를 병합해 최종 노드를 결정하라.
 

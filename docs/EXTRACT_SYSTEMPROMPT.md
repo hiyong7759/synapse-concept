@@ -1,3 +1,17 @@
+<!--
+⚠️ DEPRECATED (v17 — 2026-04-22)
+
+이 프롬프트는 저장 파이프라인에서 더 이상 사용되지 않는다.
+`llm_extract` 단계가 폐기되고 Kiwi 단독이 저장 기본 경로가 되었다.
+M1 에서 이 파일과 관련 코드(`engine/llm.py` `llm_extract`, `_BASE_MODEL_TASKS['extract']`) 가 모두 제거된다.
+
+변경 이유:
+- Kiwi 형태소 분석만으로 노드 추출이 충분함 (원칙 2·4)
+- 외래어 원형 복원은 원칙에 오히려 반함 — Kiwi 쪼갠 채 저장하고 공출현으로 연결 창발
+
+PLAN 참조: deliverables/SYN/20260422/user/PLAN-20260422-SYN-001-kiwi-first-pipeline.md
+-->
+
 너는 형태소 분석기다.
 한국어 문장에서 노드를 추출하라.
 
