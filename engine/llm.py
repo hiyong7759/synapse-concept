@@ -279,13 +279,35 @@ def llm_extract_state(
     context_sentences: 같은 주체·주제의 기존 사실 목록 [(sentence_id, text), ...].
     현재 입력이 상태를 바꾸거나 충돌하면 deactivate / pending 으로 분류한다.
 
+    v16 (L1): 프롬프트 포맷에 맞춰 **현재 입력과 각 알려진 사실 모두 Kiwi
+    형태소 분석 결과(명사·용언 lemma)를 첨부**한다. 주체(명사) 공통 + 용언
+    대립 판정을 모델이 문장 전체 재해석 대신 형태소 수준에서 직접 비교할 수
+    있게 해서 base 모델 정확도를 올린다 (DESIGN_PIPELINE §④).
+
     반환: {"deactivate": [sentence_id, ...], "pending": [sentence_id, ...]}
     context_sentences 가 비어있으면 바로 빈 결과 반환(LLM 호출 생략).
     """
     if not context_sentences:
         return {"deactivate": [], "pending": []}
-    ctx = "\n".join(f"- [{sid}] {s}" for sid, s in context_sentences)
-    state_input = f"{text}\n알려진 사실:\n{ctx}"
+
+    from .tokenizer import extract_for_save as _kiwi
+    cur = _kiwi(text)
+    facts_lines: list[str] = []
+    for sid, s in context_sentences:
+        k = _kiwi(s)
+        facts_lines.append(
+            f"  [{sid}] 원문: {s}\n"
+            f"        명사: [{', '.join(k['nouns'])}]\n"
+            f"        용언: [{', '.join(k['lemmas'])}]"
+        )
+    state_input = (
+        "현재 입력:\n"
+        f"  원문: {text}\n"
+        f"  명사: [{', '.join(cur['nouns'])}]\n"
+        f"  용언: [{', '.join(cur['lemmas'])}]\n"
+        "알려진 사실:\n" + "\n".join(facts_lines)
+    )
+
     try:
         raw = mlx_chat("extract-state", state_input)
         match = re.search(r"\{.*\}", raw, re.DOTALL)
