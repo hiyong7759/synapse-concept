@@ -1,8 +1,13 @@
 # Synapse Engine — 범용 온디바이스 지식 하이퍼그래프 패키지 설계
 
-스키마: v15 (`node_mentions`, `node_categories`, `aliases`, `unresolved_tokens`). 의미 엣지 테이블·retention 폐기. 연결은 문장·카테고리·별칭 하이퍼엣지로만 표현.
+스키마: v16 (`node_mentions`, `node_categories`, `aliases`, `unresolved_tokens`, `sentences.status`, `sentences.updated_at`). 의미 엣지 테이블·retention 폐기. 연결은 문장·카테고리·별칭 하이퍼엣지로만 표현.
 
 LLM 구성: 베이스 모델(Gemma 4 E2B-it) + `docs/*_SYSTEMPROMPT.md` + 파인튜닝 어댑터 2종(`retrieve-expand`, `retrieve-expand-org`). 태스크 분담은 `docs/DESIGN_PIPELINE.md` §"태스크 처리 방식".
+
+**형태소 분석기 — 플랫폼 분화 (v16)**
+- 서버(조직/API, Python): `kiwipiepy` (C++ 네이티브) — 모듈 경로 `engine/tokenizer.py` (DESIGN_PIPELINE 참조)
+- 모바일·웹(개인 앱): `kiwi-nlp` (WASM) — 모듈 경로 `lib/src/tokenizer.dart` (본 문서 §1 패키지 구조)
+- 토큰 경계·품사 태그·lemma 결과 스키마를 양쪽 동일하게 유지해 파이프라인 로직을 공유한다.
 
 ## Context
 
@@ -21,6 +26,7 @@ synapse_engine/               ← pub.dev 패키지 (또는 private)
 │   │   ├── db.dart           ← SQLite 스키마 + CRUD (sqflite). v15
 │   │   ├── inference.dart    ← llamadart 래퍼. 모델 로딩 + 어댑터 스왑
 │   │   ├── save.dart         ← 자동 저장 파이프라인 (sentence + node + node_mentions + unresolved_tokens)
+│   │   ├── tokenizer.dart    ← Kiwi 형태소 분석 래퍼 (kiwi-nlp WASM 바인딩). v16 신설
 │   │   ├── retrieve.dart     ← BFS 인출 파이프라인 (node_mentions JOIN 기반)
 │   │   ├── suggestions.dart  ← /review 런타임 제안 도출기 (쿼리 + LLM 호출, 저장 없음)
 │   │   ├── pipeline.dart     ← 오케스트레이터 (retrieve→save→respond)

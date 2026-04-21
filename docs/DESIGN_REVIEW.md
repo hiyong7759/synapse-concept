@@ -99,6 +99,9 @@ def rule_generated(kind: str, limit: int) -> list[Suggestion]:
 def suspected_typos() -> list[Suggestion]:
     # engine/save.py의 find_suspected_typos 재사용
     # 자모 Levenshtein 거리 == 1 쌍을 후보로
+    # v16: Kiwi lemma 동일 쌍은 자동 제외 — "배고파/배고프" 같은 활용형 차이는
+    #      이미 upsert 단계에서 같은 노드로 수렴하므로 오타 후보가 될 일 없음.
+    #      그래도 레거시 DB 호환·방어망으로 lemma 비교 필터 한 줄 유지.
     # 옵션: "같음 (병합)", "별칭으로만", "다르지만 관련 (카테고리 공유)", "다름 (무시)"
 ```
 
