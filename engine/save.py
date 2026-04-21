@@ -188,7 +188,6 @@ _DATE_WORDS = (
     '올해', '작년', '내년', '재작년', '내후년',
 )
 _AGE_PATTERN = re.compile(r'\d{1,3}(살|세)|[0-9]0대')
-_NEG_PATTERN = re.compile(r'(?:^|\s)(안|못)\s')
 
 
 def _preprocess(text: str, post_context: str = "") -> dict:
@@ -200,16 +199,6 @@ def _preprocess(text: str, post_context: str = "") -> dict:
     needs_age = bool(_AGE_PATTERN.search(text))
     today = date.today().isoformat() if (needs_today or needs_age) else ""
     return save_pronoun(text, context=post_context, today=today)
-
-
-def _detect_negation_tokens(text: str) -> list[str]:
-    """부정부사 '안'/'못' 감지해 노드 후보로 반환."""
-    tokens: list[str] = []
-    for m in _NEG_PATTERN.finditer(f' {text} '):
-        neg = m.group(1)
-        if neg not in tokens:
-            tokens.append(neg)
-    return tokens
 
 
 def _detect_unresolved_tokens(text: str) -> list[str]:

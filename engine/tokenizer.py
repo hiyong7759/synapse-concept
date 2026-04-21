@@ -73,9 +73,8 @@ def extract_lemmas(text: str) -> list[str]:
 def extract_negations(text: str) -> list[str]:
     """MAG 태그 중 '안'/'못' 만 부정부사 노드 후보로 반환.
 
-    기존 `save._NEG_PATTERN` 정규식(공백 기준) 을 대체한다. 정규식은 '안녕',
-    '못쓸' 같은 2음절 이상 단어와 구분할 수 없었으나 Kiwi 는 품사 태그로
-    확실히 구별한다.
+    v15 까지 공백 기준 정규식으로 감지하던 것을 품사 태그 기반으로 전환.
+    정규식은 '안녕'·'못쓸' 같은 2음절 이상 단어와 구별할 수 없었다.
     """
     out: list[str] = []
     seen: set[str] = set()
