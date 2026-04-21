@@ -31,6 +31,11 @@ scripts/simulate_threshold.py
 data/finetune/models/
 runpod_output/
 
+# 로컬 백업 파일 (학습 데이터 재라벨 스냅샷, DB 마이그레이션 백업 등)
+*.pre-*-backup
+*.backup-*
+*.bak
+
 # Flutter/Dart build artifacts
 synapse_engine/.dart_tool/
 synapse_engine/.flutter-plugins-dependencies
