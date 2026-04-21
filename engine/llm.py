@@ -204,52 +204,107 @@ def structure_suggest(text: str, known_paths: Optional[list[str]] = None) -> str
         return text
 
 
-def llm_extract(text: str, context_sentences: Optional[list[tuple[int, str]]] = None) -> dict:
-    """LLM으로 노드 추출 + 상태변경 탐지 (베이스 모델 전환).
+def _parse_nodes_field(raw: str) -> list[dict]:
+    """LLM 응답 텍스트에서 {"nodes":[...]} 를 뽑아 [{"name": str}] 로 정규화.
 
-    베이스 모델 전환 (2026-04-20):
-    - extract: 노드 추출만 담당 (EXTRACT_SYSTEMPROMPT.md, 94.4%)
-    - extract-state: deactivate/pending 3분류 담당 (PLAN-002 Phase 2)
-    - 카테고리·별칭은 백그라운드 워커 (engine/workers.py)
+    노드 항목이 dict({"name":..}) 이든 str 이든 모두 {"name": str} 으로 통일한다.
+    JSON 실패 시 빈 배열.
+    """
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if not match:
+        return []
+    try:
+        result = json.loads(match.group())
+    except Exception:
+        return []
+    out: list[dict] = []
+    for n in result.get("nodes", []):
+        if isinstance(n, dict) and n.get("name"):
+            out.append({"name": n["name"]})
+        elif isinstance(n, str) and n:
+            out.append({"name": n})
+    return out
 
-    context_sentences: retrieve에서 가져온 (sentence_id, text) 쌍. 상태변경 판단용.
-    반환: {"nodes": [{"name": str}, ...],
-          "deactivate": [sentence_id, ...],
-          "pending":    [sentence_id, ...]}
-    pending 은 선택(모델이 안 내도 []). 이진 fallback 시 자연 호환.
+
+def llm_extract(
+    text: str,
+    context_sentences: Optional[list[tuple[int, str]]] = None,
+) -> dict:
+    """① LLM 노드 추출 (2-step 파이프라인 ①단계, base 모델).
+
+    원문 기반으로 외래어·고유명사 원형을 유지한 노드 후보를 뽑는다. 상태 전이
+    판정은 llm_extract_state() 가 담당 (v16 에서 분리).
+
+    반환: {"nodes": [{"name": str}, ...]}
+
+    context_sentences: 레거시 인자. v15 호환성 유지용 — K4 에서 save.py 가
+    llm_extract_state() 를 직접 호출하도록 전환되면 이 파라미터는 제거된다.
+    현재는 받되 무시한다.
+    """
+    del context_sentences  # K4 에서 삭제 예정
+    try:
+        raw = mlx_chat("extract", text, max_tokens=1024)
+        return {"nodes": _parse_nodes_field(raw)}
+    except Exception:
+        return {"nodes": []}
+
+
+def llm_extract_merge(
+    text: str,
+    llm_nodes: list[str],
+    kiwi_nodes: list[str],
+) -> list[dict]:
+    """③ LLM 병합 (2-step 파이프라인 ③단계, base 모델).
+
+    LLM extract 후보 · Kiwi 형태소 후보 두 리스트를 원문과 함께 입력해 최종
+    노드를 결정한다. 프롬프트(docs/EXTRACT_MERGE_SYSTEMPROMPT.md) 가
+    - 활용형 → Kiwi lemma 로 정규화
+    - 외래어·복합명사 → LLM 원형 복원
+    - 메타 대화·날짜 통짜 배제
+    - 부정부사 '안'/'못' 포함
+    규칙을 처리한다.
+
+    반환: [{"name": str}, ...] — 병합 이후 최종 노드 배열
     """
     try:
-        # 노드 추출 (베이스 모델 + 시스템 프롬프트)
-        raw = mlx_chat("extract", text, max_tokens=1024)
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        nodes = []
-        if match:
-            result = json.loads(match.group())
-            for n in result.get("nodes", []):
-                if isinstance(n, dict) and n.get("name"):
-                    nodes.append({"name": n["name"]})
-                elif isinstance(n, str):
-                    nodes.append({"name": n})
-
-        # 상태변경 3분류 (extract-state 베이스 모델)
-        deactivate: list[int] = []
-        pending: list[int] = []
-        if context_sentences:
-            ctx = "\n".join(f"- [{sid}] {s}" for sid, s in context_sentences)
-            state_input = f"{text}\n알려진 사실:\n{ctx}"
-            try:
-                state_raw = mlx_chat("extract-state", state_input)
-                state_match = re.search(r"\{.*\}", state_raw, re.DOTALL)
-                if state_match:
-                    state_result = json.loads(state_match.group())
-                    deactivate = [s for s in state_result.get("deactivate", []) if isinstance(s, int)]
-                    pending    = [s for s in state_result.get("pending", [])    if isinstance(s, int)]
-            except Exception:
-                pass
-
-        return {"nodes": nodes, "deactivate": deactivate, "pending": pending}
+        user = (
+            f"원문: {text}\n"
+            f"LLM 후보: {json.dumps(llm_nodes, ensure_ascii=False)}\n"
+            f"Kiwi 후보: {json.dumps(kiwi_nodes, ensure_ascii=False)}"
+        )
+        raw = mlx_chat("extract-merge", user, max_tokens=512)
+        return _parse_nodes_field(raw)
     except Exception:
-        return {"nodes": [], "deactivate": [], "pending": []}
+        return []
+
+
+def llm_extract_state(
+    text: str,
+    context_sentences: list[tuple[int, str]],
+) -> dict:
+    """④ 상태 전이 판정 (extract-state 태스크, base 모델).
+
+    context_sentences: 같은 주체·주제의 기존 사실 목록 [(sentence_id, text), ...].
+    현재 입력이 상태를 바꾸거나 충돌하면 deactivate / pending 으로 분류한다.
+
+    반환: {"deactivate": [sentence_id, ...], "pending": [sentence_id, ...]}
+    context_sentences 가 비어있으면 바로 빈 결과 반환(LLM 호출 생략).
+    """
+    if not context_sentences:
+        return {"deactivate": [], "pending": []}
+    ctx = "\n".join(f"- [{sid}] {s}" for sid, s in context_sentences)
+    state_input = f"{text}\n알려진 사실:\n{ctx}"
+    try:
+        raw = mlx_chat("extract-state", state_input)
+        match = re.search(r"\{.*\}", raw, re.DOTALL)
+        if not match:
+            return {"deactivate": [], "pending": []}
+        result = json.loads(match.group())
+        deactivate = [s for s in result.get("deactivate", []) if isinstance(s, int)]
+        pending    = [s for s in result.get("pending",    []) if isinstance(s, int)]
+        return {"deactivate": deactivate, "pending": pending}
+    except Exception:
+        return {"deactivate": [], "pending": []}
 
 
 # 하위 호환을 위한 별칭
