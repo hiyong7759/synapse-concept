@@ -1,6 +1,6 @@
 # Synapse 설계 — 저장/인출/대화 파이프라인
 
-**최종 업데이트**: 2026-04-19 (v15 — 엣지 테이블 폐기, 하이퍼엣지 기반 저장/인출)
+**최종 업데이트**: 2026-04-21 (v16 — Kiwi 형태소 분석 도입, 2-step extract + 어간 정규화)
 
 ## 근본 목표
 
@@ -86,13 +86,39 @@ heading 경로(`더나은.개발팀`)가 사용자 명시 카테고리 경로가
   ↓
   sentences INSERT (정규화된 effective_text, role='user', post_id, position)
   ↓
-  [extract — 베이스 모델]  temperature=0, max_tokens=2048
-    프롬프트: docs/EXTRACT_SYSTEMPROMPT.md
-    엔진 전처리: ()[] 공백 치환 (반복 루프 방지)
-    후속 deactivate 탐지는 베이스 모델 + docs/EXTRACT_STATE_SYSTEMPROMPT.md 가 담당
+  ┌─── 2-step 노드 추출 (v16) ────────────────────────────┐
+  │                                                       │
+  │  [① LLM extract — 베이스 모델]  temp=0, max_tokens=1024 │
+  │    프롬프트: docs/EXTRACT_SYSTEMPROMPT.md              │
+  │    출력: {"nodes": [...]} — 외래어·영문 고유명사 원형 유지 │
+  │                                                       │
+  │  [② Kiwi 형태소 분석]                                   │
+  │    서버(조직): kiwipiepy (C++ 네이티브)                  │
+  │    모바일·웹(개인): kiwi-nlp (WASM)                      │
+  │    추출: NNG/NNP/NP 명사 + VV/VA lemma + MAG(안/못)     │
+  │                                                       │
+  │  [③ LLM 병합 — 베이스 모델]  temp=0, max_tokens=512     │
+  │    프롬프트: docs/EXTRACT_MERGE_SYSTEMPROMPT.md        │
+  │    입력: 원문 + ① 후보 + ② 후보                          │
+  │    출력: {"nodes": [...]} — 두 후보 통합                  │
+  │      · 공통 항목 포함                                    │
+  │      · 한쪽만 잡은 중요 개념 포함                          │
+  │      · 같은 개념의 활용형은 Kiwi lemma 로 정규화           │
+  │        ("아파서/아프" → "아프")                          │
+  │      · Kiwi 가 분리한 외래어·복합명사는 원문 원형 복원      │
+  │        ("React/Native" → "React Native")              │
+  │      · 메타 대화·인사는 빈 배열                           │
+  │  [④ LLM extract-state]  temp=0  (context_sentences 있을 때만)│
+  │    프롬프트: docs/EXTRACT_STATE_SYSTEMPROMPT.md        │
+  │    입력: 원문 + Kiwi(②) 명사·용언 + 알려진 사실 목록        │
+  │    출력: {"deactivate":[...], "pending":[...]}         │
+  │    Kiwi 주입 효과: 주체(명사) 공통 + 용언 대립 판정을 모델이    │
+  │      형태소 수준에서 직접 비교 가능 → base 모델 정확도 ↑     │
+  └────────────────────────────────────────────────────────┘
   ↓
-  [규칙 — 부정부사 후처리]
-    문장 내 '안'·'못'을 감지해 노드 추출 결과에 추가 (노드 자체는 일반 노드와 동일 처리)
+  [Kiwi MAG 기반 부정부사 감지]
+    ②의 Kiwi 결과에서 MAG 태그의 '안'·'못' 추출 → 노드 후보 추가
+    (기존 정규식 _NEG_PATTERN 폐기)
   ↓
   [규칙 — 날짜 노드 분할]
     '2026년 4월 18일' → ['2026년', '4월', '18일'] 노드 후보 추가
@@ -106,7 +132,10 @@ heading 경로(`더나은.개발팀`)가 사용자 명시 카테고리 경로가
     분할된 날짜 노드는 category='TIM.*'에 origin='rule'로 자동 등록.
   ↓
   DB 저장 (동기 — 즉시 반영):
-    nodes upsert (중복 이름은 기존 id 재사용 — '2026년'은 모든 게시물에서 같은 노드)
+    nodes upsert — 같은 이름은 기존 id 재사용.
+      · 한국어 용언은 ②의 Kiwi lemma 로 정규화해 upsert('아파서/아프' → '아프')
+      · 외래어·영문·복합명사는 원형 그대로 upsert('React Native')
+      · '2026년' 같은 규칙 분할 노드는 모든 게시물에서 같은 노드
     node_mentions INSERT OR IGNORE (node_id, sentence_id)  — 문장 하이퍼엣지 멤버십
     node_categories INSERT — 동기 origin 처리:
       · heading 경로 → origin='user'
@@ -265,10 +294,13 @@ background_tasks.add_task(alias_worker, new_node_ids)
 
 ```
 질문
-  ↓ [synapse/retrieve-expand]  temperature=0, max_tokens=256
+  ↓ [synapse/retrieve-expand 어댑터]  temperature=0, max_tokens=256
     질문 의도 해석 → 노드 후보 키워드
-  ↓ [원문 토큰 병합]
-    질문 원문 공백 분리 → keywords에 병합
+  ↓ [Kiwi 명사·용언 추출]
+    질문 → NNG/NNP/NP 명사 + VV/VA lemma 로 후보 보강
+    "커피가 맛있었나?" → ['커피', '맛', '맛있'] 후보 추가
+    → 조사·어미 붙은 표현도 매칭 가능, 어댑터 실패 시 폴백 역할
+    keywords = retrieve-expand 결과 ∪ Kiwi 결과
   ↓ [DB 매칭]
     aliases 정확 매칭 우선 → name 정확 매칭 → name substring 매칭
   ↓ [BFS 루프]  max_layers=5
