@@ -97,11 +97,20 @@ def rule_generated(kind: str, limit: int) -> list[Suggestion]:
 
 ```python
 def suspected_typos() -> list[Suggestion]:
-    # engine/save.py의 find_suspected_typos 재사용
-    # 자모 Levenshtein 거리 == 1 쌍을 후보로
-    # v16: Kiwi lemma 동일 쌍은 자동 제외 — "배고파/배고프" 같은 활용형 차이는
-    #      이미 upsert 단계에서 같은 노드로 수렴하므로 오타 후보가 될 일 없음.
-    #      그래도 레거시 DB 호환·방어망으로 lemma 비교 필터 한 줄 유지.
+    # engine/save.py 의 find_suspected_typos 재사용
+    # 자모 Levenshtein 거리 == 1 쌍을 후보로 한다.
+    #
+    # v16 — Kiwi lemma 동일 쌍 자동 제외 (L3):
+    #   예: "배고파/배고프" 활용형 차이.
+    #
+    #   성격: 선택적 안전장치. 정상 파이프라인에서는 K4 의 LLM 병합 단계가
+    #   이미 같은 lemma 로 노드를 수렴시키므로 이 필터가 실제로 걸러낼 케이스는
+    #   거의 없다. LLM 병합이 확률적 동작이라 100% 결정적이지 않다는 점만
+    #   보강하는 "DB 로직 기반 방어망" 한 겹.
+    #
+    #   제거 기준: 운영 관찰 결과 활용형 공존 사례가 장기간 0건이면 **제거 1순위**.
+    #   필터를 빼도 /review 의 수동 merge 로 여전히 합칠 수 있어 기능 손실 없음.
+    #
     # 옵션: "같음 (병합)", "별칭으로만", "다르지만 관련 (카테고리 공유)", "다름 (무시)"
 ```
 
