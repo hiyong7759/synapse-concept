@@ -1,15 +1,19 @@
-"""Synapse 형태소 분석기 — Kiwi 래퍼 (v16).
+"""Synapse 형태소 분석기 — Kiwi 래퍼 (v17).
 
 서버(조직/API, Python)용 형태소 분석. 모바일·웹은 `lib/src/tokenizer.dart`
 (kiwi-nlp WASM) 가 담당하되 토큰 경계·품사 태그·lemma 결과 스키마는 동일 유지.
+
+v17: Kiwi 단독이 저장 기본 경로. LLM extract/merge 는 폐기되었고, Kiwi 결과가
+원문 원형 복원 없이 그대로 노드로 저장된다. 외래어·복합명사는 쪼갠 조각끼리
+같은 sentence 공출현(원칙 4)으로 연결이 창발한다.
 
 품사 태그 (Kiwi) 정리:
 - NNG: 일반명사, NNP: 고유명사, NP: 대명사 → 노드 후보 (명사)
 - VV: 동사, VA: 형용사 → form 자체가 이미 lemma(원형) 로 나옴
 - MAG: 일반부사 → 부정부사 '안'/'못' 만 노드 후보
 - NNB/SN/NR: 의존명사·숫자 → 날짜·수량은 save.py 규칙이 분할 담당 (제외)
-- SL: 외국어/영문 → Kiwi 가 글자 단위 분리할 수 있음. 여기서는 분리된 채로
-  반환하고 LLM 병합 단계(engine/llm.py `llm_extract_merge`) 가 원문 원형 복원.
+- SL: 외국어/영문 → Kiwi 가 글자 단위 분리할 수 있음. v17 에서는 분리된 채로
+  저장 (원형 복원 LLM 없음).
 
 싱글턴 + 지연 초기화 — Kiwi 인스턴스 초기화가 ~300ms, ~50MB 상주. 프로세스당
 한 번만 로드한다. import 시점에 로딩하지 않음.
@@ -20,7 +24,9 @@ from typing import Optional
 
 from kiwipiepy import Kiwi
 
-NOUN_TAGS = frozenset({"NNG", "NNP", "NP"})
+NOUN_TAGS = frozenset({"NNG", "NNP", "NP", "SL"})
+# SL (외국어/영문) 포함 — 'React', 'Native', 'MZ', 'ASMR' 같은 외래어를
+# 쪼갠 조각 그대로 노드로 저장. 같은 sentence 공출현으로 연결 창발(원칙 4).
 PREDICATE_TAGS = frozenset({"VV", "VA"})
 NEGATION_WORDS = frozenset({"안", "못"})
 

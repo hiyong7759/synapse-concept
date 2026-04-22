@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from engine.db import get_stats, init_db, DB_PATH
 from engine.save import save, find_suspected_typos
 from engine.retrieve import retrieve
-from engine.llm import llm_extract
+from engine.tokenizer import extract_for_save as kiwi_extract
 from engine.workers import install_default_hooks
 from typing import Optional
 
@@ -77,11 +77,14 @@ def cmd_interactive(use_llm: bool) -> None:
             continue
         if text.startswith("/extract "):
             raw = text[9:]
-            result = llm_extract(raw)
-            for n in result.get("nodes", []):
-                print(f"  [노드] {n['name']}")
-            if result.get("deactivate"):
-                print(f"  [deactivate] {result['deactivate']}")
+            # v17: Kiwi 단독 경로 확인용. 명사·용언 lemma·부정부사(MAG '안'/'못') 표시
+            k = kiwi_extract(raw)
+            for n in k.get("nouns", []):
+                print(f"  [명사] {n}")
+            for n in k.get("lemmas", []):
+                print(f"  [용언 lemma] {n}")
+            for n in k.get("negations", []):
+                print(f"  [부정부사] {n}")
             continue
         if text.startswith("/reset"):
             confirm = input("  DB를 초기화합니다. 계속? (y/N) ").strip().lower()

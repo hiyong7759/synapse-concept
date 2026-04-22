@@ -416,7 +416,7 @@ DB 경량화가 필요한 시점에 별도 정책 재설계 예정. 후보: `las
 
 | 태스크 | 처리 방식 | 프롬프트 파일 / 어댑터 경로 |
 |--------|-----------|------|
-| filter-meta | 베이스 모델 | `docs/META_FILTER_SYSTEMPROMPT.md` |
+| meta-filter | 베이스 모델 | `docs/META_FILTER_SYSTEMPROMPT.md` |
 | save-pronoun | 베이스 모델 | `docs/SAVE_PRONOUN_SYSTEMPROMPT.md` |
 | extract-state | 베이스 모델 | `docs/EXTRACT_STATE_SYSTEMPROMPT.md` |
 | retrieve-filter | 베이스 모델 | `docs/RETRIEVE_FILTER_SYSTEMPROMPT.md` |

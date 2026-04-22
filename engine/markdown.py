@@ -80,7 +80,8 @@ def parse_markdown(text: str) -> list[tuple[str | None, str]]:
 
 def has_heading(text: str) -> bool:
     """텍스트에 heading이 하나라도 있는지 빠른 검사.
-    Phase 2에서 평문(heading 없음) → structure-suggest 게이트 분기에 사용.
+    v17 에서 structure-suggest 가 폐기되어 저장 파이프라인에선 호출하지 않는다.
+    외부(UI·API·도구) 에서 마크다운 여부 판단이 필요할 때만 유지된 헬퍼.
     """
     for raw_line in text.split("\n"):
         if _HEADING_RE.match(raw_line.strip()):
