@@ -1,13 +1,15 @@
-"""Synapse 인출 파이프라인 (v20 — PLAN-004 M2).
+"""Synapse 인출 파이프라인 (v20 — PLAN-004 M4).
 
 흐름:
   질문
   → LLM 확장 + Kiwi: 노드 후보 키워드 목록
-  → 축 A 시드 (v20): 키워드가 categories.name 과 매칭되면 서브트리 재귀 CTE →
+  → 축 A 시드 (v20 M2): 키워드가 categories.name 과 매칭되면 서브트리 재귀 CTE →
     sentence_categories 로 연결된 문장을 BFS 초기 시드에 주입
   → DB 매칭: aliases 우선 → name 직접 → substring
   → BFS 루프: 노드 → node_mentions JOIN → sentences → 함께 언급된 노드 → 반복
   → 축 B 보완: 시작 노드 major_category → 인접 소분류 노드 추가 → 재필터
+  → 결과 과다 시 원문 LIKE fallback (v20 M4): 임계치 초과 시 원본 질문 토큰으로 좁힘.
+    Kiwi 가 쪼갠 외래어 조각(예: React, Native) 을 원문 구절로 통짜 회복.
   → 최종 sentences 컨텍스트 + LLM 답변
 
 v20 변경 (PLAN-004): 카테고리 바구니가 두 축으로 분리됨.
@@ -66,7 +68,12 @@ class RetrieveResult:
     context_sentences: list[tuple[int, str]] = field(default_factory=list)
     answer: Optional[str] = None
     start_nodes: list[str] = field(default_factory=list)
-    start_categories: list[str] = field(default_factory=list)  # v20: 축 A 매칭된 카테고리 이름
+    start_categories: list[str] = field(default_factory=list)  # v20 M2: 축 A 매칭 카테고리 이름
+    # v20 M4 — LIKE fallback 메타데이터
+    like_narrowed: bool = False           # narrowing 이 실제 적용됐는지
+    like_tokens_used: list[str] = field(default_factory=list)  # 좁히기에 쓰인 토큰
+    pre_narrow_count: int = 0             # narrowing 직전 문장 개수
+    post_narrow_count: int = 0            # narrowing 후 문장 개수
 
 
 # ─── DB 헬퍼 ──────────────────────────────────────────────
@@ -391,6 +398,62 @@ def _get_category_supplement_nodes(
     return result
 
 
+# ─── LIKE fallback — 결과 과다 시 원문 구절로 좁힘 (v20 PLAN-004 M4) ─
+
+# 기본 임계치: BFS 결과가 이 숫자를 넘으면 원문 LIKE 로 좁힘 시도.
+# Gemma 4 E2B 컨텍스트 여유를 고려해 보수적으로 설정, retrieve() 호출자가 덮어쓰기 가능.
+_LIKE_FALLBACK_DEFAULT_THRESHOLD = 20
+
+# 질문 토큰에서 strip 할 양쪽 기호 (조사·어미는 아닌, 순수 문장부호만).
+_PUNCT_STRIP_RE = re.compile(r'^[.,!?()\[\]"\'“”‘’·~…]+|[.,!?()\[\]"\'“”‘’·~…]+$')
+
+
+def _extract_original_phrase_tokens(question: str) -> list[str]:
+    """질문을 공백으로 분리해 의미 있는 원문 토큰만 남김 (v20 M4).
+
+    Kiwi 가 쪼갠 lemma 가 아니라 **사용자가 쓴 그대로**의 구절 토큰.
+    React Native·자바스크립트 같은 외래어·고유명사 복원 용도.
+
+    규칙:
+    - 공백 분리 후 양쪽 문장부호 strip
+    - 길이 >= 2 만 유지 (한 글자 조사/전치사 제거)
+    - 순서 유지 dedup
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in question.split():
+        cleaned = _PUNCT_STRIP_RE.sub('', raw)
+        if len(cleaned) < 2:
+            continue
+        if cleaned in seen:
+            continue
+        seen.add(cleaned)
+        out.append(cleaned)
+    return out
+
+
+def _narrow_by_like(
+    sentences: list[tuple[int, str]], question: str
+) -> tuple[list[tuple[int, str]], list[str]]:
+    """결과 과다 시 원문 질문 토큰 AND 매칭으로 좁힘.
+
+    반환: (narrowed_sentences, applied_tokens).
+    - 의미 있는 토큰이 없으면 (원본, []) 반환 (narrowing 효과 없음)
+    - 모든 토큰을 substring 으로 포함하는 문장만 남김 (AND)
+    - AND 결과가 비면 원본 그대로 유지 (결과 보호)
+    """
+    tokens = _extract_original_phrase_tokens(question)
+    if not tokens:
+        return sentences, []
+    filtered = [
+        (sid, text) for sid, text in sentences
+        if all(tok in text for tok in tokens)
+    ]
+    if not filtered:
+        return sentences, tokens
+    return filtered, tokens
+
+
 # ─── LLM 헬퍼 ─────────────────────────────────────────────
 
 def _llm_expand_keywords(question: str) -> list[str]:
@@ -463,8 +526,14 @@ def retrieve(
     max_layers: int = 5,
     images: Optional[list[str]] = None,
     history: Optional[list[dict]] = None,
+    like_fallback_threshold: int = _LIKE_FALLBACK_DEFAULT_THRESHOLD,
 ) -> RetrieveResult:
-    """질문에 대한 BFS 인출 + LLM 답변. v15: node_mentions + node_categories 하이퍼엣지 기반."""
+    """질문에 대한 BFS 인출 + LLM 답변.
+
+    v20 (PLAN-004): 카테고리 두 축 사용. 축 A(`sentence_categories`) 는 서브트리 재귀
+    CTE 로 heading 매칭 시드, 축 B(`node_categories.major_category`) 는 인접 맵 보완.
+    BFS 결과가 `like_fallback_threshold` 를 넘으면 원문 LIKE AND 매칭으로 좁힘(M4).
+    """
     result = RetrieveResult()
 
     conn = get_connection(db_path)
@@ -571,6 +640,18 @@ def retrieve(
             if m.sentence_id not in seen_sids:
                 seen_sids.add(m.sentence_id)
                 context_sentences.append((m.sentence_id, m.sentence_text))
+
+        # 4-B. 결과 과다 시 원문 LIKE fallback (v20 PLAN-004 M4)
+        #      Kiwi 쪼갬으로 BFS 가 과도하게 넓어졌을 때 질문의 원문 구절(조사 제외)
+        #      AND 매칭으로 좁힘. AND 결과가 비면 원본 유지 (보호).
+        result.pre_narrow_count = len(context_sentences)
+        if len(context_sentences) > like_fallback_threshold:
+            narrowed, tokens_used = _narrow_by_like(context_sentences, question)
+            result.like_tokens_used = tokens_used
+            if narrowed is not context_sentences and len(narrowed) < len(context_sentences):
+                context_sentences = narrowed
+                result.like_narrowed = True
+        result.post_narrow_count = len(context_sentences)
         result.context_sentences = context_sentences
 
         # 5. 하위 호환: context_triples — 같은 sentence 공출현 노드 페어를 Triple로 펼침
