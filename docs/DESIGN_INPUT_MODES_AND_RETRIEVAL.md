@@ -2,7 +2,7 @@
 
 **최종 업데이트**: 2026-04-23 (v19 예정 — PLAN-20260422-SYN-003 "마크다운 입력 체계 + 모드 분리". `posts.input_mode` 컬럼 신설 / `- key:: value` 파서 / save-pronoun 모드별 분기)
 
-**관련 문서**: `DESIGN_PRINCIPLES.md` §1 원칙 9 · `DESIGN_PIPELINE.md` 저장 파이프라인 · `DESIGN_HYPERGRAPH.md` 스키마
+**관련 문서**: `DESIGN_PRINCIPLES.md` §1 원칙 9 · `DESIGN_PIPELINE.md` 저장 파이프라인 · `DESIGN_HYPERGRAPH.md` 스키마 · `INPUT_GUIDE.md` 작성자용 실전 가이드
 
 ---
 
