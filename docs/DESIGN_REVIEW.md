@@ -1,6 +1,6 @@
 # Synapse 설계 — /review 검토 편입
 
-**최종 업데이트**: 2026-04-22 (v17 — origin `rule→system` 리네이밍, `rule_generated`→`system_generated` 섹션명 변경)
+**최종 업데이트**: 2026-04-23 (v18 — 상태 레이어 제거 / `sentence_status` 섹션 폐기. 선행 v17: origin `rule→system`, `rule_generated`→`system_generated`)
 
 ## 배경
 
@@ -122,21 +122,9 @@ def suspected_typos() -> list[Suggestion]:
 - "다르지만 관련" → `type=category` (양 노드에 공통 사용자 정의 카테고리 INSERT, origin='user')
 - "다름" → 무시 (이 쌍을 다음 번 도출에서 제외하는 상태는 별도 필요 시 추가)
 
-### sentence_status — extract-state 자동 판정 검수
+### ~~sentence_status~~ — 폐기 (v18)
 
-```python
-def pending_sentences(limit: int) -> list[Suggestion]:
-    # sentences.status='pending' — extract-state 가 "애매" 로 판단한 문장
-    # 옵션: "유효 (active 복귀)", "무효 (inactive 로 확정)"
-
-def recent_deactivated(days: int, limit: int) -> list[Suggestion]:
-    # 최근 N일 내 status='inactive' 로 자동 비활성화된 문장
-    # 옵션: "유지 (inactive)", "되돌리기 (active 복귀)"
-```
-
-AI 가 저장 시점에 `inactive` / `pending` 으로 태그한 결과를 사용자가 확정·되돌림. 삭제되지 않으므로 되돌리기 언제든 가능. 잘못된 자동 판정도 `/review` 에서 고칠 수 있다는 전제 하에 저장 시점에는 `inactive` 가 무조건 반영된다.
-
-승인 흐름: `POST /review/apply kind=sentence_status` payload `{sentence_id, new_status: 'active'|'inactive'}`.
+v17 까지는 `extract-state` 가 `inactive` / `pending` 으로 자동 태그한 sentence 를 사용자가 `/review` 에서 확정·되돌리는 섹션이 있었다. v18 에서 `sentences.status` 컬럼 · `extract-state` LLM 판정이 전면 폐기되어 이 섹션 자체가 소멸. 무효화는 `update_sentence` / `delete_sentence` 로, 시점 해석은 인출 LLM 의 `created_at` 기반 최근성 판단이 담당.
 
 ---
 
