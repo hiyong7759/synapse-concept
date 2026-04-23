@@ -3,7 +3,7 @@
 입력 텍스트를 (category_path, kind, text) 튜플 스트림으로 변환.
 
 kind 체계:
-- 'heading'   : `#`~`######` 로 시작하는 섹션 제목. sentence INSERT 대상 아님
+- 'heading'   : `#` 으로 시작하는 섹션 제목 (개수 제한 없음). sentence INSERT 대상 아님
                 (save.py 가 카테고리 path 만 등록). text 는 heading 본문 (prefix 제외).
 - 'key_value' : `- key:: value` (Obsidian Dataview 스타일). sentence 에 원문
                 `"key:: value"` 그대로 저장. save-pronoun / 메타 필터 skip.
@@ -23,7 +23,7 @@ v12 → v19 변경점:
 from __future__ import annotations
 import re
 
-_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+)$")
+_HEADING_RE = re.compile(r"^(#{1,})\s+(.+)$")
 _LIST_UNORDERED_RE = re.compile(r"^[-*]\s+(.+)$")
 _LIST_ORDERED_RE = re.compile(r"^\d+\.\s+(.+)$")
 _KEY_VALUE_RE = re.compile(r"^-\s+(.+?)\s*::\s+(.+)$")

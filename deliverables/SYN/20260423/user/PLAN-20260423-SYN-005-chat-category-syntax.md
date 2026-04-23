@@ -1,0 +1,186 @@
+# PLAN-20260423-SYN-005 — chat 분류 입력 문법 + heading 상속 규칙 정리
+
+**상태**: 초안 · 승인 대기
+**의존**: PLAN-003 M2·M3 (feature/markdown-mode-detail 머지 완료 — `4e22d91`)
+**짝**: PLAN-006 (인출 카테고리 시드 매칭) — 본 PLAN 만으로는 분류가 검색 시드로 작동 못 함. 두 PLAN 이 같이 머지돼야 분류 기능 완성.
+**관련**: `docs/DESIGN_INPUT_MODES_AND_RETRIEVAL.md`, `docs/DESIGN_PRINCIPLES.md` §1 원칙 2·9
+**스키마 변경**: 없음
+
+---
+
+## 배경
+
+PLAN-003 M1 에서 **chat 모드는 `#` 을 평문으로 취급** 하도록 설계됐다 (§4.1 "해시태그 의도가 markdown heading 자동 판정에 흡수되는 문제" 방지). 자동 판정 제거는 해결됐지만 그 결과 chat 에서 **사용자가 명시적으로 분류를 표기할 수단이 사라졌다**.
+
+**사용자 결정 (2026-04-23 ~ 24 합의)**
+- chat·markdown 양 모드에서 동일한 `#` 분류 문법 도입
+- 시스템 자동 변환·정리 없음 — 분류명은 사용자 책임 (일관성)
+- 정규화는 **단 하나의 규칙** — `#` 뒤 첫 공백이 분류/본문 경계
+- 점(`.`) 계층 권장. 깊이 제한 없음. 시스템은 통째 문자열로 저장
+- markdown heading 의 `#` 개수 = depth 의 자연 상속 규칙 정정 (점 포함 heading 이 부모를 리셋하던 동작 수정)
+
+---
+
+## 핵심 설계 — 입력 정규화 규칙 (3 가지)
+
+1. **`#분류` → `# 분류`** — `#` 뒤 공백이 없으면 하나 삽입
+2. **`# 분류 본문…` → `# 분류\n본문…`** — 두 번째 공백을 개행으로 치환해 heading + sentence 분리
+3. **분류명은 사용자 책임** — 분류명에 공백 넣고 싶으면 사용자가 `_` 로 직접 작성. 시스템은 자동 변환·구두점 제거 안 함. 분류는 통째 문자열로 저장됨 (Kiwi 형태소 분리 대상 아님)
+
+저장된 텍스트 = 정규화된 형태. 조회 시 치환 **이전** 원문으로 복원하지 않음.
+
+### 동작 예시
+
+| 입력 (원문) | 정규화 후 (DB 저장) | 효과 |
+|---|---|---|
+| `#건강` | `# 건강` | heading "건강" |
+| `# 건강` | `# 건강` | heading "건강" (변화 없음) |
+| `#건강 허리 아픔` | `# 건강\n허리 아픔` | heading "건강" + sentence "허리 아픔" |
+| `# 건강 허리 아픔` | `# 건강\n허리 아픔` | 동일 결과 (공백 유무 무관) |
+| `#건강.허리 오늘 아픔` | `# 건강.허리\n오늘 아픔` | 계층 분류 + sentence |
+| `#제55조_연차휴가` | `# 제55조_연차휴가` | 사용자가 `_` 로 직접 단일 토큰화 |
+| `오늘 #야근 했다` | **정규화 안 함** | 평문 (`#` 이 줄 머리가 아님) |
+| `#건강?` | `# 건강?` | 분류명 `건강?` 그대로 (사용자 의도) |
+
+### 경계 규칙
+
+- **정규화 대상**: 줄 첫 문자가 `#`(또는 `##`~`######`) 인 경우만. 줄 중간 `#` 은 평문.
+- **다중 `#` 한 줄 (`#A #B 본문`)**: M0 결정 포인트. 초안은 "첫 `#` 만 분류, 이후 `#` 은 평문" 으로 가되 M0 에서 확정.
+- **분류만 있고 본문 없음 (`#건강`)**: post 만들고 분류만 등록 (sentence 0). `/review` 에서 "빈 분류" 관찰 가능.
+
+---
+
+## heading 상속 규칙 정정 (옵션 A — 자연 상속)
+
+PLAN-003 dogfood 후 발견된 파서 동작 이슈. 점(`.`) 포함 heading 이 path_stack 을 **clear** 해 상위 heading 을 날려버림.
+
+| 입력 | 현재 동작 (버그) | 정정 후 (옵션 A) |
+|---|---|---|
+| `# 분류1`<br>`## 분류2.분류3` | `분류2.분류3` (분류1 날아감) | `분류1.분류2.분류3` |
+| `# A`<br>`## B.C`<br>`### D` | `B.C.D` (A 날아감) | `A.B.C.D` |
+| `# 분류1.분류2`<br>`## 분류3` | `분류1.분류3` (분류2 바뀜) | `분류1.분류2.분류3` |
+| `# A`<br>`# B.C` (같은 depth) | `B.C` (덮어쓰기, 같은 depth pop 후 push) | `B.C` (변화 없음 — depth 동일하면 형제) |
+
+**수정 방법**: `engine/markdown.py:54-59` 의 `path_stack.clear()` 분기 제거. 점 포함 heading 도 일반 heading 처럼 `depth` 기준으로 pop·push 만 수행. 점 세그먼트는 그대로 한 깊이에 들어감 (예: `## B.C` 는 depth 2 에 `B.C` 한 덩이로 push, `_upsert_category_path` 가 별도로 점 split 해서 다단 categories 저장).
+
+---
+
+## 깊이 제한 정책
+
+- **시스템 제한 전면 없음** — `categories` 테이블의 `parent_id` 체인은 무제한
+- **`#` 개수 제한 없음** — markdown 표준은 H1~H6 이지만 synapse 는 `#######` 이상도 허용. 정규식 `^(#{1,6})\s+...` 의 상한 제거 (`{1,}` 또는 `+`)
+- 점(`.`) 으로는 한 줄에 무한 깊이 가능 (`# A.B.C.D.E.F.G…`)
+- **권장 깊이 3~4 단** — UX 가이드 (검색·브라우징·시각화 부담). 강제·차단은 안 함
+- `/review` 에서 깊이 5 이상 분류는 경고 표시 (제안만, 차단 아님)
+- 사용자가 일부러 깊게 쓸 일은 드물지만 **일관성 위해 제한 없음** (사용자 결정 2026-04-24)
+
+---
+
+## 모드별 파이프라인 (재정리)
+
+### chat
+```
+입력: "#건강 허리 또 아픔"
+  ↓ normalize_hash_syntax    → "# 건강\n허리 또 아픔"
+  ↓ posts INSERT (input_mode='chat', markdown=정규화 후 텍스트)
+  ↓ parse_markdown           — heading + free 분리 (M2 kind 적용)
+  ↓ [메타 필터 — list·free 만]
+  ↓ 요소별 처리 (M2 kind 분기 그대로)
+```
+
+### markdown
+```
+입력: "# 건강\n## 허리\n- 오늘 피곤"
+  ↓ normalize_hash_syntax    → 변화 없음 (이미 정규화 형태)
+  ↓ posts INSERT (input_mode='markdown')
+  ↓ (이하 PLAN-003 M2 경로 그대로)
+```
+
+**핵심 변화**:
+- chat 저장 경로에서 `parse_markdown` 사용. `_parse_for_chat` 폐기 또는 정규화 전용으로 축소.
+- markdown 도 같은 정규화 거치지만 변화 없음 (이미 표준 형태).
+
+---
+
+## 마일스톤
+
+### M0. 미확정 이슈 결정 (사용자 승인 gate)
+- 다중 `#` 한 줄 처리 (`#A #B 본문`)
+- 정규화 함수 시그니처 `normalize_hash_syntax(text: str) -> str` 확정
+- unit test 케이스 20개 내외 초안
+
+### M1. 정규화 함수 + heading 상속 정정 + chat 경로 통합
+- `engine/markdown.py` `_HEADING_RE` 정규식 `{1,6}` → `+` (또는 `{1,}`) — `#` 개수 제한 제거
+- `engine/markdown.py` `path_stack.clear()` 분기 제거 (옵션 A 자연 상속)
+- `engine/markdown.py` 또는 `engine/preprocessor.py` 에 `normalize_hash_syntax` 신규
+- `engine/save.py` `save()` 에서 mode 무관하게 저장 직전 정규화 1회 호출
+- `_parse_for_chat` 제거 — chat 도 `parse_markdown` 경유로 통일
+- posts.markdown 컬럼에 정규화 후 텍스트 저장
+- **회귀 검증**: PLAN-003 M1·M2 회귀 전부 통과 + heading 상속 정정 + 7개 이상 `#` heading 회귀
+
+### M2. 정규화 + heading 상속 회귀 테스트 + 실데이터 dogfood
+- `tests/regression_v20_chat_category.py` — 정규화 경계 케이스 20+
+- heading 자연 상속 정정 케이스 (PLAN 본문 표 기준)
+- dogfood: `#건강` / `#건강.허리` / `#건강 오늘 또 아픔` / 다층 heading 등 실입력 시뮬레이션
+- chat 에서 `sentence_categories` 정상 연결 검증
+
+### M3. UI 기획 인풋 전달 (코드 아님)
+- 본 PLAN 백엔드 완료 후 "최근 분류 원탭 + 자동완성" UX 설계는 별도 PLAN-007 (프론트)
+- M3 산출물 = 백엔드에서 프론트에 넘길 API 명세 (분류 자동완성·빈도 조회)
+
+---
+
+## 성공 기준
+
+- `save("#건강 허리 아픔", mode="chat")` → posts 1 + sentences 1 (`허리 아픔`) + category `건강` + sentence_categories 연결
+- `save("#건강", mode="chat")` → posts 1 + sentences 0 + category `건강` 등록만
+- `save("# 건강\n허리 아픔", mode="markdown")` 와 `save("#건강 허리 아픔", mode="chat")` 가 **동일 DB 상태** 생성
+- `save("# A\n## B.C", mode="markdown")` → `A.B.C` 계층 (자연 상속)
+- PLAN-003 M1·M2 회귀 전부 통과
+- 정규화·상속 수정은 저장 경로에서만 — retrieve(), 조회 API 는 DB 텍스트 그대로 반환
+
+---
+
+## 범위 외
+
+- **UI/UX 레이어** (원탭·자동완성·드래그 앤 드롭) — PLAN-007 별도
+- **인출 시 카테고리 시드 매칭** — PLAN-006 별도 (단 두 PLAN 같이 머지돼야 분류 기능 완성)
+- **자동 분류명 정리·구두점 제거·언더스코어 자동 삽입** — 사용자 책임 원칙으로 시스템 미적용
+- **여러 `#` 을 카테고리 **태그** 로 다루는 방향** — 현재 설계는 첫 `#` 만 heading
+
+---
+
+## DB 마이그레이션
+
+- 오늘 dogfood 에서 저장된 취업규칙(긴 heading 포함) DB 는 **2026-04-24 reset 완료** (사용자 승인 후 실행)
+- 시스템적 마이그레이션 스크립트 미제공 — 자동 변환은 "사용자 책임" 원칙과 충돌
+- 외부 markdown 문서 import 가 필요해질 경우 별도 도구·PLAN 으로 분리
+
+---
+
+## 의존·순서
+
+```
+PLAN-003 M2·M3 (머지 완료 — 4e22d91)
+  ↓
+PLAN-005 M0 설계 결정 (사용자 승인 gate)
+  ↓
+PLAN-005 M1 정규화 + heading 상속 정정 + chat 경로 통합
+  ↓
+PLAN-005 M2 회귀 + dogfood
+  ↓
+PLAN-005 M3 프론트 인풋 정리 → PLAN-007 (UI) 분기
+
+병렬:
+PLAN-006 (인출 카테고리 시드 매칭) ← 본 PLAN 과 독립 진행, 양쪽 머지돼야 분류 기능 완성
+```
+
+---
+
+## 구현 세션 시작 가이드
+
+1. PLAN-003 M2·M3 머지 커밋(`4e22d91`) 확인
+2. `docs/DESIGN_INPUT_MODES_AND_RETRIEVAL.md` · 본 PLAN · `DESIGN_PRINCIPLES.md` §1 원칙 2·9 읽기
+3. feature 브랜치 `feature/chat-category-normalize` 생성
+4. **M0 미확정 이슈 결정 — 승인 없이 M1 진입 금지**
+5. `M0 → M1 → M2 → M3` 순차. 각 마일스톤 커밋·보고·승인 대기 (CLAUDE.md 전역 규칙).
