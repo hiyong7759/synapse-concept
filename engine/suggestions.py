@@ -59,17 +59,17 @@ def unresolved(db_path: str = DB_PATH, limit: int = 30) -> list[dict]:
             (limit,),
         ).fetchall()
 
-        # 사용자의 카테고리별 최근 노드 (옵션 후보)
+        # 사용자의 카테고리별 최근 노드 (옵션 후보) — v20: major_category 기준
         recent_by_cat: dict[str, list[str]] = {}
         cat_rows = conn.execute(
-            """SELECT nc.category, n.name, n.updated_at
+            """SELECT nc.major_category, n.name, n.updated_at
                FROM node_categories nc
                JOIN nodes n ON n.id = nc.node_id
                WHERE n.status='active'
                ORDER BY n.updated_at DESC LIMIT 200"""
         ).fetchall()
         for r in cat_rows:
-            recent_by_cat.setdefault(r["category"], []).append(r["name"])
+            recent_by_cat.setdefault(r["major_category"], []).append(r["name"])
     finally:
         conn.close()
 
@@ -283,7 +283,7 @@ def ai_generated(
     conn = get_connection(db_path)
     try:
         rows = conn.execute(
-            """SELECT nc.node_id, n.name AS node_name, nc.category, nc.created_at
+            """SELECT nc.node_id, n.name AS node_name, nc.major_category, nc.created_at
                FROM node_categories nc
                JOIN nodes n ON n.id = nc.node_id
                WHERE nc.origin='ai' AND n.status='active'
@@ -297,9 +297,9 @@ def ai_generated(
             "kind": "category",
             "node_id": r["node_id"],
             "node_name": r["node_name"],
-            "category": r["category"],
+            "major_category": r["major_category"],
             "created_at": r["created_at"],
-            "question": f"'{r['node_name']}' 노드의 AI 분류 '{r['category']}' 이 맞나요?",
+            "question": f"'{r['node_name']}' 노드의 AI 분류 '{r['major_category']}' 이 맞나요?",
             "options": ["유지", "삭제"],
         }
         for r in rows

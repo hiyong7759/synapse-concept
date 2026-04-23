@@ -100,7 +100,7 @@ def category_worker(
             for cat in categories:
                 cur = conn.execute(
                     "INSERT OR IGNORE INTO node_categories "
-                    "(node_id, category, origin) VALUES (?,?,?)",
+                    "(node_id, major_category, origin) VALUES (?,?,?)",
                     (node_id, cat, "ai"),
                 )
                 inserted += cur.rowcount

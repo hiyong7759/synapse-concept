@@ -1,8 +1,10 @@
-"""Synapse API 라우터 (v15 — 하이퍼그래프 기반).
+"""Synapse API 라우터 (v20 — PLAN-004 카테고리 재설계 반영).
 
 설계서 기준 통합 파이프라인: 모든 입력 → retrieve → save → respond.
-v15: edges 테이블 폐기로 관련 엔드포인트·필드 제거. 연결은 node_mentions +
-node_categories + aliases 세 하이퍼엣지로 표현.
+v15: edges 테이블 폐기. 연결은 node_mentions + 카테고리 두 축 + aliases 로 표현.
+v20: node_categories.category → major_category 컬럼 리네이밍. 노드 카테고리 편집
+엔드포인트는 19 대분류 코드 편집 전용 (사용자 heading 계층은 sentence_categories
+로 분리 — PLAN-004 M2/M3 에서 엔드포인트 추가 예정).
 """
 
 import os
@@ -215,21 +217,20 @@ def hyperedges():
             FROM sentences s
             JOIN node_mentions m ON m.sentence_id = s.id
             JOIN nodes n ON n.id = m.node_id AND n.status='active'
-            WHERE s.status='active'
             GROUP BY s.id
             HAVING COUNT(m.node_id) >= 2
             """
         ).fetchall()
 
-        # 카테고리 바구니: 카테고리 공유 노드들
+        # 카테고리 바구니 (v20 축 B): 19 대분류 공유 노드들
         category_rows = conn.execute(
             """
-            SELECT nc.category,
+            SELECT nc.major_category,
                    GROUP_CONCAT(n.id)        AS node_ids,
                    GROUP_CONCAT(n.name, '|') AS node_names
             FROM node_categories nc
             JOIN nodes n ON n.id = nc.node_id AND n.status='active'
-            GROUP BY nc.category
+            GROUP BY nc.major_category
             HAVING COUNT(n.id) >= 2
             """
         ).fetchall()
@@ -250,8 +251,8 @@ def hyperedges():
         "category_baskets": [
             {
                 "kind": "category",
-                "category": r["category"],
-                "label": r["category"],
+                "category": r["major_category"],
+                "label": r["major_category"],
                 "node_ids": [int(x) for x in (r["node_ids"] or "").split(",") if x],
                 "node_names": (r["node_names"] or "").split("|"),
             }
@@ -276,14 +277,15 @@ class CategoryRenameRequest(BaseModel):
 
 @router.get("/nodes/{node_id}/categories")
 def list_node_categories(node_id: int):
-    """노드의 카테고리 목록 반환."""
+    """노드의 19 대분류 목록 반환 (v20 축 B — major_category)."""
     conn = get_connection()
     try:
         node = conn.execute("SELECT id, name FROM nodes WHERE id=?", (node_id,)).fetchone()
         if not node:
             raise HTTPException(status_code=404, detail=f"node {node_id} 없음")
         rows = conn.execute(
-            "SELECT category, created_at FROM node_categories WHERE node_id=? ORDER BY created_at",
+            "SELECT major_category, created_at FROM node_categories "
+            "WHERE node_id=? ORDER BY created_at",
             (node_id,),
         ).fetchall()
     finally:
@@ -291,13 +293,15 @@ def list_node_categories(node_id: int):
     return {
         "node_id": node["id"],
         "node_name": node["name"],
-        "categories": [{"category": r["category"], "created_at": r["created_at"]} for r in rows],
+        "categories": [
+            {"category": r["major_category"], "created_at": r["created_at"]} for r in rows
+        ],
     }
 
 
 @router.post("/nodes/{node_id}/categories")
 def add_node_category(node_id: int, req: CategoryAddRequest):
-    """노드에 카테고리 추가. 사용자 명시 — 즉시 승인된 것으로 간주."""
+    """노드에 19 대분류 추가 (v20 — major_category). 사용자 수동 → origin='user'."""
     cat = req.category.strip()
     if not cat:
         raise HTTPException(status_code=400, detail="category 비어있음")
@@ -307,8 +311,9 @@ def add_node_category(node_id: int, req: CategoryAddRequest):
         if not node:
             raise HTTPException(status_code=404, detail=f"node {node_id} 없음")
         conn.execute(
-            "INSERT OR IGNORE INTO node_categories (node_id, category) VALUES (?,?)",
-            (node_id, cat),
+            "INSERT OR IGNORE INTO node_categories (node_id, major_category, origin) "
+            "VALUES (?,?,?)",
+            (node_id, cat, "user"),
         )
         conn.commit()
     finally:
@@ -318,11 +323,11 @@ def add_node_category(node_id: int, req: CategoryAddRequest):
 
 @router.delete("/nodes/{node_id}/categories/{category}")
 def remove_node_category(node_id: int, category: str):
-    """노드에서 카테고리 제거 (복수 카테고리 중 일부만)."""
+    """노드에서 19 대분류 제거 (v20)."""
     conn = get_connection()
     try:
         cur = conn.execute(
-            "DELETE FROM node_categories WHERE node_id=? AND category=?",
+            "DELETE FROM node_categories WHERE node_id=? AND major_category=?",
             (node_id, category),
         )
         conn.commit()
@@ -333,7 +338,7 @@ def remove_node_category(node_id: int, category: str):
 
 @router.put("/nodes/{node_id}/categories")
 def rename_node_category(node_id: int, req: CategoryRenameRequest):
-    """노드 카테고리 이름 변경 (from → to)."""
+    """노드 19 대분류 이름 변경 (v20 — major_category)."""
     src = req.from_.strip()
     dst = req.to.strip()
     if not src or not dst:
@@ -344,17 +349,17 @@ def rename_node_category(node_id: int, req: CategoryRenameRequest):
     try:
         # 새 카테고리가 이미 있으면 from만 삭제
         existing = conn.execute(
-            "SELECT 1 FROM node_categories WHERE node_id=? AND category=?",
+            "SELECT 1 FROM node_categories WHERE node_id=? AND major_category=?",
             (node_id, dst),
         ).fetchone()
         if existing:
             cur = conn.execute(
-                "DELETE FROM node_categories WHERE node_id=? AND category=?",
+                "DELETE FROM node_categories WHERE node_id=? AND major_category=?",
                 (node_id, src),
             )
         else:
             cur = conn.execute(
-                "UPDATE node_categories SET category=? WHERE node_id=? AND category=?",
+                "UPDATE node_categories SET major_category=? WHERE node_id=? AND major_category=?",
                 (dst, node_id, src),
             )
         conn.commit()
@@ -365,18 +370,18 @@ def rename_node_category(node_id: int, req: CategoryRenameRequest):
 
 @router.get("/categories")
 def list_all_categories():
-    """모든 카테고리 경로 목록 (편집 UI 자동완성용)."""
+    """모든 19 대분류 코드 목록 (편집 UI 자동완성용 — v20 축 B)."""
     conn = get_connection()
     try:
         rows = conn.execute(
-            """SELECT category, COUNT(*) AS node_count
+            """SELECT major_category, COUNT(*) AS node_count
                FROM node_categories
-               GROUP BY category
-               ORDER BY node_count DESC, category"""
+               GROUP BY major_category
+               ORDER BY node_count DESC, major_category"""
         ).fetchall()
     finally:
         conn.close()
-    return [{"category": r["category"], "node_count": r["node_count"]} for r in rows]
+    return [{"category": r["major_category"], "node_count": r["node_count"]} for r in rows]
 
 
 @router.post("/aliases")
@@ -471,13 +476,15 @@ def review_apply(req: ReviewApplyRequest):
     conn = get_connection()
     try:
         if t == "category":
+            # v20: 19 대분류 코드 수동 추가 (사용자 수동 → origin='user')
             nid = p.get("node_id")
             cat = (p.get("category") or "").strip()
             if nid is None or not cat:
                 raise HTTPException(status_code=400, detail="node_id/category 필요")
             conn.execute(
-                "INSERT OR IGNORE INTO node_categories (node_id, category) VALUES (?,?)",
-                (nid, cat),
+                "INSERT OR IGNORE INTO node_categories (node_id, major_category, origin) "
+                "VALUES (?,?,?)",
+                (nid, cat, "user"),
             )
             conn.commit()
             return {"ok": True}
@@ -561,16 +568,17 @@ def review_apply(req: ReviewApplyRequest):
         if t == "category_delete":
             # ai_generated 섹션 "삭제" 버튼. origin 필수 — 사용자 수동 등록(user)은
             # 노드 상세 화면에서 삭제하도록 분리 (실수 방지).
+            # v20: major_category 컬럼, origin 목록에서 레거시 'rule' 제거 (v17 이후 'system').
             nid = p.get("node_id")
             cat = (p.get("category") or "").strip()
             origin = (p.get("origin") or "").strip()
-            if nid is None or not cat or origin not in ("ai", "rule", "external"):
+            if nid is None or not cat or origin not in ("ai", "system", "external"):
                 raise HTTPException(
                     status_code=400,
-                    detail="node_id/category/origin(ai|rule|external) 필요",
+                    detail="node_id/category/origin(ai|system|external) 필요",
                 )
             cur = conn.execute(
-                "DELETE FROM node_categories WHERE node_id=? AND category=? AND origin=?",
+                "DELETE FROM node_categories WHERE node_id=? AND major_category=? AND origin=?",
                 (nid, cat, origin),
             )
             conn.commit()

@@ -1,12 +1,22 @@
-"""Synapse 자동 저장 파이프라인 (v19 — PLAN-003 M1).
+"""Synapse 자동 저장 파이프라인 (v20 — PLAN-004 M1).
 
 원칙:
 - 입력 단위 = 게시물 (posts 1건 = 저장 호출 1건).
 - 저장 모드는 호출자가 mode='chat'|'markdown' 로 명시 (UI 입력창 선택 반영).
-- 자동 저장 범위: post + sentences + nodes + node_mentions (+ heading 경로·TIM.* 카테고리)
-- v15: edges 테이블 자체 폐기. 노드 간 연결은 node_mentions(문장 바구니) + node_categories
-  (카테고리 바구니) + aliases(별칭 바구니) 세 하이퍼엣지로만 표현.
+- 자동 저장 범위: post + sentences + nodes + node_mentions + sentence_categories(축 A)
+  + node_categories(축 B — TIM.* 규칙만 동기, 나머지는 워커)
+- v15: edges 테이블 자체 폐기. 노드 간 연결은 node_mentions(문장 바구니) + 카테고리
+  두 축(v20 사용자 heading / 19 대분류) + aliases 세 하이퍼엣지로만 표현.
 - 의미 관계(cause/avoid/similar)는 sentence 원문에 이미 있고, 해석은 외부 지능체 몫.
+
+v20 변경점 (PLAN-004 M1 — 카테고리 재설계):
+- 축 A(사용자 heading 계층) = categories(adjacency list) + sentence_categories(문장 매핑).
+  heading path segments 를 상위→하위로 categories upsert 하고 말단 category_id 만
+  sentence_categories 에 origin='user' 로 INSERT. 과거 "Kiwi 노드 전부에 heading
+  경로 부여" 하던 과포함 제거.
+- 축 B(19 대분류 의미 태깅) = node_categories.major_category. 저장 시점엔 결정론적
+  규칙(TIM.* 자동 태깅) 만 origin='system' 으로 INSERT. AI 분류는 워커가 담당.
+- 호출자 API 변경 없음 (save(text, mode=) 동일).
 
 v19 변경점 (PLAN-003 M1 — chat 모드 정립):
 - save(mode=) 파라미터 필수. 'chat' / 'markdown' 양자택일.
@@ -25,7 +35,7 @@ v17 파이프라인 변경:
 
 v15-A2 저장 정책 (v17 유지):
 - 동기 단계에서 aliases는 user·system origin만 INSERT (Wikidata·LLM 추천 경로 없음).
-- 동기 단계에서 node_categories는 user·system origin만 INSERT (AI 분류 경로 없음).
+- 동기 단계에서 node_categories는 TIM.* 규칙 시드만 (AI 분류는 워커).
 - AI 카테고리 분류와 external 별칭 수집은 저장 완료 이벤트로 넘기고 백그라운드 워커가
   담당. save() 는 commit 성공 후 등록된 훅을 호출한다 (register_post_save_hook).
 
@@ -131,15 +141,64 @@ def _upsert_node(conn, name: str) -> tuple[int, bool]:
     return cur.lastrowid, True
 
 
-def _add_node_category(
-    conn, node_id: int, category: Optional[str], origin: str = "user"
+def _add_node_major_category(
+    conn, node_id: int, major_category: Optional[str], origin: str = "system"
 ) -> None:
-    """카테고리 INSERT. origin: 'user' (heading·수동) / 'ai' (LLM 추론) / 'system' (엔진 규칙)."""
-    if not category:
+    """축 B: 노드 → 19 대분류 코드 INSERT (v20).
+
+    origin:
+      - 'ai'     LLM 분류 워커 (백그라운드, 기본 경로)
+      - 'system' 결정론적 엔진 규칙 (TIM.* 자동 태깅 등)
+      - 'user'   /review 에서 수동 교정
+    """
+    if not major_category:
         return
     conn.execute(
-        "INSERT OR IGNORE INTO node_categories (node_id, category, origin) VALUES (?,?,?)",
-        (node_id, category, origin),
+        "INSERT OR IGNORE INTO node_categories (node_id, major_category, origin) VALUES (?,?,?)",
+        (node_id, major_category, origin),
+    )
+
+
+def _upsert_category_path(conn, path: Optional[str]) -> Optional[int]:
+    """축 A: heading path (예: '더나은.개발팀') 를 categories 에 상위→하위 upsert.
+
+    반환값: 말단 category_id (path 가 None/빈 문자열이면 None).
+    parent_id 체인으로 저장하며 SQLite IS ? 로 NULL 비교.
+    """
+    if not path:
+        return None
+    segments = [s.strip() for s in path.split(".") if s and s.strip()]
+    if not segments:
+        return None
+    parent_id: Optional[int] = None
+    leaf_id: Optional[int] = None
+    for seg in segments:
+        row = conn.execute(
+            "SELECT id FROM categories WHERE name=? AND parent_id IS ?",
+            (seg, parent_id),
+        ).fetchone()
+        if row:
+            leaf_id = row["id"] if hasattr(row, "keys") else row[0]
+        else:
+            cur = conn.execute(
+                "INSERT INTO categories (name, parent_id) VALUES (?,?)",
+                (seg, parent_id),
+            )
+            leaf_id = cur.lastrowid
+        parent_id = leaf_id
+    return leaf_id
+
+
+def _add_sentence_category(
+    conn, sentence_id: int, category_id: Optional[int], origin: str = "user"
+) -> None:
+    """축 A: 문장 → 카테고리 말단 연결 INSERT (v20)."""
+    if category_id is None:
+        return
+    conn.execute(
+        "INSERT OR IGNORE INTO sentence_categories "
+        "(sentence_id, category_id, origin) VALUES (?,?,?)",
+        (sentence_id, category_id, origin),
     )
 
 
@@ -420,6 +479,11 @@ def _save_one_item(
         if _add_unresolved(conn, sid, token):
             result.unresolved_added.append((sid, token))
 
+    # ④-2. 축 A — heading path 가 있으면 categories 재귀 upsert → sentence_categories 연결 (v20)
+    if category_path:
+        leaf_id = _upsert_category_path(conn, category_path)
+        _add_sentence_category(conn, sid, leaf_id, origin="user")
+
     # ⑤ Kiwi 형태소 분석 — 저장 기본 경로 (LLM 사용 여부와 무관, 원칙 11)
     try:
         kiwi = kiwi_extract_for_save(effective_text)
@@ -437,18 +501,16 @@ def _save_one_item(
         quantity_tokens,
     )
 
-    # ⑦ 노드 upsert + mentions + category
+    # ⑦ 노드 upsert + mentions + TIM.* 자동 태깅 (축 B 결정론 예외, v20)
+    #    heading 경로는 ④-2 에서 sentence_categories 로 이미 반영 — 여기선 걷지 않음.
     for name in node_names:
         nid, is_new = _upsert_node(conn, name)
         if _add_mention(conn, nid, sid):
             result.mentions_added += 1
-        # heading 경로 카테고리 (origin='user')
-        if category_path:
-            _add_node_category(conn, nid, category_path, origin="user")
-        # TIM.* 자동 카테고리 (origin='system')
+        # 축 B — TIM.* 자동 major_category (origin='system')
         tim_cat = _tim_category_for(name)
         if tim_cat:
-            _add_node_category(conn, nid, tim_cat, origin="system")
+            _add_node_major_category(conn, nid, tim_cat, origin="system")
         if is_new:
             result.nodes_added.append(name)
             result.node_ids_added.append(nid)
@@ -614,8 +676,8 @@ def split_node(
         cur = conn.execute("INSERT INTO nodes (name) VALUES (?)", (orig["name"],))
         new_id = cur.lastrowid
         conn.execute(
-            "INSERT OR IGNORE INTO node_categories (node_id, category) "
-            "SELECT ?, category FROM node_categories WHERE node_id=?",
+            "INSERT OR IGNORE INTO node_categories (node_id, major_category, origin) "
+            "SELECT ?, major_category, origin FROM node_categories WHERE node_id=?",
             (new_id, node_id),
         )
 
@@ -665,8 +727,10 @@ def merge_nodes(
         mentions_moved = cur_m.rowcount
 
         conn.execute(
-            """INSERT OR IGNORE INTO node_categories (node_id, category, created_at)
-               SELECT ?, category, created_at FROM node_categories WHERE node_id=?""",
+            """INSERT OR IGNORE INTO node_categories
+               (node_id, major_category, origin, created_at)
+               SELECT ?, major_category, origin, created_at
+               FROM node_categories WHERE node_id=?""",
             (keep_id, remove_id),
         )
         conn.execute("DELETE FROM node_categories WHERE node_id=?", (remove_id,))

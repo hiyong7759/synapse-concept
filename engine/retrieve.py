@@ -260,13 +260,13 @@ def _get_category_supplement_nodes(
 
     ph = ",".join("?" * len(start_node_ids))
     rows = conn.execute(
-        f"SELECT nc.category FROM node_categories nc WHERE nc.node_id IN ({ph})",
+        f"SELECT nc.major_category FROM node_categories nc WHERE nc.node_id IN ({ph})",
         list(start_node_ids),
     ).fetchall()
 
     subcats: set[str] = {
-        r["category"] for r in rows
-        if r["category"] and re.match(r"^[A-Z]{3}\.", r["category"])
+        r["major_category"] for r in rows
+        if r["major_category"] and re.match(r"^[A-Z]{3}\.", r["major_category"])
     }
     if not subcats:
         return set()
@@ -284,7 +284,7 @@ def _get_category_supplement_nodes(
         cat_rows = conn.execute(
             "SELECT nc.node_id FROM node_categories nc "
             "JOIN nodes n ON n.id = nc.node_id "
-            "WHERE nc.category = ? AND n.status='active' LIMIT 20",
+            "WHERE nc.major_category = ? AND n.status='active' LIMIT 20",
             (sub,),
         ).fetchall()
         for r in cat_rows:
