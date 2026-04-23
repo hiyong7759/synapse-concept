@@ -342,65 +342,7 @@ def external_generated(
     ]
 
 
-# ─── sentences 상태 검수 섹션 (PLAN-002 Phase 3) ──────────
-
-def pending_sentences(db_path: str = DB_PATH, limit: int = 30) -> list[dict]:
-    """extract-state 자동 pending 전이된 문장 검수 — 유효/무효 확정."""
-    conn = get_connection(db_path)
-    try:
-        rows = conn.execute(
-            """SELECT id, text, post_id, position, created_at, updated_at
-               FROM sentences WHERE status='pending'
-               ORDER BY updated_at DESC LIMIT ?""",
-            (limit,),
-        ).fetchall()
-    finally:
-        conn.close()
-    return [
-        {
-            "sentence_id": r["id"],
-            "text": r["text"],
-            "post_id": r["post_id"],
-            "position": r["position"],
-            "created_at": r["created_at"],
-            "updated_at": r["updated_at"],
-            "question": f"이 문장이 여전히 유효한가요? '{r['text']}'",
-            "options": ["유효 (active)", "무효 (inactive)"],
-        }
-        for r in rows
-    ]
-
-
-def recent_deactivated(
-    db_path: str = DB_PATH, days: int = 30, limit: int = 30
-) -> list[dict]:
-    """최근 N일 이내 자동 inactive 된 문장 — 되돌리기 옵션 제공.
-    기준 컬럼은 updated_at (상태 전이 시점 근사치)."""
-    cutoff = (date.today() - timedelta(days=days)).isoformat()
-    conn = get_connection(db_path)
-    try:
-        rows = conn.execute(
-            """SELECT id, text, post_id, position, created_at, updated_at
-               FROM sentences
-               WHERE status='inactive' AND updated_at >= ?
-               ORDER BY updated_at DESC LIMIT ?""",
-            (cutoff, limit),
-        ).fetchall()
-    finally:
-        conn.close()
-    return [
-        {
-            "sentence_id": r["id"],
-            "text": r["text"],
-            "post_id": r["post_id"],
-            "position": r["position"],
-            "created_at": r["created_at"],
-            "updated_at": r["updated_at"],
-            "question": f"이 문장이 자동으로 무효 처리됐어요: '{r['text']}'",
-            "options": ["유지 (inactive)", "되돌리기 (active)"],
-        }
-        for r in rows
-    ]
+# v18: pending_sentences · recent_deactivated 폐기 (상태 레이어 제거).
 
 
 # ─── 통합 ─────────────────────────────────────────────────
@@ -413,8 +355,6 @@ def all_sections(
     """전체 섹션 호출. sections 인자로 일부만 선택 가능."""
     available = {
         "unresolved":         lambda: unresolved(db_path=db_path),
-        "pending_sentences":  lambda: pending_sentences(db_path=db_path),
-        "recent_deactivated": lambda: recent_deactivated(db_path=db_path),
         "ai_generated":       lambda: ai_generated(db_path=db_path),
         "external_generated": lambda: external_generated(db_path=db_path),
         "suspected_typos":    lambda: suspected_typos(db_path=db_path),
@@ -438,26 +378,15 @@ def counts(db_path: str = DB_PATH) -> dict:
         ext_alias_n = conn.execute(
             "SELECT COUNT(*) FROM aliases WHERE origin='external'"
         ).fetchone()[0]
-        pending_n = conn.execute(
-            "SELECT COUNT(*) FROM sentences WHERE status='pending'"
-        ).fetchone()[0]
-        # recent_deactivated 는 알림성이라 total 에 포함하지 않음
-        cutoff = (date.today() - timedelta(days=30)).isoformat()
-        recent_deact_n = conn.execute(
-            "SELECT COUNT(*) FROM sentences WHERE status='inactive' AND updated_at >= ?",
-            (cutoff,),
-        ).fetchone()[0]
     finally:
         conn.close()
     typos_n = len(find_suspected_typos(db_path=db_path))
     basic_n = len(missing_basic_info(db_path=db_path))
     total = (unresolved_n + typos_n + basic_n
-             + ai_cat_n + ext_alias_n + pending_n)
+             + ai_cat_n + ext_alias_n)
     return {
         "total":              total,
         "unresolved":         unresolved_n,
-        "pending_sentences":  pending_n,
-        "recent_deactivated": recent_deact_n,
         "ai_generated":       {"category": ai_cat_n},
         "external_generated": {"alias": ext_alias_n},
         "suspected_typos":    typos_n,

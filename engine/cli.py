@@ -97,16 +97,10 @@ def cmd_interactive(use_llm: bool) -> None:
         if r_retrieve.start_nodes:
             print(f"  [탐색] {' / '.join(r_retrieve.start_nodes)} → {len(r_retrieve.context_triples)}개 트리플")
 
-        # 2. context_sentences: 인출된 트리플에서 원본 문장 추출 (문장 단위 dedup)
-        seen_sentences: set[str] = set()
-        context_sentences = []
-        for t in r_retrieve.context_triples:
-            if t.sentence_text and t.sentence_text not in seen_sentences:
-                seen_sentences.add(t.sentence_text)
-                context_sentences.append(t.sentence_text)
+        # v18: context_sentences 폐기 (상태 레이어 제거 — extract-state 가 사라져 불필요)
 
-        # 3. 저장: context 포함하여 노드/엣지 추출
-        r_save = save(text, use_llm=use_llm, context_sentences=context_sentences)
+        # 2. 저장: Kiwi-first 파이프라인
+        r_save = save(text, use_llm=use_llm)
 
         # 4. 모호성 되물음 처리
         if r_save.question:
@@ -130,12 +124,7 @@ def _print_save_result(r) -> None:
         print(f"  [노드 신규] {', '.join(r.nodes_added)}")
     if r.mentions_added:
         print(f"  [언급 기록] {r.mentions_added}건")
-    for sid in r.sentences_deactivated:
-        print(f"  [무효] sentence#{sid}")
-    for sid in r.sentences_pending:
-        print(f"  [보류] sentence#{sid} (review 확인 필요)")
-    if not (r.nodes_added or r.mentions_added
-            or r.sentences_deactivated or r.sentences_pending):
+    if not (r.nodes_added or r.mentions_added):
         print("  (변경 없음)")
 
 

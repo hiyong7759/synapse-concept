@@ -1,10 +1,14 @@
-"""Synapse DB — SQLite v17 스키마.
+"""Synapse DB — SQLite v18 스키마.
 
-v17 변경점 (2026-04-22):
+v18 변경점 (2026-04-23):
+- sentences.status 컬럼 폐기 (상태 레이어 제거). extract-state LLM 판정 자체가 사라져
+  'active' / 'inactive' / 'pending' 구분 불필요. 모든 sentence 는 영구 조회 대상.
+- idx_sentences_status 인덱스 제거.
+- 구 스키마(v17 등) 에 status 컬럼이 있으면 자동 백업 + v18 재생성.
+
+v17 변경점 (참고):
 - node_categories / aliases origin CHECK 제약 `'rule'` → `'system'` 으로 리네이밍.
-  출처는 데이터 생성 '주체'이며 규칙은 수단이기 때문 (엔진이 주체 = 'system').
 - 허용값: ('user', 'ai', 'system', 'external').
-- 구 스키마(v15-A2 등) → v17 자동 마이그레이션 없음. DB 파일 자동 백업 후 재생성.
 
 v15 변경점 (참고):
 - edges 테이블 폐기. 노드 간 연결은 node_mentions(문장 바구니) + node_categories(카테고리 바구니)
@@ -20,8 +24,8 @@ v12 변경점 (참고):
 
 마이그레이션 정책:
 - v14 → v15: edges DROP만 수행 (기존 노드·문장·카테고리 데이터 보존). 자동 백업 생성.
-- v15-A2 → v17: origin 리터럴 변경으로 무손실 마이그레이션 지원 안 함. DB 백업 후 재생성.
-- 그 이전 구 스키마 → v17: DB 파일 자동 백업 후 재생성.
+- v15-A2 → v17·v18: origin 리터럴·컬럼 구조 변경으로 무손실 마이그레이션 지원 안 함. DB 백업 후 재생성.
+- 그 이전 구 스키마 → v18: DB 파일 자동 백업 후 재생성.
 """
 
 import os
@@ -46,7 +50,6 @@ CREATE TABLE IF NOT EXISTS sentences (
     position        INTEGER NOT NULL DEFAULT 0,
     text            TEXT    NOT NULL,
     role            TEXT    NOT NULL DEFAULT 'user' CHECK(role IN ('user', 'assistant')),
-    status          TEXT    NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'pending')),
     created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
     updated_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
@@ -90,7 +93,6 @@ CREATE TABLE IF NOT EXISTS unresolved_tokens (
 
 CREATE INDEX IF NOT EXISTS idx_sentences_role       ON sentences(role);
 CREATE INDEX IF NOT EXISTS idx_sentences_post       ON sentences(post_id, position);
-CREATE INDEX IF NOT EXISTS idx_sentences_status     ON sentences(status);
 CREATE INDEX IF NOT EXISTS idx_nodes_name           ON nodes(name);
 CREATE INDEX IF NOT EXISTS idx_nodes_status         ON nodes(status);
 CREATE INDEX IF NOT EXISTS idx_mentions_node        ON node_mentions(node_id);
@@ -134,8 +136,8 @@ def _check_allows_system(conn: sqlite3.Connection, table: str) -> bool:
 
 
 def _is_current_schema(conn: sqlite3.Connection) -> bool:
-    """v17 스키마 여부 확인: edges 테이블 없음 + origin 컬럼 존재 + 필수 테이블 +
-    CHECK 제약에 'system' origin 허용."""
+    """v18 스키마 여부 확인: edges 테이블 없음 + origin 컬럼 존재 + 필수 테이블 +
+    CHECK 제약에 'system' origin 허용 + sentences.status 컬럼 폐기."""
     tables = _get_tables(conn)
     for required in ("sentences", "nodes", "node_mentions", "node_categories",
                      "aliases", "unresolved_tokens", "posts"):
@@ -170,10 +172,10 @@ def _is_current_schema(conn: sqlite3.Connection) -> bool:
         return False
     if not _check_allows_system(conn, "aliases"):
         return False
-    # PLAN-002 Phase 1: sentences.status 컬럼 필요 (active|inactive|pending)
-    if "status" not in sent_cols:
+    # v18: sentences.status 컬럼이 '있으면' 구 스키마 (v17 이하)
+    if "status" in sent_cols:
         return False
-    # PLAN-002 F5a: sentences.updated_at 컬럼 필요 (텍스트·상태 변경 시점 추적)
+    # sentences.updated_at 컬럼 필요 (텍스트 변경 시점 추적)
     if "updated_at" not in sent_cols:
         return False
     return True
@@ -269,27 +271,26 @@ def _migrate_check_to_external(db_path: str) -> None:
         conn.close()
 
 
-def _can_add_sentences_status(conn: sqlite3.Connection) -> bool:
-    """sentences 에 status 컬럼이 없고 기존 스키마는 v15-A2 이상인지 확인."""
+# v18: _can_add_sentences_status · _migrate_add_sentences_status 폐기 (상태 레이어 제거).
+
+
+def _can_drop_sentences_status(conn: sqlite3.Connection) -> bool:
+    """v18: sentences.status 컬럼이 있고 나머지는 v18 호환인지 확인 → 무손실 DROP 대상."""
     tables = _get_tables(conn)
     if "edges" in tables or "sentences" not in tables:
         return False
-    return "status" not in _get_cols(conn, "sentences")
+    return "status" in _get_cols(conn, "sentences")
 
 
-def _migrate_add_sentences_status(db_path: str) -> None:
-    """sentences.status 컬럼 추가 + 인덱스. 기존 레코드는 DEFAULT 'active'."""
+def _migrate_drop_sentences_status(db_path: str) -> None:
+    """v17 → v18: sentences.status 컬럼·인덱스를 DROP (무손실).
+    SQLite 3.35+ 의 ALTER TABLE DROP COLUMN 사용. 기존 sentence 원문·mention 보존."""
     backup = _backup_db(db_path)
-    print(f"[db] PLAN-002: sentences.status 컬럼 추가 마이그레이션. 백업={backup}")
+    print(f"[db] v18: sentences.status 컬럼 DROP 마이그레이션. 백업={backup}")
     conn = sqlite3.connect(db_path)
     try:
-        conn.execute(
-            "ALTER TABLE sentences ADD COLUMN status TEXT NOT NULL DEFAULT 'active' "
-            "CHECK(status IN ('active', 'inactive', 'pending'))"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_sentences_status ON sentences(status)"
-        )
+        conn.execute("DROP INDEX IF EXISTS idx_sentences_status")
+        conn.execute("ALTER TABLE sentences DROP COLUMN status")
         conn.commit()
     finally:
         conn.close()
@@ -319,17 +320,15 @@ def _migrate_add_sentences_updated_at(db_path: str) -> None:
                 position        INTEGER NOT NULL DEFAULT 0,
                 text            TEXT    NOT NULL,
                 role            TEXT    NOT NULL DEFAULT 'user' CHECK(role IN ('user', 'assistant')),
-                status          TEXT    NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'inactive', 'pending')),
                 created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
                 updated_at      TEXT    NOT NULL DEFAULT (datetime('now'))
             );
-            INSERT INTO sentences_new (id, post_id, position, text, role, status, created_at, updated_at)
-                SELECT id, post_id, position, text, role, status, created_at, created_at FROM sentences;
+            INSERT INTO sentences_new (id, post_id, position, text, role, created_at, updated_at)
+                SELECT id, post_id, position, text, role, created_at, created_at FROM sentences;
             DROP TABLE sentences;
             ALTER TABLE sentences_new RENAME TO sentences;
             CREATE INDEX IF NOT EXISTS idx_sentences_role   ON sentences(role);
             CREATE INDEX IF NOT EXISTS idx_sentences_post   ON sentences(post_id, position);
-            CREATE INDEX IF NOT EXISTS idx_sentences_status ON sentences(status);
         """)
         conn.commit()
         conn.execute("PRAGMA foreign_keys = ON")
@@ -405,25 +404,25 @@ def init_db(db_path: str = DB_PATH) -> str:
                 conn = None
                 _migrate_check_to_external(db_path)
                 conn = sqlite3.connect(db_path)
-            # PLAN-002: sentences.status 컬럼 추가 (기존 레코드 전부 active)
-            if conn is not None and _can_add_sentences_status(conn):
-                conn.close()
-                conn = None
-                _migrate_add_sentences_status(db_path)
-                conn = sqlite3.connect(db_path)
-            # PLAN-002 F5a: sentences.updated_at 컬럼 추가 (상태·텍스트 변경 시점)
+            # PLAN-002 F5a: sentences.updated_at 컬럼 추가 (텍스트 변경 시점)
             if conn is not None and _can_add_sentences_updated_at(conn):
                 conn.close()
                 conn = None
                 _migrate_add_sentences_updated_at(db_path)
                 conn = sqlite3.connect(db_path)
-            # 그래도 v15 스키마가 아니면 구형 DB로 판정 → 백업 후 재생성
+            # v17 → v18: sentences.status 컬럼 무손실 DROP (상태 레이어 제거)
+            if conn is not None and _can_drop_sentences_status(conn):
+                conn.close()
+                conn = None
+                _migrate_drop_sentences_status(db_path)
+                conn = sqlite3.connect(db_path)
+            # 그래도 v18 스키마가 아니면 구형 DB로 판정 → 백업 후 재생성
             if not _is_current_schema(conn):
                 conn.close()
                 conn = None
                 backup = _backup_db(db_path)
                 os.remove(db_path)
-                print(f"[db] 구 스키마 감지 → 백업({backup}) 후 v17 재생성: {db_path}")
+                print(f"[db] 구 스키마 감지 → 백업({backup}) 후 v18 재생성: {db_path}")
         finally:
             if conn:
                 conn.close()
@@ -461,9 +460,6 @@ def get_stats(db_path: str = DB_PATH) -> dict:
         sentences_total   = conn.execute("SELECT COUNT(*) FROM sentences").fetchone()[0]
         sentences_user    = conn.execute("SELECT COUNT(*) FROM sentences WHERE role='user'").fetchone()[0]
         sentences_asst    = conn.execute("SELECT COUNT(*) FROM sentences WHERE role='assistant'").fetchone()[0]
-        sentences_active  = conn.execute("SELECT COUNT(*) FROM sentences WHERE status='active'").fetchone()[0]
-        sentences_pending = conn.execute("SELECT COUNT(*) FROM sentences WHERE status='pending'").fetchone()[0]
-        sentences_inactive= conn.execute("SELECT COUNT(*) FROM sentences WHERE status='inactive'").fetchone()[0]
         unresolved_total  = conn.execute("SELECT COUNT(*) FROM unresolved_tokens").fetchone()[0]
     finally:
         conn.close()
@@ -477,9 +473,6 @@ def get_stats(db_path: str = DB_PATH) -> dict:
         "sentences_total":      sentences_total,
         "sentences_user":       sentences_user,
         "sentences_assistant":  sentences_asst,
-        "sentences_active":     sentences_active,
-        "sentences_pending":    sentences_pending,
-        "sentences_inactive":   sentences_inactive,
         "unresolved_total":     unresolved_total,
     }
 

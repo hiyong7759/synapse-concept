@@ -125,7 +125,7 @@ def _get_mentions_for_nodes(conn, node_ids: set[int]) -> list[Mention]:
         FROM node_mentions m
         JOIN nodes n     ON n.id = m.node_id
         JOIN sentences s ON s.id = m.sentence_id
-        WHERE m.node_id IN ({ph}) AND n.status='active' AND s.status='active'
+        WHERE m.node_id IN ({ph}) AND n.status='active'
         """,
         list(node_ids),
     ).fetchall()

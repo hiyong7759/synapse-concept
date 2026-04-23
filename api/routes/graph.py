@@ -41,11 +41,11 @@ class ChatRequest(BaseModel):
 
 class SaveResponseModel(BaseModel):
     # v15: 게시물 단위 저장. edges 테이블 폐기로 관련 필드 제거.
+    # v18: nodes_deactivated 필드 폐기 (상태 레이어 제거).
     post_id: Optional[int] = None
     nodes_added: list[str]
     node_ids_added: list[int]
     mentions_added: int = 0
-    nodes_deactivated: list[str] = []  # v15: 상태변경된 노드 이름 (현재는 sentence#N 식별자)
 
 
 class RetrieveResponseModel(BaseModel):
@@ -110,16 +110,10 @@ def chat(req: ChatRequest):
     # ── 1단계: 인출 (retrieve) ──
     r_retrieve = retrieve(text, use_llm=USE_LLM, images=images, history=history)
 
-    # context_sentences: 인출된 트리플에서 원본 문장 추출 (문장 단위 dedup)
-    seen_sentences: set[str] = set()
-    context_sentences: list[str] = []
-    for t in r_retrieve.context_triples:
-        if t.sentence_text and t.sentence_text not in seen_sentences:
-            seen_sentences.add(t.sentence_text)
-            context_sentences.append(t.sentence_text)
+    # v18: context_sentences 폐기 (상태 레이어 제거 — extract-state 가 사라져 불필요)
 
     # ── 2단계: 저장 (save) ──
-    r_save = save(text, use_llm=USE_LLM, context_sentences=context_sentences or None)
+    r_save = save(text, use_llm=USE_LLM)
 
     # 인출 결과·답변은 항상 구성 (저장 보류 시에도 전달)
     retrieve_model = RetrieveResponseModel(
@@ -149,7 +143,6 @@ def chat(req: ChatRequest):
         nodes_added=r_save.nodes_added,
         node_ids_added=r_save.node_ids_added,
         mentions_added=r_save.mentions_added,
-        nodes_deactivated=r_save.nodes_deactivated,
     )
 
     # assistant 응답을 sentences에 저장
@@ -436,11 +429,8 @@ def sentence_impact(sentence_id: int):
 
 @router.put("/sentences/{sentence_id}")
 def edit_sentence(sentence_id: int, req: SentenceUpdateRequest):
-    result = update_sentence(sentence_id, req.text, use_llm=USE_LLM)
-    return {
-        "sentence_id": sentence_id,
-        "nodes_deactivated": result.nodes_deactivated,
-    }
+    update_sentence(sentence_id, req.text, use_llm=USE_LLM)
+    return {"sentence_id": sentence_id}
 
 
 @router.delete("/sentences/{sentence_id}")
@@ -600,22 +590,7 @@ def review_apply(req: ReviewApplyRequest):
             conn.commit()
             return {"ok": True, "deleted": cur.rowcount}
 
-        if t == "sentence_status":
-            # PLAN-002 Phase 3: pending/recent_deactivated 섹션의 사용자 확정 액션.
-            # new_status 는 active/inactive/pending 중 하나 (자동 판정 되돌리기 포함).
-            sentence_id = p.get("sentence_id")
-            new_status = (p.get("new_status") or "").strip()
-            if sentence_id is None or new_status not in ("active", "inactive", "pending"):
-                raise HTTPException(
-                    status_code=400,
-                    detail="sentence_id/new_status(active|inactive|pending) 필요",
-                )
-            cur = conn.execute(
-                "UPDATE sentences SET status=?, updated_at=datetime('now') WHERE id=?",
-                (new_status, sentence_id),
-            )
-            conn.commit()
-            return {"ok": True, "updated": cur.rowcount, "new_status": new_status}
+        # v18: sentence_status 핸들러 폐기 (상태 레이어 제거).
 
         if t == "token_dismiss":
             sentence_id = p.get("sentence_id")

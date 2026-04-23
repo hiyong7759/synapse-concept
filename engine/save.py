@@ -53,10 +53,7 @@ class SaveResult:
     node_ids_added: list[int] = field(default_factory=list)
     mentions_added: int = 0
     unresolved_added: list[tuple[int, str]] = field(default_factory=list)  # (sentence_id, token)
-    # PLAN-002: sentences.status 자동 전이 결과
-    sentences_deactivated: list[int] = field(default_factory=list)  # status→inactive 된 sentence_id
-    sentences_pending: list[int] = field(default_factory=list)      # status→pending  된 sentence_id
-    nodes_deactivated: list[str] = field(default_factory=list)      # UI 표시용 (sentence#N)
+    # v18: sentences_deactivated/pending/nodes_deactivated 폐기 (상태 레이어 제거)
     markdown_draft: Optional[str] = None  # v17: structure-suggest 폐기. 하위 호환용 필드 유지 (항상 None)
     question: Optional[str] = None
 
@@ -151,37 +148,7 @@ def _add_unresolved(conn, sentence_id: int, token: str) -> bool:
     return cur.rowcount > 0
 
 
-def _update_sentence_status(conn, sentence_ids: list[int], new_status: str) -> list[int]:
-    """sentences.status 를 new_status 로 일괄 UPDATE. 실제 바뀐 sentence_id 반환.
-
-    PLAN-002 Phase 2: deactivate/pending 판정을 DB 에 반영.
-    - new_status='inactive' → BFS 인출·공출현 계산에서 제외 (F2)
-    - new_status='pending'  → 사용자 검토 대기 (/review 의 pending_sentences)
-    이미 같은 상태였던 레코드는 반환 목록에서 제외(UI 시끄러움 방지).
-    """
-    sids = [s for s in sentence_ids if isinstance(s, int)]
-    if not sids or new_status not in ("active", "inactive", "pending"):
-        return []
-    ph = ",".join("?" * len(sids))
-    rows = conn.execute(
-        f"SELECT id FROM sentences WHERE id IN ({ph}) AND status != ?",
-        [*sids, new_status],
-    ).fetchall()
-    changed = [r[0] for r in rows]
-    if not changed:
-        return []
-    ph2 = ",".join("?" * len(changed))
-    conn.execute(
-        f"UPDATE sentences SET status=?, updated_at=datetime('now') WHERE id IN ({ph2})",
-        [new_status, *changed],
-    )
-    return changed
-
-
-def _deactivate_by_sentence_ids(conn, sentence_ids: list[int]) -> list[str]:
-    """deactivate 대상 sentences 를 inactive 로 내리고 UI 표시용 문자열 반환."""
-    changed = _update_sentence_status(conn, sentence_ids, "inactive")
-    return [f"sentence#{sid}" for sid in changed]
+# v18: _update_sentence_status · _deactivate_by_sentence_ids 폐기 (상태 레이어 제거).
 
 
 # ─── 토큰 감지 ────────────────────────────────────────────
@@ -399,7 +366,6 @@ def _save_one_item(
     position: int,
     post_context: str,
     use_llm: bool,
-    retrieve_context_sentences: Optional[list[tuple[int, str]]],
     result: SaveResult,
 ) -> None:
     """게시물 내 항목 하나 저장 (v17 Kiwi-first 파이프라인).
@@ -408,7 +374,7 @@ def _save_one_item(
           ④ sentence INSERT → ⑤ Kiwi 형태소 분석 → ⑥ 날짜 분할 + 수량
           정규식 + TIM.* 카테고리 → ⑦ 노드 upsert + mentions + category.
 
-    v17: ⑧ extract-state 폐기 — 상태 레이어 제거 (모든 sentence 는 항상 active).
+    v18: ⑧ extract-state 전면 폐기 — 상태 레이어 없음 (sentences.status 컬럼 삭제).
     """
     # ① save-pronoun — 지시어·날짜 치환 (LLM, 실패 시 원문 유지)
     effective_text = item_text
@@ -477,9 +443,8 @@ def _save_one_item(
             if name == "나":
                 _register_first_person_aliases(conn, nid)
 
-    # v17: ⑧ extract-state 폐기 (상태 레이어 제거).
-    # SaveResult.sentences_deactivated/pending/nodes_deactivated 는 하위 호환용으로
-    # 유지되지만 여기서는 채우지 않는다 (항상 빈 리스트).
+    # v18: ⑧ extract-state · sentences.status 전면 폐기 (상태 레이어 제거).
+    # 시점 해석은 인출 LLM 이 created_at 기반 최근성 판단으로 처리.
 
 
 def save(
@@ -487,17 +452,15 @@ def save(
     db_path: str = DB_PATH,
     use_llm: bool = True,
     images: Optional[list[str]] = None,
-    context_sentences: Optional[list[tuple[int, str]]] = None,
 ) -> SaveResult:
     """텍스트를 게시물 단위로 저장. SaveResult 반환.
 
-    v17 흐름:
+    v18 흐름:
     - 매 save() 호출 = posts 1건 INSERT (게시물 단위).
     - 평문/마크다운 구분 없이 parse_markdown 결과를 그대로 저장 (structure-suggest 폐기).
     - 진입부에서 메타 필터 1회 호출 → 메타 대화 문장 idx 는 저장 skip.
-    - 각 항목은 _save_one_item() 이 Kiwi-first 파이프라인(①~⑧) 으로 처리.
-
-    context_sentences: 인출에서 가져온 (sentence_id, text) 쌍. extract-state 판단용.
+    - 각 항목은 _save_one_item() 이 Kiwi-first 파이프라인(①~⑦) 으로 처리.
+    - 상태 레이어 없음 (v18: extract-state 폐기, sentences.status 컬럼 삭제).
     """
     result = SaveResult()
 
@@ -537,7 +500,6 @@ def save(
                 position=position,
                 post_context=post_context,
                 use_llm=use_llm,
-                retrieve_context_sentences=context_sentences,
                 result=result,
             )
             if result.question:
