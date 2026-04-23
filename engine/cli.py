@@ -29,7 +29,9 @@ def cmd_stats() -> None:
     print(f"  문장 {stats['sentences_total']} (user={stats['sentences_user']}, assistant={stats['sentences_assistant']})")
     print(f"  노드 {stats['nodes_active']}/{stats['nodes_total']} (활성/전체)")
     print(f"  언급 {stats['node_mentions_total']} (문장 바구니 멤버십)")
-    print(f"  카테고리 {stats['categories_total']} (카테고리 바구니 멤버십)")
+    print(f"  카테고리 마스터 {stats['categories_master']} (categories 트리 — 시드 19 대분류 + 사용자 heading)")
+    print(f"  축 A 문장-카테고리 {stats['sentence_categories_total']} (sentence_categories, 사용자 heading 주 매핑)")
+    print(f"  축 B 노드-대분류 {stats['node_categories_total']} (node_categories.major_category, 19 대분류 태깅)")
     print(f"  별칭 {stats['aliases_total']}")
     print(f"  미해결 토큰 {stats['unresolved_total']}")
 

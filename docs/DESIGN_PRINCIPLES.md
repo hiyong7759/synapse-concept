@@ -1,6 +1,6 @@
 # Synapse 설계 원칙
 
-**최종 업데이트**: 2026-04-23 (v19 계획 — PLAN-003 "입력 모드 분리" · 원칙 9 갱신 (chat 도 1급 모드). 선행 v18: 상태 레이어 제거 / `sentences.status` · `extract-state` 폐기. v17: Kiwi-first + 메타 필터 + origin `rule→system`)
+**최종 업데이트**: 2026-04-23 (v20 계획 — PLAN-004 "카테고리 재설계" · 원칙 4 갱신 (카테고리 공유 축을 `categories`+`sentence_categories` / `node_categories.major_category` 두 축으로 명시). 선행 v19: `posts.input_mode` · 원칙 9 갱신. v18: 상태 레이어 제거. v17: Kiwi-first + origin `rule→system`)
 
 시냅스 프로젝트의 **모든 원칙을 한 곳에 모은 문서**. 각 설계 문서는 이 문서의 해당 섹션을 참조한다. 원칙이 여러 문서에 중복되면 이 문서가 **유일한 출처(source of truth)**.
 
@@ -27,14 +27,14 @@
 
 ### 구조
 
-4. **연결은 카테고리 공유 + 공출현으로 창발한다.** 엣지 테이블 폐기. 노드 간 연결은 ① `node_mentions` 공출현(같은 sentence), ② `node_categories` 공유(같은 분류), ③ 카테고리 인접 맵(한 홉 확장) 세 경로로만 드러난다. 의미 관계(`cause`/`avoid`/`similar` 등)는 `sentences` 원문에 이미 있고, 해석은 외부 지능체(원칙 11) 몫이다. 시냅스의 본질은 해부학적 링크가 아니라 **함께 활성화되는 경향**(Hebbian)이며, 공출현·카테고리가 그 실체다.
+4. **연결은 카테고리 공유 + 공출현으로 창발한다.** 엣지 테이블 폐기. 노드 간 연결은 ① `node_mentions` 공출현(같은 sentence), ② 의미 태깅 축 공유(`node_categories.major_category` — 19 대분류 코드) + 카테고리 인접 맵 한 홉, ③ 사용자 heading 축 공유(`categories` adjacency list + `sentence_categories` 문장 매핑, 재귀 CTE 서브트리) — 세 경로로만 드러난다. ②·③ 은 v20(PLAN-004)에서 단일 `node_categories` 가 혼용하던 역할을 두 축으로 분리한 결과 — 사용자 heading 계층은 문장 단위, 19 대분류 의미 태깅은 노드 단위. 의미 관계(`cause`/`avoid`/`similar` 등)는 `sentences` 원문에 이미 있고, 해석은 외부 지능체(원칙 11) 몫이다. 시냅스의 본질은 해부학적 링크가 아니라 **함께 활성화되는 경향**(Hebbian)이며, 공출현·카테고리가 그 실체다.
 5. **동의어/다국어는 aliases.** React Native ↔ 리액트 네이티브 → `aliases`로 매칭 강화.
 6. **meta 컬럼·JSON 필드를 노드에 추가하지 마라.** "기간", "전공", "담당업무" 같은 상세 정보도 별도 노드 + 역참조로 표현한다. 단 `node_categories`(표시·필터 태깅용)는 예외.
 
 ### 저장과 출처
 
-7. **저장은 자동, 출처는 기록한다 — 저장은 순수 기록.** 원문 sentence + 노드 + `node_mentions` + `node_categories` + `aliases`는 모두 자동 저장한다. 각 레코드는 `origin` 컬럼(`user` / `ai` / `system` / `external`)으로 출처가 식별되며, 사용자는 언제든 AI·시스템·외부 생성물을 수정·삭제할 수 있다. **치환 실패 지시어(`unresolved_tokens`)와 파괴적 작업(노드 병합 등)만** `/review` 승인을 거친다. (v18: 저장 시점 해석·판정은 전면 배제 — `extract-state` 폐기 근거. 시점 해석은 인출 시점 LLM 책임.)
-8. **DB의 모든 레코드는 출처가 식별된다 — 파괴적 자동 작업 없음.** `node_categories`, `aliases`에는 `origin`이 붙는다. UI·`/review`는 이 값으로 필터링해 "AI가 자동으로 단 것만 훑어보기" 같은 검토 뷰를 제공한다. 출처별 역할: `user` 사용자 명시, `ai` LLM 추론(오류 검수용), `system` 결정론적 엔진 규칙(Kiwi·날짜·부정부사·인칭대명사 시드 등 — 규칙 오류 추적용), `external` 외부 API(예: Wikidata altLabel, 외부 데이터 오염 검수용). **`rule` 은 v17 에서 `system` 으로 리네이밍**했다 — 출처는 데이터 생성 "주체"이며 규칙은 수단이기 때문. (v18: 자동 deactivate·pending 같은 파괴적 자동 판정 없음. 무효화는 `update_sentence`·`delete_sentence` 로 사용자가 직접.)
+7. **저장은 자동, 출처는 기록한다 — 저장은 순수 기록.** 원문 sentence + 노드 + `node_mentions` + `sentence_categories` + `node_categories` + `aliases`는 모두 자동 저장한다(`categories` 마스터는 origin 없음 — 삭제 경로 부재). 각 레코드는 `origin` 컬럼(`user` / `ai` / `system` / `external`)으로 출처가 식별되며, 사용자는 언제든 AI·시스템·외부 생성물을 수정·삭제할 수 있다. **치환 실패 지시어(`unresolved_tokens`)와 파괴적 작업(노드 병합 등)만** `/review` 승인을 거친다. (v18: 저장 시점 해석·판정은 전면 배제 — `extract-state` 폐기 근거. 시점 해석은 인출 시점 LLM 책임.)
+8. **DB의 모든 레코드는 출처가 식별된다 — 파괴적 자동 작업 없음.** `sentence_categories`, `node_categories`, `aliases`에는 `origin`이 붙는다 (v20: `categories` 마스터는 예외 — 삭제 경로 부재). UI·`/review`는 이 값으로 필터링해 "AI가 자동으로 단 것만 훑어보기" 같은 검토 뷰를 제공한다. 출처별 역할: `user` 사용자 명시, `ai` LLM 추론(오류 검수용), `system` 결정론적 엔진 규칙(Kiwi·날짜·부정부사·인칭대명사 시드 등 — 규칙 오류 추적용), `external` 외부 API(예: Wikidata altLabel, 외부 데이터 오염 검수용). **`rule` 은 v17 에서 `system` 으로 리네이밍**했다 — 출처는 데이터 생성 "주체"이며 규칙은 수단이기 때문. (v18: 자동 deactivate·pending 같은 파괴적 자동 판정 없음. 무효화는 `update_sentence`·`delete_sentence` 로 사용자가 직접.)
 9. **입력 단위는 게시물, 저장 모드는 사용자가 명시한다.** 한 번의 저장 = 한 개의 `posts` 행. 저장 모드는 두 가지 — **chat**(메신저 스타일 평문) / **markdown**(heading·`- key:: value`·list·자유 문장 혼재 구조화 기록). 둘 다 1급 모드이며 UI 입력창 선택으로 결정된다(v19 계획 — PLAN-003). 세션·맥락 경계 자동 추론 없음. 내용 기반 자동 모드 판정 없음 — v17 `structure-suggest` 폐기(평문을 마크다운으로 강제 변환 금지)의 연장으로, v19 는 `has_heading()` 자동 분기도 제거하고 모드를 사용자 의도로 격상한다. 모드별 저장 파이프라인 차이(save-pronoun skip 여부·메타 필터 대상 범위·kind 별 처리)는 `docs/DESIGN_INPUT_MODES_AND_RETRIEVAL.md`.
 
 ### 동작
@@ -82,7 +82,7 @@
 
 ## 4. 카테고리·인접 맵 원칙
 
-인접 맵 구성 방침. 상세: `docs/DESIGN_CATEGORY.md`
+v20: 카테고리는 두 축(`categories`+`sentence_categories` 사용자 heading / `node_categories.major_category` 19 대분류) 으로 분리. 인접 맵은 **축 B(19 대분류 코드) 전용** — 축 A 는 `categories.parent_id` 재귀 CTE 로 서브트리 확장이 구조적으로 해결되어 인접 맵이 불필요. 상세: `docs/DESIGN_CATEGORY.md`
 
 1. **소분류 레벨** — 대분류 레벨 연결은 범위가 너무 넓어 노이즈 증가. 소분류로 좁혀 정밀도 확보.
 2. **크로스 대분류만** — 같은 대분류 내 소분류 간 연결은 기존 BFS 보완(대분류 전체 조회)으로 이미 처리됨.

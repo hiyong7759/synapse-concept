@@ -1,4 +1,11 @@
-"""Synapse DB — SQLite v19 스키마 (PLAN-003 M1).
+"""Synapse DB — SQLite v20 스키마 (PLAN-004 M1).
+
+v20 변경점 (2026-04-23):
+- 카테고리 재설계: 단일 node_categories 가 혼용하던 두 역할을 두 축으로 분리.
+  · 신설 categories (adjacency list 마스터) + sentence_categories (문장 단위 주 매핑)
+  · node_categories 재정의: category TEXT → major_category TEXT (19 대분류 전용)
+- 19 대분류 시드 INSERT (categories 테이블, 루트 19 + 소분류 ~100, parent_id 체인).
+- v19 이하 DB 는 자동 백업 후 v20 재생성 (마이그레이션 함수 없음 — 개인 DB 기준 옵션 A).
 
 v19 변경점 (2026-04-23):
 - posts.input_mode 컬럼 신설 + CHECK(input_mode IN ('chat','markdown')).
@@ -77,12 +84,28 @@ CREATE TABLE IF NOT EXISTS node_mentions (
     PRIMARY KEY (node_id, sentence_id)
 );
 
-CREATE TABLE IF NOT EXISTS node_categories (
-    node_id    INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-    category   TEXT    NOT NULL,
-    origin     TEXT    NOT NULL DEFAULT 'user' CHECK(origin IN ('user', 'ai', 'system', 'external')),
+CREATE TABLE IF NOT EXISTS categories (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT    NOT NULL,
+    parent_id  INTEGER REFERENCES categories(id) ON DELETE CASCADE,
     created_at TEXT    NOT NULL DEFAULT (datetime('now')),
-    PRIMARY KEY (node_id, category)
+    UNIQUE (parent_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS sentence_categories (
+    sentence_id INTEGER NOT NULL REFERENCES sentences(id) ON DELETE CASCADE,
+    category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    origin      TEXT    NOT NULL DEFAULT 'user' CHECK(origin IN ('user', 'ai', 'system', 'external')),
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (sentence_id, category_id)
+);
+
+CREATE TABLE IF NOT EXISTS node_categories (
+    node_id        INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    major_category TEXT    NOT NULL,
+    origin         TEXT    NOT NULL DEFAULT 'ai' CHECK(origin IN ('user', 'ai', 'system', 'external')),
+    created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (node_id, major_category)
 );
 
 CREATE TABLE IF NOT EXISTS aliases (
@@ -105,11 +128,65 @@ CREATE INDEX IF NOT EXISTS idx_nodes_name           ON nodes(name);
 CREATE INDEX IF NOT EXISTS idx_nodes_status         ON nodes(status);
 CREATE INDEX IF NOT EXISTS idx_mentions_node        ON node_mentions(node_id);
 CREATE INDEX IF NOT EXISTS idx_mentions_sentence    ON node_mentions(sentence_id);
-CREATE INDEX IF NOT EXISTS idx_nc_category          ON node_categories(category);
+CREATE INDEX IF NOT EXISTS idx_categories_parent    ON categories(parent_id);
+CREATE INDEX IF NOT EXISTS idx_sc_category          ON sentence_categories(category_id);
+CREATE INDEX IF NOT EXISTS idx_nc_major             ON node_categories(major_category);
 CREATE INDEX IF NOT EXISTS idx_nc_node              ON node_categories(node_id);
 CREATE INDEX IF NOT EXISTS idx_aliases              ON aliases(alias);
 CREATE INDEX IF NOT EXISTS idx_unresolved_sentence  ON unresolved_tokens(sentence_id);
 """
+
+
+# 19 대분류 시드 (v20) — CATEGORY_SYSTEMPROMPT.md 분류체계와 동기화.
+# 루트 19 (parent_id=NULL) + 각 루트의 소분류. categories.name 은 영문 코드로 저장해
+# 사용자 한글 heading (예: "건강"·"더나은") 과 네이밍 충돌을 피한다.
+_SEED_ROOTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("PER", ("individual", "family", "friend", "colleague", "public", "org")),
+    ("BOD", ("part", "disease", "medical", "exercise", "nutrition", "sleep")),
+    ("MND", ("emotion", "personality", "mental", "motivation", "coping")),
+    ("FOD", ("ingredient", "recipe", "restaurant", "drink", "product")),
+    ("LIV", ("housing", "appliance", "interior", "supply", "maintenance", "moving")),
+    ("MON", ("income", "spending", "invest", "payment", "loan", "insurance")),
+    ("WRK", ("workplace", "role", "jobchange", "business", "cert", "tool")),
+    ("TEC", ("sw", "hw", "ai", "infra", "data", "security")),
+    ("EDU", ("school", "online", "language", "academic", "reading", "exam")),
+    ("LAW", ("statute", "contract", "admin", "rights", "tax")),
+    ("TRV", ("domestic", "abroad", "transport", "stay", "flight", "place")),
+    ("NAT", ("animal", "plant", "weather", "terrain", "ecology", "space")),
+    ("CUL", ("film", "music", "book", "art", "show", "media")),
+    ("HOB", ("sport", "outdoor", "game", "craft", "sing", "collect", "social")),
+    ("SOC", ("politics", "international", "incident", "economy", "issue", "news")),
+    ("REL", ("romance", "conflict", "comm", "manner", "online")),
+    ("REG", ("christianity", "buddhism", "catholic", "islam", "other", "practice")),
+    ("TIM", ("year", "month", "day", "date", "time", "relative", "period")),
+    ("ACT", ("eat", "move", "use", "make", "talk", "think", "rest", "work")),
+)
+
+
+# 외부 공개 — save.py 의 루트 충돌 감지, suggestions.py 의 사용자 루트 필터링에서 재사용.
+SEED_ROOT_NAMES: frozenset[str] = frozenset(root for root, _subs in _SEED_ROOTS)
+
+
+def _seed_major_categories(conn: sqlite3.Connection) -> None:
+    """categories 테이블에 19 대분류 루트 + 소분류 시드 INSERT (이미 있으면 skip)."""
+    for root_name, sub_names in _SEED_ROOTS:
+        row = conn.execute(
+            "SELECT id FROM categories WHERE name=? AND parent_id IS NULL",
+            (root_name,),
+        ).fetchone()
+        if row:
+            root_id = row[0]
+        else:
+            cur = conn.execute(
+                "INSERT INTO categories (name, parent_id) VALUES (?, NULL)",
+                (root_name,),
+            )
+            root_id = cur.lastrowid
+        for sub in sub_names:
+            conn.execute(
+                "INSERT OR IGNORE INTO categories (name, parent_id) VALUES (?,?)",
+                (sub, root_id),
+            )
 
 
 def _get_tables(conn: sqlite3.Connection) -> set[str]:
@@ -164,12 +241,12 @@ def _has_heading_for_backfill(markdown: str) -> bool:
 
 
 def _is_current_schema(conn: sqlite3.Connection) -> bool:
-    """v19 스키마 여부 확인: edges 테이블 없음 + origin 컬럼 존재 + 필수 테이블 +
-    CHECK 제약에 'system' origin 허용 + sentences.status 컬럼 폐기 +
-    posts.input_mode 컬럼 + CHECK(chat|markdown)."""
+    """v20 스키마 여부 확인: edges 없음 + v19 요건(posts.input_mode) + v20 요건
+    (categories · sentence_categories 테이블 + node_categories.major_category 컬럼)."""
     tables = _get_tables(conn)
     for required in ("sentences", "nodes", "node_mentions", "node_categories",
-                     "aliases", "unresolved_tokens", "posts"):
+                     "aliases", "unresolved_tokens", "posts",
+                     "categories", "sentence_categories"):
         if required not in tables:
             return False
     if "sessions" in tables:
@@ -186,20 +263,35 @@ def _is_current_schema(conn: sqlite3.Connection) -> bool:
     # retention 컬럼이 남아있으면 구 스키마로 판정 (v13 이후 폐기)
     if "retention" in sent_cols:
         return False
-    # v15: node_categories / aliases 에 origin 컬럼 있어야 함 (v14 설계 원칙)
-    if "origin" not in _get_cols(conn, "node_categories"):
-        return False
+    # origin 컬럼 요건 (v15~)
     if "origin" not in _get_cols(conn, "aliases"):
         return False
+    # v20: node_categories 는 major_category 컬럼. 이전 category 컬럼은 없어야 함
+    nc_cols = _get_cols(conn, "node_categories")
+    if "major_category" not in nc_cols:
+        return False
+    if "category" in nc_cols:
+        return False
+    if "origin" not in nc_cols:
+        return False
+    # v20: sentence_categories 도 origin 컬럼
+    sc_cols = _get_cols(conn, "sentence_categories")
+    for required_col in ("sentence_id", "category_id", "origin"):
+        if required_col not in sc_cols:
+            return False
     # v15 A2: CHECK 제약이 'external' origin 값을 허용해야 함
     if not _check_allows_external(conn, "node_categories"):
         return False
     if not _check_allows_external(conn, "aliases"):
         return False
+    if not _check_allows_external(conn, "sentence_categories"):
+        return False
     # v17: CHECK 제약이 'system' origin 값을 허용해야 함 (rule → system 리네이밍)
     if not _check_allows_system(conn, "node_categories"):
         return False
     if not _check_allows_system(conn, "aliases"):
+        return False
+    if not _check_allows_system(conn, "sentence_categories"):
         return False
     # v18: sentences.status 컬럼이 '있으면' 구 스키마 (v17 이하)
     if "status" in sent_cols:
@@ -503,13 +595,13 @@ def init_db(db_path: str = DB_PATH) -> str:
                 conn = None
                 _migrate_add_posts_input_mode(db_path)
                 conn = sqlite3.connect(db_path)
-            # 그래도 v19 스키마가 아니면 구형 DB로 판정 → 백업 후 재생성
+            # 그래도 v20 스키마가 아니면 구형 DB로 판정 → 백업 후 재생성
             if not _is_current_schema(conn):
                 conn.close()
                 conn = None
                 backup = _backup_db(db_path)
                 os.remove(db_path)
-                print(f"[db] 구 스키마 감지 → 백업({backup}) 후 v19 재생성: {db_path}")
+                print(f"[db] 구 스키마 감지 → 백업({backup}) 후 v20 재생성: {db_path}")
         finally:
             if conn:
                 conn.close()
@@ -517,6 +609,8 @@ def init_db(db_path: str = DB_PATH) -> str:
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA)
+    _seed_major_categories(conn)
+    conn.commit()
     conn.close()
     return db_path
 
@@ -538,33 +632,38 @@ def get_connection(db_path: str = DB_PATH) -> sqlite3.Connection:
 def get_stats(db_path: str = DB_PATH) -> dict:
     conn = get_connection(db_path)
     try:
-        posts_total       = conn.execute("SELECT COUNT(*) FROM posts").fetchone()[0]
-        posts_chat        = conn.execute("SELECT COUNT(*) FROM posts WHERE input_mode='chat'").fetchone()[0]
-        posts_markdown    = conn.execute("SELECT COUNT(*) FROM posts WHERE input_mode='markdown'").fetchone()[0]
-        nodes_total       = conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
-        nodes_active      = conn.execute("SELECT COUNT(*) FROM nodes WHERE status='active'").fetchone()[0]
-        mentions_total    = conn.execute("SELECT COUNT(*) FROM node_mentions").fetchone()[0]
-        categories_total  = conn.execute("SELECT COUNT(*) FROM node_categories").fetchone()[0]
-        aliases_total     = conn.execute("SELECT COUNT(*) FROM aliases").fetchone()[0]
-        sentences_total   = conn.execute("SELECT COUNT(*) FROM sentences").fetchone()[0]
-        sentences_user    = conn.execute("SELECT COUNT(*) FROM sentences WHERE role='user'").fetchone()[0]
-        sentences_asst    = conn.execute("SELECT COUNT(*) FROM sentences WHERE role='assistant'").fetchone()[0]
-        unresolved_total  = conn.execute("SELECT COUNT(*) FROM unresolved_tokens").fetchone()[0]
+        posts_total         = conn.execute("SELECT COUNT(*) FROM posts").fetchone()[0]
+        posts_chat          = conn.execute("SELECT COUNT(*) FROM posts WHERE input_mode='chat'").fetchone()[0]
+        posts_markdown      = conn.execute("SELECT COUNT(*) FROM posts WHERE input_mode='markdown'").fetchone()[0]
+        nodes_total         = conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
+        nodes_active        = conn.execute("SELECT COUNT(*) FROM nodes WHERE status='active'").fetchone()[0]
+        mentions_total      = conn.execute("SELECT COUNT(*) FROM node_mentions").fetchone()[0]
+        # v20 — 두 축 분리: categories(마스터) / sentence_categories(축 A) / node_categories(축 B)
+        categories_master   = conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0]
+        sentence_cats_total = conn.execute("SELECT COUNT(*) FROM sentence_categories").fetchone()[0]
+        node_cats_total     = conn.execute("SELECT COUNT(*) FROM node_categories").fetchone()[0]
+        aliases_total       = conn.execute("SELECT COUNT(*) FROM aliases").fetchone()[0]
+        sentences_total     = conn.execute("SELECT COUNT(*) FROM sentences").fetchone()[0]
+        sentences_user      = conn.execute("SELECT COUNT(*) FROM sentences WHERE role='user'").fetchone()[0]
+        sentences_asst      = conn.execute("SELECT COUNT(*) FROM sentences WHERE role='assistant'").fetchone()[0]
+        unresolved_total    = conn.execute("SELECT COUNT(*) FROM unresolved_tokens").fetchone()[0]
     finally:
         conn.close()
     return {
-        "posts_total":          posts_total,
-        "posts_chat":           posts_chat,
-        "posts_markdown":       posts_markdown,
-        "nodes_total":          nodes_total,
-        "nodes_active":         nodes_active,
-        "node_mentions_total":  mentions_total,
-        "categories_total":     categories_total,
-        "aliases_total":        aliases_total,
-        "sentences_total":      sentences_total,
-        "sentences_user":       sentences_user,
-        "sentences_assistant":  sentences_asst,
-        "unresolved_total":     unresolved_total,
+        "posts_total":              posts_total,
+        "posts_chat":               posts_chat,
+        "posts_markdown":           posts_markdown,
+        "nodes_total":              nodes_total,
+        "nodes_active":             nodes_active,
+        "node_mentions_total":      mentions_total,
+        "categories_master":        categories_master,
+        "sentence_categories_total": sentence_cats_total,
+        "node_categories_total":    node_cats_total,
+        "aliases_total":            aliases_total,
+        "sentences_total":          sentences_total,
+        "sentences_user":           sentences_user,
+        "sentences_assistant":      sentences_asst,
+        "unresolved_total":         unresolved_total,
     }
 
 
