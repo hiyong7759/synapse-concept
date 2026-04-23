@@ -100,14 +100,16 @@ def cmd_interactive(use_llm: bool) -> None:
         # v18: context_sentences 폐기 (상태 레이어 제거 — extract-state 가 사라져 불필요)
 
         # 2. 저장: Kiwi-first 파이프라인
-        r_save = save(text, use_llm=use_llm)
+        # v19: CLI 대화형은 한 줄 입력 성격 → chat 모드 고정.
+        # markdown 파일 입력은 별도 경로(--markdown-file 등) 에서 mode='markdown' 로 넘겨야 한다.
+        r_save = save(text, mode="chat", use_llm=use_llm)
 
         # 4. 모호성 되물음 처리
         if r_save.question:
             print(f"  비서: {r_save.question}")
             answer = input("synapse> ").strip()
             if answer:
-                r2 = save(answer, use_llm=use_llm)
+                r2 = save(answer, mode="chat", use_llm=use_llm)
                 _print_save_result(r2)
             continue
 

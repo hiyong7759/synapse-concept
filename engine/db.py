@@ -1,6 +1,12 @@
-"""Synapse DB — SQLite v18 스키마.
+"""Synapse DB — SQLite v19 스키마 (PLAN-003 M1).
 
-v18 변경점 (2026-04-23):
+v19 변경점 (2026-04-23):
+- posts.input_mode 컬럼 신설 + CHECK(input_mode IN ('chat','markdown')).
+  저장 모드가 자동 판정(has_heading) 에서 사용자 명시(UI 입력창)로 이행.
+- 무손실 마이그레이션: 기존 posts 에 input_mode='chat' 기본값 + markdown 패턴 감지 시
+  'markdown' 으로 백필. 사실상 sentences 참조를 보존하는 테이블 재생성 패턴.
+
+v18 변경점:
 - sentences.status 컬럼 폐기 (상태 레이어 제거). extract-state LLM 판정 자체가 사라져
   'active' / 'inactive' / 'pending' 구분 불필요. 모든 sentence 는 영구 조회 대상.
 - idx_sentences_status 인덱스 제거.
@@ -29,6 +35,7 @@ v12 변경점 (참고):
 """
 
 import os
+import re
 import shutil
 import sqlite3
 import time
@@ -40,6 +47,7 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS posts (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     markdown   TEXT    NOT NULL,
+    input_mode TEXT    NOT NULL DEFAULT 'chat' CHECK(input_mode IN ('chat', 'markdown')),
     created_at TEXT    NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
 );
@@ -135,9 +143,30 @@ def _check_allows_system(conn: sqlite3.Connection, table: str) -> bool:
     return "'system'" in row[0]
 
 
+def _check_posts_input_mode_constraint(conn: sqlite3.Connection) -> bool:
+    """v19: posts 테이블 CHECK 제약이 input_mode 의 chat/markdown 허용을 포함하는지 검사."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='posts'"
+    ).fetchone()
+    if not row or not row[0]:
+        return False
+    return "input_mode" in row[0] and "'chat'" in row[0] and "'markdown'" in row[0]
+
+
+_HEADING_RE_FOR_BACKFILL = re.compile(r"^\s*#{1,6}\s+\S", re.MULTILINE)
+
+
+def _has_heading_for_backfill(markdown: str) -> bool:
+    """v19 backfill 전용 has_heading. engine.markdown 의존 없이 정규식만 사용."""
+    if not markdown:
+        return False
+    return _HEADING_RE_FOR_BACKFILL.search(markdown) is not None
+
+
 def _is_current_schema(conn: sqlite3.Connection) -> bool:
-    """v18 스키마 여부 확인: edges 테이블 없음 + origin 컬럼 존재 + 필수 테이블 +
-    CHECK 제약에 'system' origin 허용 + sentences.status 컬럼 폐기."""
+    """v19 스키마 여부 확인: edges 테이블 없음 + origin 컬럼 존재 + 필수 테이블 +
+    CHECK 제약에 'system' origin 허용 + sentences.status 컬럼 폐기 +
+    posts.input_mode 컬럼 + CHECK(chat|markdown)."""
     tables = _get_tables(conn)
     for required in ("sentences", "nodes", "node_mentions", "node_categories",
                      "aliases", "unresolved_tokens", "posts"):
@@ -177,6 +206,11 @@ def _is_current_schema(conn: sqlite3.Connection) -> bool:
         return False
     # sentences.updated_at 컬럼 필요 (텍스트 변경 시점 추적)
     if "updated_at" not in sent_cols:
+        return False
+    # v19: posts.input_mode 컬럼 + CHECK(chat|markdown) 제약
+    if "input_mode" not in _get_cols(conn, "posts"):
+        return False
+    if not _check_posts_input_mode_constraint(conn):
         return False
     return True
 
@@ -336,6 +370,53 @@ def _migrate_add_sentences_updated_at(db_path: str) -> None:
         conn.close()
 
 
+def _can_add_posts_input_mode(conn: sqlite3.Connection) -> bool:
+    """v19: posts 테이블은 있지만 input_mode 컬럼이 없거나 CHECK 제약이 비는 경우."""
+    tables = _get_tables(conn)
+    if "edges" in tables or "posts" not in tables:
+        return False
+    if "input_mode" not in _get_cols(conn, "posts"):
+        return True
+    return not _check_posts_input_mode_constraint(conn)
+
+
+def _migrate_add_posts_input_mode(db_path: str) -> None:
+    """v19: posts.input_mode 컬럼 추가 + CHECK(chat|markdown) + has_heading 기반 backfill.
+    SQLite 가 ALTER TABLE 로 CHECK 제약을 직접 붙일 수 없어 테이블 재생성 방식 사용.
+    sentences.post_id FK 는 PRAGMA foreign_keys=OFF 구간에서 보존된다."""
+    backup = _backup_db(db_path)
+    print(f"[db] v19: posts.input_mode 컬럼 추가 + backfill 마이그레이션. 백업={backup}")
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        rows = conn.execute("SELECT id, markdown FROM posts").fetchall()
+        mode_by_id = {
+            row[0]: ("markdown" if _has_heading_for_backfill(row[1] or "") else "chat")
+            for row in rows
+        }
+        conn.executescript("""
+            CREATE TABLE posts_new (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                markdown   TEXT    NOT NULL,
+                input_mode TEXT    NOT NULL DEFAULT 'chat'
+                                   CHECK(input_mode IN ('chat', 'markdown')),
+                created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
+            );
+            INSERT INTO posts_new (id, markdown, input_mode, created_at, updated_at)
+                SELECT id, markdown, 'chat', created_at, updated_at FROM posts;
+            DROP TABLE posts;
+            ALTER TABLE posts_new RENAME TO posts;
+        """)
+        for pid, mode in mode_by_id.items():
+            if mode == "markdown":
+                conn.execute("UPDATE posts SET input_mode='markdown' WHERE id=?", (pid,))
+        conn.commit()
+        conn.execute("PRAGMA foreign_keys = ON")
+    finally:
+        conn.close()
+
+
 def _backup_db(db_path: str) -> str:
     """DB 파일을 타임스탬프 붙여 복사."""
     timestamp = time.strftime("%Y%m%d-%H%M%S")
@@ -416,13 +497,19 @@ def init_db(db_path: str = DB_PATH) -> str:
                 conn = None
                 _migrate_drop_sentences_status(db_path)
                 conn = sqlite3.connect(db_path)
-            # 그래도 v18 스키마가 아니면 구형 DB로 판정 → 백업 후 재생성
+            # v18 → v19: posts.input_mode 컬럼 추가 + has_heading 기반 backfill
+            if conn is not None and _can_add_posts_input_mode(conn):
+                conn.close()
+                conn = None
+                _migrate_add_posts_input_mode(db_path)
+                conn = sqlite3.connect(db_path)
+            # 그래도 v19 스키마가 아니면 구형 DB로 판정 → 백업 후 재생성
             if not _is_current_schema(conn):
                 conn.close()
                 conn = None
                 backup = _backup_db(db_path)
                 os.remove(db_path)
-                print(f"[db] 구 스키마 감지 → 백업({backup}) 후 v18 재생성: {db_path}")
+                print(f"[db] 구 스키마 감지 → 백업({backup}) 후 v19 재생성: {db_path}")
         finally:
             if conn:
                 conn.close()
@@ -452,6 +539,8 @@ def get_stats(db_path: str = DB_PATH) -> dict:
     conn = get_connection(db_path)
     try:
         posts_total       = conn.execute("SELECT COUNT(*) FROM posts").fetchone()[0]
+        posts_chat        = conn.execute("SELECT COUNT(*) FROM posts WHERE input_mode='chat'").fetchone()[0]
+        posts_markdown    = conn.execute("SELECT COUNT(*) FROM posts WHERE input_mode='markdown'").fetchone()[0]
         nodes_total       = conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
         nodes_active      = conn.execute("SELECT COUNT(*) FROM nodes WHERE status='active'").fetchone()[0]
         mentions_total    = conn.execute("SELECT COUNT(*) FROM node_mentions").fetchone()[0]
@@ -465,6 +554,8 @@ def get_stats(db_path: str = DB_PATH) -> dict:
         conn.close()
     return {
         "posts_total":          posts_total,
+        "posts_chat":           posts_chat,
+        "posts_markdown":       posts_markdown,
         "nodes_total":          nodes_total,
         "nodes_active":         nodes_active,
         "node_mentions_total":  mentions_total,

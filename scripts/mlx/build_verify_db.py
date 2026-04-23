@@ -65,7 +65,7 @@ def main():
         elapsed_sent = time.time()
         input_text = f"# 기록\n{sent}" if args.markdown else sent
         try:
-            result = save(input_text)
+            result = save(input_text, mode=("markdown" if args.markdown else "chat"))
             dt = time.time() - elapsed_sent
             print(f"  [{i+1}/{len(sentences)}] {dt:.1f}s  nodes+{len(result.nodes_added)} edges+{len(result.edge_ids_added)}  {sent[:50]}")
             ok += 1
