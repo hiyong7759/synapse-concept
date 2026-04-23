@@ -1,33 +1,48 @@
-"""Synapse 자동 저장 파이프라인 (v15).
+"""Synapse 자동 저장 파이프라인 (v17).
 
 원칙:
 - 입력 단위 = 마크다운 구조화된 게시물 (posts 1건 = 저장 호출 1건)
-- 자동 저장 범위: post + sentences + nodes + node_mentions (+ heading 경로 카테고리)
+- 자동 저장 범위: post + sentences + nodes + node_mentions (+ heading 경로·TIM.* 카테고리)
 - v15: edges 테이블 자체 폐기. 노드 간 연결은 node_mentions(문장 바구니) + node_categories
   (카테고리 바구니) + aliases(별칭 바구니) 세 하이퍼엣지로만 표현.
 - 의미 관계(cause/avoid/similar)는 sentence 원문에 이미 있고, 해석은 외부 지능체 몫.
-- 평문 입력 → structure-suggest 게이트 → SaveResult.markdown_draft 반환 (저장 보류)
 
-v15-A2 저장 정책:
-- 동기 단계에서 aliases는 user·rule origin만 INSERT (Wikidata·LLM 추천 경로 없음).
-- 동기 단계에서 node_categories는 user·rule origin만 INSERT (AI 분류 경로 없음).
+v17 파이프라인 변경:
+- Kiwi 단독이 저장 기본 경로 (LLM extract/merge 폐기).
+- 게시물 진입부에서 메타 필터(규칙 사전필터 + LLM 배치 1회) 로 메타 대화 문장 skip.
+- structure-suggest 폐기 — 평문 게시물도 heading 없이 그대로 sentence 단위로 저장.
+- 날짜 분할 노드(`2026년`/`4월`/`18일`/통째) 에 TIM.* 카테고리 origin='system' 자동 등록.
+- origin rule→system 리네이밍 (엔진이 주체).
+
+v15-A2 저장 정책 (v17 유지):
+- 동기 단계에서 aliases는 user·system origin만 INSERT (Wikidata·LLM 추천 경로 없음).
+- 동기 단계에서 node_categories는 user·system origin만 INSERT (AI 분류 경로 없음).
 - AI 카테고리 분류와 external 별칭 수집은 저장 완료 이벤트로 넘기고 백그라운드 워커가
   담당. save() 는 commit 성공 후 등록된 훅을 호출한다 (register_post_save_hook).
 
 맥락 공유:
 - save-pronoun context = 같은 게시물의 다른 sentences (직전 대화 주입 폐기)
+
+LLM 실패 시 독립 동작 (원칙 11):
+- 메타 필터 실패 → 규칙 사전필터 결과만 반영 (과포함 허용, UI 삭제로 해소)
+- save-pronoun 실패 → 원문 그대로 진행
+- extract-state 실패 → 상태 전이 skip
 """
 
 from __future__ import annotations
-import json
 import re
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Callable, Optional
 
 from .db import get_connection, DB_PATH
-from .llm import chat, LLMError, save_pronoun, llm_extract, structure_suggest
-from .markdown import parse_markdown, has_heading
+from .llm import (
+    LLMError,
+    llm_meta_filter,
+    save_pronoun,
+)
+from .markdown import parse_markdown
+from .tokenizer import extract_for_save as kiwi_extract_for_save
 
 
 @dataclass
@@ -38,8 +53,8 @@ class SaveResult:
     node_ids_added: list[int] = field(default_factory=list)
     mentions_added: int = 0
     unresolved_added: list[tuple[int, str]] = field(default_factory=list)  # (sentence_id, token)
-    nodes_deactivated: list[str] = field(default_factory=list)  # 상태 변경된 노드 이름
-    markdown_draft: Optional[str] = None  # structure-suggest 초안 (저장 보류 시)
+    # v18: sentences_deactivated/pending/nodes_deactivated 폐기 (상태 레이어 제거)
+    markdown_draft: Optional[str] = None  # v17: structure-suggest 폐기. 하위 호환용 필드 유지 (항상 None)
     question: Optional[str] = None
 
 
@@ -107,7 +122,7 @@ def _upsert_node(conn, name: str) -> tuple[int, bool]:
 def _add_node_category(
     conn, node_id: int, category: Optional[str], origin: str = "user"
 ) -> None:
-    """카테고리 INSERT. origin: 'user' (heading·수동) / 'ai' (LLM 추론) / 'rule' (규칙)."""
+    """카테고리 INSERT. origin: 'user' (heading·수동) / 'ai' (LLM 추론) / 'system' (엔진 규칙)."""
     if not category:
         return
     conn.execute(
@@ -133,16 +148,7 @@ def _add_unresolved(conn, sentence_id: int, token: str) -> bool:
     return cur.rowcount > 0
 
 
-def _deactivate_by_sentence_ids(conn, sentence_ids: list[int]) -> list[str]:
-    """v15: deactivate 기능 축소 — Task 6B 어댑터 재학습 + 의미 재설계 대기 중.
-
-    이전(v14)에는 edges 테이블을 통해 특정 대상 노드만 선택적으로 비활성화했으나,
-    edges 폐기로 타겟팅 수단이 사라짐. 전체 공출현 노드를 비활성화하는 건 너무 공격적.
-    현재는 no-op — sentence_id 목록만 문자열로 변환해 UI 표시용으로 반환.
-    """
-    if not sentence_ids:
-        return []
-    return [f"sentence#{sid}" for sid in sentence_ids if isinstance(sid, int)]
+# v18: _update_sentence_status · _deactivate_by_sentence_ids 폐기 (상태 레이어 제거).
 
 
 # ─── 토큰 감지 ────────────────────────────────────────────
@@ -155,7 +161,6 @@ _DATE_WORDS = (
     '올해', '작년', '내년', '재작년', '내후년',
 )
 _AGE_PATTERN = re.compile(r'\d{1,3}(살|세)|[0-9]0대')
-_NEG_PATTERN = re.compile(r'(?:^|\s)(안|못)\s')
 
 
 def _preprocess(text: str, post_context: str = "") -> dict:
@@ -169,14 +174,27 @@ def _preprocess(text: str, post_context: str = "") -> dict:
     return save_pronoun(text, context=post_context, today=today)
 
 
-def _detect_negation_tokens(text: str) -> list[str]:
-    """부정부사 '안'/'못' 감지해 노드 후보로 반환."""
-    tokens: list[str] = []
-    for m in _NEG_PATTERN.finditer(f' {text} '):
-        neg = m.group(1)
-        if neg not in tokens:
-            tokens.append(neg)
-    return tokens
+def _detect_unresolved_tokens(text: str) -> list[str]:
+    """지시대명사·모호 부사(시간/장소/인물/사물) 감지. 중복 제거한 원형 리스트 반환.
+
+    어절 단위로 분할 후 각 어절의 시작이 사전의 토큰과 일치하고, 토큰 뒤가
+    비어있거나 한글(조사·접미어)이 이어지면 매칭. 영숫자·기호가 바로 붙으면
+    다른 단어로 간주해 거부.
+    """
+    from .suggestions import DEMONSTRATIVE_TOKENS
+    found: list[str] = []
+    for raw in re.split(r"\s+", text):
+        word = re.sub(r"^[.,!?()\[\]\"'“”‘’]+|[.,!?()\[\]\"'“”‘’]+$", "", raw)
+        if not word:
+            continue
+        for tok in DEMONSTRATIVE_TOKENS:
+            if word.startswith(tok):
+                rest = word[len(tok):]
+                if not rest or ("\uAC00" <= rest[0] <= "\uD7AF"):
+                    if tok not in found:
+                        found.append(tok)
+                    break
+    return found
 
 
 # ─── 날짜 정규화·분할 ────────────────────────────────────
@@ -198,6 +216,53 @@ def _normalize_dates_to_korean(text: str) -> str:
         text,
     )
     return text
+
+
+_QUANTITY_UNITS = (
+    # 시간·기간
+    "초", "분", "시간", "일", "주", "개월", "년", "박",
+    # 횟수·차수
+    "회", "번", "차",
+    # 화폐
+    "원", "만원", "억원", "원어치",
+    # 비율
+    "%", "퍼센트", "퍼",
+    # 거리·길이·무게·부피
+    "km", "m", "cm", "mm", "kg", "g", "t",
+    "L", "ℓ", "ml", "cc",
+    # 나이·인원
+    "살", "세", "명", "인", "분",
+    # 크기·용량
+    "GB", "TB", "MB", "KB", "인치", "px",
+    # 에너지
+    "kcal", "cal", "W", "kW", "Wh", "kWh",
+)
+
+# 긴 단위부터 매칭 (예: '만원' 을 '원' 보다 먼저)
+_QUANTITY_UNITS_SORTED = sorted(set(_QUANTITY_UNITS), key=len, reverse=True)
+_QUANTITY_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9])(\d+(?:[,.]\d+)*)\s*(" + "|".join(
+        re.escape(u) for u in _QUANTITY_UNITS_SORTED
+    ) + r")(?![A-Za-z0-9])"
+)
+
+
+def _extract_quantity_tokens(text: str) -> list[str]:
+    """본문에서 수량(숫자+단위) 결합 토큰을 노드 후보로 추출.
+
+    v17: Kiwi 가 숫자(SN)와 단위명사(NNB/NNG)를 분리하면서 `1주`·`12시간`·`150%`
+    같은 수량이 누락되므로, 결정론적 정규식으로 결합 토큰을 별도 캡처한다.
+    날짜 패턴은 `_expand_date_tokens` 가 먼저 잡으므로 겹침은 dedup 단계에서 해소.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for m in _QUANTITY_PATTERN.finditer(text):
+        num, unit = m.group(1), m.group(2)
+        token = f"{num}{unit}"
+        if token not in seen:
+            seen.add(token)
+            out.append(token)
+    return out
 
 
 def _expand_date_tokens(text: str) -> list[str]:
@@ -245,45 +310,52 @@ _FIRST_PERSON_ALIASES = (
 
 
 def _register_first_person_aliases(conn, node_id: int) -> None:
-    """인칭대명사 11개 시드 — origin='rule'."""
+    """인칭대명사 11개 시드 — origin='system' (v17: 이전 'rule')."""
     for alias in _FIRST_PERSON_ALIASES:
         conn.execute(
-            "INSERT OR IGNORE INTO aliases (alias, node_id, origin) VALUES (?,?, 'rule')",
+            "INSERT OR IGNORE INTO aliases (alias, node_id, origin) VALUES (?,?, 'system')",
             (alias, node_id),
         )
 
 
-# ─── 기존 카테고리 경로 수집 (structure-suggest 컨텍스트) ─
+# ─── 날짜 분할 노드 → TIM.* 카테고리 매핑 ─────────────────
 
-def _collect_known_paths(conn, limit: int = 30) -> list[str]:
-    """사용자 정의 카테고리 경로 목록 (최근 사용 순)."""
-    rows = conn.execute(
-        """SELECT category, MAX(created_at) AS latest
-           FROM node_categories
-           GROUP BY category
-           ORDER BY latest DESC
-           LIMIT ?""",
-        (limit,),
-    ).fetchall()
-    return [r["category"] for r in rows]
+_TIM_CATEGORY_YEAR = "TIM.year"
+_TIM_CATEGORY_MONTH = "TIM.month"
+_TIM_CATEGORY_DAY = "TIM.day"
+_TIM_CATEGORY_DATE = "TIM.date"
+
+_RE_YEAR = re.compile(r"^\d{4}년$")
+_RE_MONTH = re.compile(r"^\d{1,2}월$")
+_RE_DAY = re.compile(r"^\d{1,2}일$")
+_RE_DATE_FULL = re.compile(r"^\d{4}년\s*\d{1,2}월\s*\d{1,2}일$")
+
+
+def _tim_category_for(name: str) -> Optional[str]:
+    """날짜 노드 이름 → TIM.* 소분류. 해당 없으면 None."""
+    if _RE_DATE_FULL.match(name):
+        return _TIM_CATEGORY_DATE
+    if _RE_YEAR.match(name):
+        return _TIM_CATEGORY_YEAR
+    if _RE_MONTH.match(name):
+        return _TIM_CATEGORY_MONTH
+    if _RE_DAY.match(name):
+        return _TIM_CATEGORY_DAY
+    return None
 
 
 # ─── 메인 저장 로직 ───────────────────────────────────────
 
-def _merge_nodes_extracted(extracted_nodes: list[dict], extra_names: list[str]) -> list[dict]:
-    seen = set()
-    result: list[dict] = []
-    for n in extracted_nodes:
-        name = n.get("name") if isinstance(n, dict) else None
-        if not name or name in seen:
-            continue
-        seen.add(name)
-        result.append({"name": name})
-    for name in extra_names:
-        if name and name not in seen:
-            seen.add(name)
-            result.append({"name": name})
-    return result
+def _dedup_names(*name_groups: list[str]) -> list[str]:
+    """순서 보존 중복 제거로 노드명 리스트 병합."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for group in name_groups:
+        for name in group:
+            if name and name not in seen:
+                seen.add(name)
+                out.append(name)
+    return out
 
 
 def _save_one_item(
@@ -294,11 +366,17 @@ def _save_one_item(
     position: int,
     post_context: str,
     use_llm: bool,
-    retrieve_context_sentences: Optional[list[tuple[int, str]]],
     result: SaveResult,
 ) -> None:
-    """게시물 내 항목 하나 저장."""
-    # 1. 지시어 치환 (같은 게시물의 다른 문장들 context)
+    """게시물 내 항목 하나 저장 (v17 Kiwi-first 파이프라인).
+
+    흐름: ① save-pronoun (LLM) → ② 날짜 정규화 → ③ unresolved 감지 →
+          ④ sentence INSERT → ⑤ Kiwi 형태소 분석 → ⑥ 날짜 분할 + 수량
+          정규식 + TIM.* 카테고리 → ⑦ 노드 upsert + mentions + category.
+
+    v18: ⑧ extract-state 전면 폐기 — 상태 레이어 없음 (sentences.status 컬럼 삭제).
+    """
+    # ① save-pronoun — 지시어·날짜 치환 (LLM, 실패 시 원문 유지)
     effective_text = item_text
     unresolved_tokens: list[str] = []
     if use_llm:
@@ -312,53 +390,61 @@ def _save_one_item(
         except LLMError:
             pass
 
-    # 1-1. ISO 날짜 → 한국어 정규화 (사용자 언급 공간 = 한국어)
+    # ② ISO 날짜 → 한국어 정규화 (사용자 언급 공간 = 한국어)
     effective_text = _normalize_dates_to_korean(effective_text)
 
-    # 2. sentence 저장 (post_id + position)
+    # ③ 규칙 기반 지시어·모호 부사 감지 (LLM unresolved 와 병합)
+    rule_unresolved = _detect_unresolved_tokens(effective_text)
+    for tok in rule_unresolved:
+        if tok not in unresolved_tokens:
+            unresolved_tokens.append(tok)
+
+    # ④ sentence 저장 (post_id + position)
     sid = _insert_sentence(conn, effective_text, post_id=post_id, position=position)
     result.sentence_ids.append(sid)
 
-    # 2-1. 치환 실패 토큰을 unresolved_tokens에 기록
+    # ④-1. 치환 실패 토큰을 unresolved_tokens 에 기록
     for token in unresolved_tokens:
         if _add_unresolved(conn, sid, token):
             result.unresolved_added.append((sid, token))
 
-    # 3. extract (v15-A2: nodes + deactivate만. 카테고리/별칭은 저장 후 백그라운드 워커)
-    if use_llm:
-        try:
-            extracted = llm_extract(effective_text, context_sentences=retrieve_context_sentences)
-        except LLMError:
-            extracted = {"nodes": [], "deactivate": []}
-    else:
-        extracted = {"nodes": [], "deactivate": []}
+    # ⑤ Kiwi 형태소 분석 — 저장 기본 경로 (LLM 사용 여부와 무관, 원칙 11)
+    try:
+        kiwi = kiwi_extract_for_save(effective_text)
+    except Exception:
+        kiwi = {"nouns": [], "lemmas": [], "negations": []}
 
-    ext_nodes = extracted.get("nodes", [])
-    ext_deactivate = extracted.get("deactivate", [])
-
-    # 4. 규칙 기반 토큰 감지 (부정부사 + 날짜 분할)
-    neg_tokens = _detect_negation_tokens(effective_text)
+    # ⑥ 날짜 분할 + 수량 정규식으로 Kiwi 가 놓치는 토큰 보강
     date_tokens = _expand_date_tokens(effective_text)
-    ext_nodes = _merge_nodes_extracted(ext_nodes, neg_tokens + date_tokens)
+    quantity_tokens = _extract_quantity_tokens(effective_text)
+    node_names = _dedup_names(
+        kiwi["nouns"],
+        kiwi["lemmas"],
+        kiwi["negations"],
+        date_tokens,
+        quantity_tokens,
+    )
 
-    # 5. deactivate — v15에선 no-op + 식별자 수집만 (재설계 대기)
-    if ext_deactivate:
-        deact_sids = [s for s in ext_deactivate if isinstance(s, int)]
-        result.nodes_deactivated.extend(_deactivate_by_sentence_ids(conn, deact_sids))
-
-    # 6. 노드 upsert + mentions + (heading 경로) category
-    for node in ext_nodes:
-        name = node["name"]
+    # ⑦ 노드 upsert + mentions + category
+    for name in node_names:
         nid, is_new = _upsert_node(conn, name)
         if _add_mention(conn, nid, sid):
             result.mentions_added += 1
+        # heading 경로 카테고리 (origin='user')
         if category_path:
-            _add_node_category(conn, nid, category_path)
+            _add_node_category(conn, nid, category_path, origin="user")
+        # TIM.* 자동 카테고리 (origin='system')
+        tim_cat = _tim_category_for(name)
+        if tim_cat:
+            _add_node_category(conn, nid, tim_cat, origin="system")
         if is_new:
             result.nodes_added.append(name)
             result.node_ids_added.append(nid)
             if name == "나":
                 _register_first_person_aliases(conn, nid)
+
+    # v18: ⑧ extract-state · sentences.status 전면 폐기 (상태 레이어 제거).
+    # 시점 해석은 인출 LLM 이 created_at 기반 최근성 판단으로 처리.
 
 
 def save(
@@ -366,36 +452,20 @@ def save(
     db_path: str = DB_PATH,
     use_llm: bool = True,
     images: Optional[list[str]] = None,
-    context_sentences: Optional[list[tuple[int, str]]] = None,
 ) -> SaveResult:
     """텍스트를 게시물 단위로 저장. SaveResult 반환.
 
-    v12:
-    - 매 save() 호출 = posts 1건 INSERT (게시물 단위)
-    - heading 없으면 structure-suggest 호출 → markdown_draft 반환 (저장 보류)
-    - 마크다운 모드에서는 markdown.py가 돌려준 항목들을 순서대로 저장
-
-    context_sentences: 인출에서 가져온 (sentence_id, text) 쌍. extract의 deactivate 판단용.
+    v18 흐름:
+    - 매 save() 호출 = posts 1건 INSERT (게시물 단위).
+    - 평문/마크다운 구분 없이 parse_markdown 결과를 그대로 저장 (structure-suggest 폐기).
+    - 진입부에서 메타 필터 1회 호출 → 메타 대화 문장 idx 는 저장 skip.
+    - 각 항목은 _save_one_item() 이 Kiwi-first 파이프라인(①~⑦) 으로 처리.
+    - 상태 레이어 없음 (v18: extract-state 폐기, sentences.status 컬럼 삭제).
     """
     result = SaveResult()
 
     conn = get_connection(db_path)
     try:
-        # heading 없으면 평문 → structure-suggest 게이트
-        if not has_heading(text):
-            if use_llm:
-                try:
-                    known = _collect_known_paths(conn)
-                    draft = structure_suggest(text, known_paths=known)
-                    # 초안이 여전히 heading 없으면 실패로 간주하고 그대로 저장
-                    if has_heading(draft):
-                        result.markdown_draft = draft
-                        return result
-                except LLMError:
-                    pass
-            # use_llm=False 또는 structure-suggest 실패 → heading 없이 저장 진행
-            # (운영상 이 경로는 거의 타지 않음)
-
         parsed = parse_markdown(text)
         if not parsed:
             conn.commit()
@@ -405,12 +475,20 @@ def save(
         post_id = _insert_post(conn, text)
         result.post_id = post_id
 
-        # 같은 게시물 내 모든 문장을 context 문자열로 준비
-        all_items_text = "\n".join(item for _, item in parsed)
+        # 진입부 메타 필터 (v17) — LLM 사용 시만. 실패·MLX 다운 시 빈 집합(과포함 허용)
+        item_texts = [item for _, item in parsed]
+        meta_idx: set[int] = set()
+        if use_llm:
+            try:
+                meta_idx = llm_meta_filter(item_texts)
+            except Exception:
+                meta_idx = set()
 
         # 항목별 저장
         for position, (category_path, item_text) in enumerate(parsed):
-            # 현재 항목을 제외한 나머지 게시물 문장들을 context로
+            if position in meta_idx:
+                continue
+            # 현재 항목을 제외한 나머지 게시물 문장들을 context 로
             others = [item for i, (_, item) in enumerate(parsed) if i != position]
             post_context = "\n".join(others)
 
@@ -422,7 +500,6 @@ def save(
                 position=position,
                 post_context=post_context,
                 use_llm=use_llm,
-                retrieve_context_sentences=context_sentences,
                 result=result,
             )
             if result.question:
@@ -583,6 +660,7 @@ def merge_nodes(
 
 def find_suspected_typos(db_path: str = DB_PATH) -> list[dict]:
     from .jamo import decompose, levenshtein
+    from .tokenizer import lemmatize_word
 
     conn = get_connection(db_path)
     try:
@@ -596,6 +674,8 @@ def find_suspected_typos(db_path: str = DB_PATH) -> list[dict]:
 
     nodes = [{"id": r["id"], "name": r["name"], "mention_count": r["mention_count"]} for r in rows]
     jamo_cache = {n["name"]: decompose(n["name"]) for n in nodes}
+    # L3: Kiwi lemma 로 활용형 쌍을 오타 의심에서 제외하기 위한 캐시
+    lemma_cache = {n["name"]: lemmatize_word(n["name"]) for n in nodes}
 
     suspects = []
     for i, a in enumerate(nodes):
@@ -609,6 +689,10 @@ def find_suspected_typos(db_path: str = DB_PATH) -> list[dict]:
             if abs(len(ja) - len(jb)) > 1:
                 continue
             if levenshtein(ja, jb) == 1:
+                # lemma 동일 쌍은 활용형 차이 — 오타로 보지 않는다.
+                # 예: '배고파' vs '배고프' → 둘 다 lemma '배고프'.
+                if lemma_cache[a["name"]] == lemma_cache[b["name"]]:
+                    continue
                 suspects.append({
                     "node_a": a,
                     "node_b": b,
@@ -731,7 +815,7 @@ def update_sentence(
     try:
         conn.execute("DELETE FROM node_mentions WHERE sentence_id = ?", (sentence_id,))
         conn.execute(
-            "UPDATE sentences SET text = ? WHERE id = ?",
+            "UPDATE sentences SET text = ?, updated_at = datetime('now') WHERE id = ?",
             (new_text, sentence_id),
         )
         conn.commit()

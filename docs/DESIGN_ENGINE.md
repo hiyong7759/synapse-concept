@@ -1,6 +1,13 @@
 # Synapse Engine — 범용 온디바이스 지식 하이퍼그래프 패키지 설계
 
-**최종 업데이트**: 2026-04-19 — 엔진 MVP 포팅 기준이 v15 스키마(node_mentions, node_categories, aliases, unresolved_tokens, **edges 테이블 폐기**, retention 폐기)로 확정. 의미 엣지 관련 구현(edge label 추출, edge JOIN 경로)은 모두 제거. 연결은 문장·카테고리·별칭 하이퍼엣지로만 표현. `/review` 런타임 제안 도출기(`suggestions.dart`)가 신규 추가. 자세한 배경은 `docs/DESIGN_PIPELINE.md` 참고.
+스키마: v16 (`node_mentions`, `node_categories`, `aliases`, `unresolved_tokens`, `sentences.status`, `sentences.updated_at`). 의미 엣지 테이블·retention 폐기. 연결은 문장·카테고리·별칭 하이퍼엣지로만 표현.
+
+LLM 구성: 베이스 모델(Gemma 4 E2B-it) + `docs/*_SYSTEMPROMPT.md` + 파인튜닝 어댑터 2종(`retrieve-expand`, `retrieve-expand-org`). 태스크 분담은 `docs/DESIGN_PIPELINE.md` §"태스크 처리 방식".
+
+**형태소 분석기 — 플랫폼 분화 (v16)**
+- 서버(조직/API, Python): `kiwipiepy` (C++ 네이티브) — 모듈 경로 `engine/tokenizer.py` (DESIGN_PIPELINE 참조)
+- 모바일·웹(개인 앱): `kiwi-nlp` (WASM) — 모듈 경로 `lib/src/tokenizer.dart` (본 문서 §1 패키지 구조)
+- 토큰 경계·품사 태그·lemma 결과 스키마를 양쪽 동일하게 유지해 파이프라인 로직을 공유한다.
 
 ## Context
 
@@ -19,6 +26,7 @@ synapse_engine/               ← pub.dev 패키지 (또는 private)
 │   │   ├── db.dart           ← SQLite 스키마 + CRUD (sqflite). v15
 │   │   ├── inference.dart    ← llamadart 래퍼. 모델 로딩 + 어댑터 스왑
 │   │   ├── save.dart         ← 자동 저장 파이프라인 (sentence + node + node_mentions + unresolved_tokens)
+│   │   ├── tokenizer.dart    ← Kiwi 형태소 분석 래퍼 (kiwi-nlp WASM 바인딩). v16 신설
 │   │   ├── retrieve.dart     ← BFS 인출 파이프라인 (node_mentions JOIN 기반)
 │   │   ├── suggestions.dart  ← /review 런타임 제안 도출기 (쿼리 + LLM 호출, 저장 없음)
 │   │   ├── pipeline.dart     ← 오케스트레이터 (retrieve→save→respond)
@@ -362,9 +370,10 @@ EngineConfig(
 | 기능 | 원본 | 포팅 | gabjil |
 |------|------|------|--------|
 | 하이퍼그래프 저장 (nodes/node_mentions/node_categories/aliases/sentences/unresolved_tokens) | db.py, save.py | db.dart, save.dart | ★★★ |
-| extract 어댑터 (v15: edges 출력 필드 제거, nodes/categories/aliases만) | llm.py extract | inference.dart | ★★★ |
+| Kiwi 형태소 분석 (v17: 저장 기본 경로 — 서버 kiwipiepy, 모바일 kiwi-nlp) | tokenizer.py | tokenizer.dart | ★★★ |
 | save-pronoun 어댑터 (tokens + unresolved 분리 반환) | llm.py save-pronoun | inference.dart | ★★★ |
-| structure-suggest 어댑터 (평문 → 마크다운 초안) | llm.py | inference.dart | ★★ |
+| meta-filter (v17: 메타 대화 사전필터 + LLM 배치) | llm.py meta-filter | inference.dart | ★★ |
+| extract-state (현재 발화 ↔ 기존 사실 상태 전이) | llm.py extract-state | inference.dart | ★★ |
 | BFS 인출 (node_mentions JOIN + node_categories 공유 + 인접 맵) + retrieve-filter | retrieve.py | retrieve.dart | ★★★ |
 | retrieve-expand | retrieve.py | retrieve.dart | ★★★ |
 | 부정부사 규칙 감지(노드화, 엣지 아님) | save.py | save.dart 내 규칙 | ★★★ |

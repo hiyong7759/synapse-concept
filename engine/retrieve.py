@@ -23,6 +23,7 @@ from .llm import (
     chat, SYSTEM_CHAT, LLMError,
     retrieve_expand, retrieve_filter_sentence,
 )
+from .tokenizer import extract_for_retrieve as kiwi_extract_for_retrieve
 
 
 @dataclass
@@ -316,18 +317,36 @@ def _llm_filter_mentions(question: str, mentions: list[Mention]) -> list[Mention
 def _llm_answer(
     question: str,
     sentences: list[tuple[int, str]],
+    created_map: Optional[dict[int, str]] = None,
     images: Optional[list[str]] = None,
     history: Optional[list[dict]] = None,
 ) -> str:
-    """sentence 원문 컨텍스트로 자연어 답변. v15: 의미 관계 해석은 LLM 몫."""
+    """sentence 원문 컨텍스트로 자연어 답변.
+
+    v18: `created_map` (sentence_id → created_at) 을 받아 사실을 **시간 순으로 정렬**하고
+    각 줄 앞에 `[YYYY-MM-DD]` 힌트를 붙인다. 충돌하는 사실은 최근 것 우선 반영이 답변
+    프롬프트 규칙 (SYSTEM_CHAT). 상태 레이어 제거(v18) 로 모든 sentence 가 조회 대상이라
+    시점 해석은 이 단계에서 수행.
+    """
+    created_map = created_map or {}
+    items = sorted(
+        [(sid, t) for sid, t in sentences if t],
+        key=lambda x: created_map.get(x[0], ""),
+    )
     lines: list[str] = []
     seen: set[str] = set()
-    for _, text in sentences:
-        if text and text not in seen:
-            seen.add(text)
+    for sid, text in items:
+        if text in seen:
+            continue
+        seen.add(text)
+        ts = created_map.get(sid, "")
+        date_hint = ts.split(" ")[0] if ts else ""  # `YYYY-MM-DD HH:MM:SS` → 날짜만
+        if date_hint:
+            lines.append(f"- [{date_hint}] {text}")
+        else:
             lines.append(f"- {text}")
     context = "\n".join(lines)
-    user_msg = f"알려진 사실:\n{context}\n\n질문: {question}"
+    user_msg = f"알려진 사실 (시간 순):\n{context}\n\n질문: {question}"
     try:
         return chat(
             SYSTEM_CHAT, user_msg,
@@ -353,12 +372,18 @@ def retrieve(
 
     conn = get_connection(db_path)
     try:
-        # 1. 키워드 확장
+        # 1. 키워드 확장 — retrieve-expand(LLM) ∪ question.split() ∪ Kiwi 형태소
+        #    Kiwi 는 LLM 사용 여부와 무관하게 항상 실행: 조사·어미가 붙은 질문에서
+        #    명사·용언 lemma 를 분리해 재현율을 높인다. 어댑터 실패·비활성 시 폴백 역할.
         if use_llm:
             keywords = _llm_expand_keywords(question)
         else:
-            keywords = question.split()
-        keywords = list(dict.fromkeys(keywords + question.split()))
+            keywords = []
+        try:
+            kiwi_kws = kiwi_extract_for_retrieve(question)
+        except Exception:
+            kiwi_kws = []
+        keywords = list(dict.fromkeys(keywords + question.split() + kiwi_kws))
 
         start_nodes = _match_start_nodes(conn, keywords, question=question)
         if not start_nodes:
@@ -458,14 +483,32 @@ def retrieve(
                     ))
         result.context_triples = triples
 
-        # 6. LLM 답변
+        # 6. LLM 답변 — v18: created_at 시간 순 정렬 힌트 포함
+        created_map: dict[int, str] = {}
+        if context_sentences:
+            sids = [sid for sid, _ in context_sentences]
+            ph = ",".join("?" * len(sids))
+            for r in conn.execute(
+                f"SELECT id, created_at FROM sentences WHERE id IN ({ph})",
+                sids,
+            ).fetchall():
+                created_map[r["id"]] = r["created_at"]
+
         if use_llm:
             result.answer = _llm_answer(
-                question, context_sentences,
+                question, context_sentences, created_map,
                 images=images, history=history,
             )
         else:
-            lines = [t for _, t in context_sentences]
+            # --no-llm: 시간 순으로 정렬해 그대로 출력
+            sorted_items = sorted(
+                context_sentences, key=lambda x: created_map.get(x[0], "")
+            )
+            lines = []
+            for sid, t in sorted_items:
+                ts = created_map.get(sid, "")
+                d = ts.split(" ")[0] if ts else ""
+                lines.append(f"[{d}] {t}" if d else t)
             result.answer = "\n".join(lines) or "관련 정보 없음"
 
     finally:

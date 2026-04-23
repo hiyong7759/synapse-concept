@@ -7,7 +7,7 @@
 - LLM 의존 섹션은 use_llm=False일 때 빈 결과 또는 LLM 없는 fallback 반환.
 
 v15 폐기 섹션 (DESIGN_REVIEW.md §폐기된 섹션 참고):
-- `uncategorized` — 저장 시점에 origin='ai'/'rule'로 자동 분류 (예정)
+- `uncategorized` — 저장 시점에 origin='ai'/'system'로 자동 분류 (예정)
 - `cooccur_pairs` — 문장 하이퍼엣지(node_mentions)에 이미 자동 포함되므로 별도 제안 불필요
 - `alias_suggestions` — 저장 후 백그라운드 워커가 origin='external' 별칭 자동 등록 (v15-A2)
 - 의미 엣지 관련 섹션 — edges 테이블 폐기로 전체 제거
@@ -24,6 +24,15 @@ from typing import Optional
 from .db import get_connection, DB_PATH
 from .save import find_suspected_typos
 from .llm import chat, LLMError
+
+
+# ─── 지시어·모호 부사 사전 ─────────────────────────────────
+# save.py 의 규칙 기반 unresolved 감지와 /review 의 옵션 구성 양쪽에서 사용.
+TIME_TOKENS = {"요즘", "최근", "그때", "당시", "주말", "이번에"}
+PLACE_TOKENS = {"여기", "거기", "저기", "이곳", "그곳", "저곳"}
+PERSON_TOKENS = {"이분", "그분", "저분", "걔", "쟤", "얘", "그녀"}
+THING_TOKENS = {"이거", "그거", "저거", "이것", "그것", "저것"}
+DEMONSTRATIVE_TOKENS = TIME_TOKENS | PLACE_TOKENS | PERSON_TOKENS | THING_TOKENS
 
 
 # ─── 도출기들 ────────────────────────────────────────────
@@ -64,10 +73,6 @@ def unresolved(db_path: str = DB_PATH, limit: int = 30) -> list[dict]:
     finally:
         conn.close()
 
-    _TIME_TOKENS = {"요즘", "최근", "그때", "당시", "주말", "이번에"}
-    _PLACE_TOKENS = {"여기", "거기", "저기", "이곳", "그곳", "저곳"}
-    _PERSON_TOKENS = {"이분", "그분", "저분", "걔", "쟤", "얘", "그녀"}
-
     today = date.today()
     result: list[dict] = []
     for r in rows:
@@ -88,20 +93,20 @@ def unresolved(db_path: str = DB_PATH, limit: int = 30) -> list[dict]:
             "options": [],
             "allow_free_input": True,
         }
-        if token in _TIME_TOKENS:
+        if token in TIME_TOKENS:
             item["question"] = f"'{token}'은 언제부터 언제까지인가요?"
             item["options"] = [
                 today.isoformat(),
                 f"{(today - timedelta(days=7)).isoformat()}~{today.isoformat()}",
                 today.strftime("%Y-%m"),
             ]
-        elif token in _PLACE_TOKENS:
+        elif token in PLACE_TOKENS:
             item["question"] = f"'{token}'은 어디인가요?"
             for path, names in recent_by_cat.items():
                 if any(k in path for k in ("장소", "REG", "TRV", "병원")):
                     item["options"].extend(names[:3])
                     break
-        elif token in _PERSON_TOKENS:
+        elif token in PERSON_TOKENS:
             item["question"] = f"'{token}'은 누구인가요?"
             for path, names in recent_by_cat.items():
                 if path.startswith("PER") or any(k in path for k in ("인물", "사람")):
@@ -337,6 +342,9 @@ def external_generated(
     ]
 
 
+# v18: pending_sentences · recent_deactivated 폐기 (상태 레이어 제거).
+
+
 # ─── 통합 ─────────────────────────────────────────────────
 
 def all_sections(
@@ -374,7 +382,8 @@ def counts(db_path: str = DB_PATH) -> dict:
         conn.close()
     typos_n = len(find_suspected_typos(db_path=db_path))
     basic_n = len(missing_basic_info(db_path=db_path))
-    total = unresolved_n + typos_n + basic_n + ai_cat_n + ext_alias_n
+    total = (unresolved_n + typos_n + basic_n
+             + ai_cat_n + ext_alias_n)
     return {
         "total":              total,
         "unresolved":         unresolved_n,

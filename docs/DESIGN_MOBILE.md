@@ -3,6 +3,8 @@
 ## Context
 Synapse는 Python+MLX 기반 개인 지식 하이퍼그래프 시스템. 모바일 포팅하여 오프라인 온디바이스 완결형 앱으로 만든다.
 
+**번들 구성**: 베이스 모델(Gemma 4 E2B-it GGUF) + `enable_thinking=False` + `docs/*_SYSTEMPROMPT.md` 조합이 다수 태스크를 처리하므로, 모바일에 번들할 어댑터는 2종(`retrieve-expand`, `retrieve-expand-org`) + 시스템 프롬프트 파일들. 현행 태스크 분담은 `DESIGN_PIPELINE.md` §"태스크 처리 방식" 참고. llamadart 핫스왑 구조는 남은 2개 어댑터에 동일 적용.
+
 ## 1. 기술 스택 결정
 
 **Flutter + llamadart (llama.cpp 바인딩)**

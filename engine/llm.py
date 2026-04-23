@@ -12,60 +12,13 @@ import urllib.request
 import urllib.error
 from typing import Optional
 
+from .prompts import load_prompt
+
 MLX_BASE = os.getenv("SYNAPSE_MLX_BASE", "http://127.0.0.1:8765")
 
 
 class LLMError(RuntimeError):
     pass
-
-
-# ── MLX 태스크별 시스템 프롬프트 ───────────────────────────
-_MLX_SYSTEM: dict[str, str] = {
-    "retrieve-filter": (
-        "당신은 지식 그래프 인출 필터입니다. 질문과 문장을 보고, 이 문장이 질문과 관련 있는지 판단하세요. "
-        "불확실하면 pass로 판단하세요 (제외보다 포함이 안전). 출력: pass 또는 reject (한 단어만)"
-    ),
-    "retrieve-expand": (
-        "당신은 지식 그래프 검색 엔진입니다. 질문을 보고 그래프에서 검색해야 할 관련 노드 후보를 생성하세요. "
-        '형태소 단위로 쪼개진 노드 이름으로 나열하세요. 출력 형식: ["노드1", "노드2", ...]'
-    ),
-    "save-pronoun": (
-        "당신은 지식 그래프 저장 엔진입니다. 텍스트에서 지시대명사와 부사를 구체적인 값으로 치환하세요. "
-        "주어/목적어/장소가 생략되었으면 같은 게시물의 다른 문장을 참고하여 복원하세요. "
-        "인칭대명사(나/내/저/제)는 치환하지 마세요. "
-        '맥락이 제공되면 활용하세요. '
-        '치환 불가능한 지시어가 있으면 그대로 두고 unresolved 배열에 원형을 담으세요. '
-        '치환 결과는 항상 text로, 미해결 토큰이 있으면 unresolved 배열에 추가. '
-        '출력 형식: {"text": "치환된 텍스트", "unresolved": ["원형토큰", ...]}'
-    ),
-    # structure-suggest는 base 모델 사용 (engine/llm.py:structure_suggest 함수)
-    "extract": (
-        "한국어 문장에서 지식 그래프의 노드와 상태변경을 추출하라.\n"
-        "JSON만 출력. 다른 텍스트 금지.\n\n"
-        "출력 형식:\n"
-        '{"nodes":[{"name":"노드명"}],'
-        '"deactivate":[sentence_id, ...]}\n\n'
-        "규칙:\n"
-        "- 노드는 원자. 하나의 개념 = 하나의 노드.\n"
-        "- 1인칭(나/내/저/제)이 문장에 명시된 경우 \"나\" 노드로 추출. 문장에 없는 1인칭 추가 금지.\n"
-        "- 3인칭 주어는 원문 그대로 노드 추출.\n"
-        "- 부정부사(안, 못)는 독립 노드다. 예: \"스타벅스 안 좋아\" → 노드 [스타벅스, 안, 좋아].\n"
-        "- 엣지는 저장하지 않는다. 노드 간의 의미 관계는 사용자 승인을 거쳐 사후에 편입된다.\n"
-        "- \"알려진 사실:\"이 제공된 경우: 각 문장에 [번호]가 붙어 있다. 현재 입력과 상충되는 문장의 번호를 deactivate에 포함. 없으면 [].\n"
-        "- 추출할 노드가 없는 대화 → {\"nodes\":[],\"deactivate\":[]}\n"
-    ),
-    "extract-state": (
-        "알려진 사실 목록에서 현재 입력으로 인해 더 이상 유효하지 않은 문장을 찾아 sentence_id를 반환하라.\n"
-        "JSON만 출력. 다른 텍스트 금지.\n\n"
-        "출력 형식:\n"
-        '{"deactivate":[sentence_id, ...]}\n\n'
-        "규칙:\n"
-        "- 각 알려진 사실에는 [번호]가 붙어 있다.\n"
-        "- 현재 입력이 기존 사실을 무효화하면 해당 번호를 deactivate에 포함.\n"
-        "- 무효화할 사실이 없으면 {\"deactivate\":[]}.\n"
-        "- 무효화 판단 기준: 동일 주체의 상태/소속/위치/습관 등이 바뀐 경우.\n"
-    ),
-}
 
 
 def _mlx_post(model: str, messages: list[dict], max_tokens: int, temperature: float = 0.0) -> str:
@@ -94,24 +47,35 @@ def _mlx_post(model: str, messages: list[dict], max_tokens: int, temperature: fl
         ) from e
 
 
+# 베이스 모델 + 시스템 프롬프트로 전환 완료된 태스크 (어댑터 불필요)
+# v17: extract·extract-merge·extract-state 폐기 (Kiwi 단독이 저장 기본 경로, 상태 레이어 제거).
+#      meta-filter 신규 — 저장 파이프라인 진입부 메타 대화 필터 (docs/META_FILTER_SYSTEMPROMPT.md).
+_BASE_MODEL_TASKS = {
+    "retrieve-filter",
+    "security-context",
+    "save-pronoun",
+    "meta-filter",
+}
+
+
 def mlx_chat(task: str, user: str, max_tokens: int = 32768) -> str:
     """MLX 서버에 태스크별 추론 요청. 응답 텍스트 반환.
 
-    task: _MLX_SYSTEM 키 (예: "retrieve-filter", "save-pronoun")
+    task: docs/{TASK}_SYSTEMPROMPT.md 파일명 키 (예: "retrieve-filter", "save-pronoun")
 
-    어댑터 미학습 환경 fallback: 어댑터 404 시 base 모델(synapse/chat)에
-    동일한 system prompt + user 메시지로 재시도. 정확도는 어댑터보다 떨어지지만
-    빈 결과 대신 base 모델이 system prompt 따라 답변하게 됨.
+    _BASE_MODEL_TASKS 에 등록된 태스크는 베이스 모델(synapse/chat)로 직접 호출.
+    나머지는 어댑터(synapse/{task}) 시도 후 404 시 베이스 모델로 fallback.
     """
-    system = _MLX_SYSTEM.get(task, "")
+    system = load_prompt(task)
     messages = [
         {"role": "system", "content": system},
         {"role": "user", "content": user},
     ]
+    if task in _BASE_MODEL_TASKS:
+        return _mlx_post("synapse/chat", messages, max_tokens)
     try:
         return _mlx_post(f"synapse/{task}", messages, max_tokens)
     except LLMError as e:
-        # 어댑터 파일이 디스크에 없으면 mlx_server가 404 반환
         if "404" in str(e):
             return _mlx_post("synapse/chat", messages, max_tokens)
         raise
@@ -134,12 +98,14 @@ def chat(
 
 
 SYSTEM_CHAT = """당신은 사용자의 개인 비서입니다.
-아래는 사용자에 대해 알려진 사실 문장들입니다.
+아래는 사용자에 대해 알려진 사실 문장들이며 **시간 순(오래된 것 → 최근)** 으로 정렬되어 있습니다. 각 줄 앞의 `[YYYY-MM-DD]` 는 그 사실이 기록된 날짜입니다.
 이 사실들을 근거로 질문에 자연스럽고 간결하게 한국어로 답변하세요.
 
 주의사항:
 - 문장에 없는 내용은 "모르겠어요" 또는 "기록이 없어요"라고 답변
 - 추측하거나 일반적인 정보를 보충하지 말 것
+- **서로 충돌하는 사실이 있으면 최근 사실(아래쪽)을 우선 반영**. 단 과거 사실도 사라지지 않았으니 "지금은 X, 예전엔 Y" 처럼 시점을 구분해 설명
+- "지금 어때?" 같은 현재형 질문은 가장 최근 기록을 근거로 답변
 - 짧고 명확하게 답변 (2-3문장 이내)
 - 반말/존댓말은 문장 문맥에 맞게 판단"""
 
@@ -203,79 +169,59 @@ def save_pronoun(text: str, context: str = "", today: str = "") -> dict:
         return {"text": text, "unresolved": []}
 
 
-_STRUCTURE_SUGGEST_SYSTEM = (
-    "한국어 평문을 마크다운 구조화된 게시물로 바꿔라.\n"
-    "규칙:\n"
-    "- 본문(사용자가 쓴 텍스트의 줄바꿈)은 절대 건드리지 마라. 줄을 합치거나 추가 쪼개기 금지.\n"
-    "- 맨 앞에 heading 한 줄(`# 경로`)만 추가한다.\n"
-    "- 가능하면 기존 사용자 카테고리 경로를 재사용. 알맞은 게 없으면 새 경로 제안 (예: `병원.2026-04-18`).\n"
-    "- 형식은 '대분류' 또는 '대분류.소분류' 점 구분 경로.\n"
-    "- 다른 설명 없이 마크다운 텍스트만 출력."
-)
+_META_Q_ENDING = re.compile(r"[\?？]\s*$")
 
 
-def structure_suggest(text: str, known_paths: Optional[list[str]] = None) -> str:
-    """평문을 마크다운 구조화 초안으로 변환 (heading만 추가).
+def _rule_prefilter_meta(text: str, kiwi: dict) -> bool:
+    """규칙 사전필터: Kiwi 명사 0개 + '?' 종결 → 메타 대화로 확정 (v17)."""
+    return len(kiwi.get("nouns", [])) == 0 and bool(_META_Q_ENDING.search(text))
 
-    PLAN Phase 2-2: 초기엔 base 모델(synapse/chat) + 프롬프트로 동작.
-    정확도 낮으면 후속 WI에서 파인튜닝 어댑터 학습.
+
+def llm_meta_filter(lines: list[str]) -> set[int]:
+    """게시물 단위 메타 대화 필터 (v17 신설, B-v3 구조).
+
+    각 줄을 검사해 "지식으로 저장할 가치 없는 메타 대화" 의 idx 집합을 반환.
+    저장 파이프라인 진입부에서 1회 호출, 반환된 idx 는 sentence 저장 skip.
+
+    구조:
+    - (b) 규칙 사전필터 — Kiwi 명사 0개 + '?' 종결 → 즉시 메타 확정
+    - (a) 나머지 줄은 1회 LLM 배치 호출 (prompt: META_FILTER_SYSTEMPROMPT.md)
+
+    검증 (2026-04-22, 50문장 샘플): F1 1.00 (P=1.00, R=1.00).
+
+    MLX 서버 다운 · JSON 파싱 실패 시 → 규칙 사전필터 결과만 반환 (과포함 허용).
     """
-    try:
-        parts = []
-        if known_paths:
-            parts.append("기존 경로 목록: " + ", ".join(known_paths[:20]))
-        parts.append("본문:\n" + text)
-        raw = chat(
-            _STRUCTURE_SUGGEST_SYSTEM,
-            "\n\n".join(parts),
-            temperature=0,
-            max_tokens=1024,
-        )
-        # LLM 응답에서 마크다운 텍스트 추출 (backtick 블록 제거)
-        cleaned = re.sub(r"^```(?:markdown)?\s*", "", raw.strip())
-        cleaned = re.sub(r"\s*```$", "", cleaned)
-        return cleaned.strip() or text
-    except Exception:
-        return text
+    from .tokenizer import extract_for_save as _kiwi
 
-
-def llm_extract(text: str, context_sentences: Optional[list[tuple[int, str]]] = None) -> dict:
-    """LLM으로 노드/상태변경만 추출 (v15-A2: {nodes, deactivate}로 축소).
-
-    v15-A2 설계:
-    - 출력 필드는 오직 `nodes`(노드 이름)과 `deactivate`(상충 sentence_id)뿐.
-    - 카테고리 분류 · 별칭 수집은 저장 완료 후 백그라운드 워커로 이전
-      (`engine/workers.py` — 카테고리 워커는 LLM, 별칭 워커는 Wikidata altLabel).
-    - 구 어댑터가 남긴 edges / category / retention / aliases 필드는 전부 드롭한다
-      (재학습 전 호환 방어). 의미 관계는 sentence 원문에 담겨 있고 외부 지능체 몫.
-
-    context_sentences: retrieve에서 가져온 (sentence_id, text) 쌍. deactivate 판단용.
-    반환: {"nodes": [{"name": str}, ...], "deactivate": [sentence_id, ...]}
-    """
-    try:
-        # ()[] 가 포함되면 2B 모델이 반복 루프에 빠짐 — 공백으로 치환
-        text = re.sub(r"[()\[\]]", " ", text)
-        if context_sentences:
-            ctx = "\n".join(f"- [{sid}] {s}" for sid, s in context_sentences)
-            input_text = f"{text}\n알려진 사실:\n{ctx}"
+    rule_meta: set[int] = set()
+    llm_items: list[tuple[int, str]] = []
+    for i, line in enumerate(lines):
+        try:
+            k = _kiwi(line)
+        except Exception:
+            k = {"nouns": [], "lemmas": [], "negations": []}
+        if _rule_prefilter_meta(line, k):
+            rule_meta.add(i)
         else:
-            input_text = text
-        raw = mlx_chat("extract", input_text)
+            llm_items.append((i, line))
+
+    if not llm_items:
+        return rule_meta
+
+    try:
+        body = "\n".join(f"[{i}] {t}" for i, t in llm_items)
+        raw = mlx_chat("meta-filter", "입력:\n" + body, max_tokens=2048)
         match = re.search(r"\{.*\}", raw, re.DOTALL)
         if not match:
-            return {"nodes": [], "deactivate": []}
-        result = json.loads(match.group())
-        # v15-A2: name만 보존. 어댑터가 뱉은 aliases/categories/edges/retention 전부 드롭.
-        nodes = []
-        for n in result.get("nodes", []):
-            if isinstance(n, dict) and n.get("name"):
-                nodes.append({"name": n["name"]})
-            elif isinstance(n, str):
-                nodes.append({"name": n})
-        deactivate = [s for s in result.get("deactivate", []) if isinstance(s, int)]
-        return {"nodes": nodes, "deactivate": deactivate}
+            return rule_meta
+        data = json.loads(match.group())
+        llm_meta = {int(x) for x in data.get("meta", []) if isinstance(x, int)}
+        return rule_meta | llm_meta
     except Exception:
-        return {"nodes": [], "deactivate": []}
+        return rule_meta
+
+
+# v17: llm_extract_state 폐기 (상태 레이어 제거). 모든 sentence 는 항상 active.
 
 
 # 하위 호환을 위한 별칭

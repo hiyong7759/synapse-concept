@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from engine.db import get_stats, init_db, DB_PATH
 from engine.save import save, find_suspected_typos
 from engine.retrieve import retrieve
-from engine.llm import llm_extract
+from engine.tokenizer import extract_for_save as kiwi_extract
 from engine.workers import install_default_hooks
 from typing import Optional
 
@@ -77,11 +77,14 @@ def cmd_interactive(use_llm: bool) -> None:
             continue
         if text.startswith("/extract "):
             raw = text[9:]
-            result = llm_extract(raw)
-            for n in result.get("nodes", []):
-                print(f"  [노드] {n['name']}")
-            if result.get("deactivate"):
-                print(f"  [deactivate] {result['deactivate']}")
+            # v17: Kiwi 단독 경로 확인용. 명사·용언 lemma·부정부사(MAG '안'/'못') 표시
+            k = kiwi_extract(raw)
+            for n in k.get("nouns", []):
+                print(f"  [명사] {n}")
+            for n in k.get("lemmas", []):
+                print(f"  [용언 lemma] {n}")
+            for n in k.get("negations", []):
+                print(f"  [부정부사] {n}")
             continue
         if text.startswith("/reset"):
             confirm = input("  DB를 초기화합니다. 계속? (y/N) ").strip().lower()
@@ -94,16 +97,10 @@ def cmd_interactive(use_llm: bool) -> None:
         if r_retrieve.start_nodes:
             print(f"  [탐색] {' / '.join(r_retrieve.start_nodes)} → {len(r_retrieve.context_triples)}개 트리플")
 
-        # 2. context_sentences: 인출된 트리플에서 원본 문장 추출 (문장 단위 dedup)
-        seen_sentences: set[str] = set()
-        context_sentences = []
-        for t in r_retrieve.context_triples:
-            if t.sentence_text and t.sentence_text not in seen_sentences:
-                seen_sentences.add(t.sentence_text)
-                context_sentences.append(t.sentence_text)
+        # v18: context_sentences 폐기 (상태 레이어 제거 — extract-state 가 사라져 불필요)
 
-        # 3. 저장: context 포함하여 노드/엣지 추출
-        r_save = save(text, use_llm=use_llm, context_sentences=context_sentences)
+        # 2. 저장: Kiwi-first 파이프라인
+        r_save = save(text, use_llm=use_llm)
 
         # 4. 모호성 되물음 처리
         if r_save.question:
@@ -127,9 +124,7 @@ def _print_save_result(r) -> None:
         print(f"  [노드 신규] {', '.join(r.nodes_added)}")
     if r.mentions_added:
         print(f"  [언급 기록] {r.mentions_added}건")
-    for marker in r.nodes_deactivated:
-        print(f"  [상태변경] {marker}")
-    if not r.nodes_added and not r.mentions_added and not r.nodes_deactivated:
+    if not (r.nodes_added or r.mentions_added):
         print("  (변경 없음)")
 
 

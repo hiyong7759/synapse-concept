@@ -41,11 +41,11 @@ class ChatRequest(BaseModel):
 
 class SaveResponseModel(BaseModel):
     # v15: 게시물 단위 저장. edges 테이블 폐기로 관련 필드 제거.
+    # v18: nodes_deactivated 필드 폐기 (상태 레이어 제거).
     post_id: Optional[int] = None
     nodes_added: list[str]
     node_ids_added: list[int]
     mentions_added: int = 0
-    nodes_deactivated: list[str] = []  # v15: 상태변경된 노드 이름 (현재는 sentence#N 식별자)
 
 
 class RetrieveResponseModel(BaseModel):
@@ -110,16 +110,10 @@ def chat(req: ChatRequest):
     # ── 1단계: 인출 (retrieve) ──
     r_retrieve = retrieve(text, use_llm=USE_LLM, images=images, history=history)
 
-    # context_sentences: 인출된 트리플에서 원본 문장 추출 (문장 단위 dedup)
-    seen_sentences: set[str] = set()
-    context_sentences: list[str] = []
-    for t in r_retrieve.context_triples:
-        if t.sentence_text and t.sentence_text not in seen_sentences:
-            seen_sentences.add(t.sentence_text)
-            context_sentences.append(t.sentence_text)
+    # v18: context_sentences 폐기 (상태 레이어 제거 — extract-state 가 사라져 불필요)
 
     # ── 2단계: 저장 (save) ──
-    r_save = save(text, use_llm=USE_LLM, context_sentences=context_sentences or None)
+    r_save = save(text, use_llm=USE_LLM)
 
     # 인출 결과·답변은 항상 구성 (저장 보류 시에도 전달)
     retrieve_model = RetrieveResponseModel(
@@ -149,7 +143,6 @@ def chat(req: ChatRequest):
         nodes_added=r_save.nodes_added,
         node_ids_added=r_save.node_ids_added,
         mentions_added=r_save.mentions_added,
-        nodes_deactivated=r_save.nodes_deactivated,
     )
 
     # assistant 응답을 sentences에 저장
@@ -191,7 +184,8 @@ def nodes():
                 COUNT(DISTINCT co.node_id) AS degree
             FROM nodes n
             LEFT JOIN node_mentions m  ON m.node_id = n.id
-            LEFT JOIN node_mentions co ON co.sentence_id = m.sentence_id AND co.node_id != n.id
+            LEFT JOIN sentences s      ON s.id = m.sentence_id AND s.status = 'active'
+            LEFT JOIN node_mentions co ON co.sentence_id = s.id AND co.node_id != n.id
             WHERE n.status = 'active'
             GROUP BY n.id
             ORDER BY degree DESC
@@ -219,6 +213,7 @@ def hyperedges():
             FROM sentences s
             JOIN node_mentions m ON m.sentence_id = s.id
             JOIN nodes n ON n.id = m.node_id AND n.status='active'
+            WHERE s.status='active'
             GROUP BY s.id
             HAVING COUNT(m.node_id) >= 2
             """
@@ -434,11 +429,8 @@ def sentence_impact(sentence_id: int):
 
 @router.put("/sentences/{sentence_id}")
 def edit_sentence(sentence_id: int, req: SentenceUpdateRequest):
-    result = update_sentence(sentence_id, req.text, use_llm=USE_LLM)
-    return {
-        "sentence_id": sentence_id,
-        "nodes_deactivated": result.nodes_deactivated,
-    }
+    update_sentence(sentence_id, req.text, use_llm=USE_LLM)
+    return {"sentence_id": sentence_id}
 
 
 @router.delete("/sentences/{sentence_id}")
@@ -597,6 +589,8 @@ def review_apply(req: ReviewApplyRequest):
             )
             conn.commit()
             return {"ok": True, "deleted": cur.rowcount}
+
+        # v18: sentence_status 핸들러 폐기 (상태 레이어 제거).
 
         if t == "token_dismiss":
             sentence_id = p.get("sentence_id")

@@ -1,15 +1,15 @@
 # Synapse 설계 — /review 검토 편입
 
-**최종 업데이트**: 2026-04-19 (v15 — 엣지 테이블 폐기 반영)
+**최종 업데이트**: 2026-04-23 (v18 — 상태 레이어 제거 / `sentence_status` 섹션 폐기. 선행 v17: origin `rule→system`, `rule_generated`→`system_generated`)
 
 ## 배경
 
-v14에서 저장 모델이 자동 저장 + origin 추적으로 바뀌었고, v15에서 엣지 테이블이 폐기되었다. 카테고리·별칭은 **자동으로 저장**되며, 각 레코드는 `origin`(`user` / `ai` / `rule`) 컬럼으로 출처가 식별된다. 노드 간 연결은 별도 테이블이 아니라 sentence·category·alias 세 종류의 **하이퍼엣지**로만 표현된다. "사용자가 인지하지 못한 채 쌓이는 것"을 막는 대신, **"사용자가 언제든 찾아서 고칠 수 있게 한다"**.
+v14에서 저장 모델이 자동 저장 + origin 추적으로 바뀌었고, v15에서 엣지 테이블이 폐기되었다. 카테고리·별칭은 **자동으로 저장**되며, 각 레코드는 `origin`(`user` / `ai` / `system` / `external`) 컬럼으로 출처가 식별된다. (v17: 이전의 `rule` 값이 `system` 으로 리네이밍됨 — 출처는 데이터 생성 "주체"이며 규칙은 수단.) 노드 간 연결은 별도 테이블이 아니라 sentence·category·alias 세 종류의 **하이퍼엣지**로만 표현된다. "사용자가 인지하지 못한 채 쌓이는 것"을 막는 대신, **"사용자가 언제든 찾아서 고칠 수 있게 한다"**.
 
 `/review`는 이 모델에서 **세 가지 역할**만 담는다:
 
 1. **`unresolved_tokens` 해소** — 치환 실패 지시어(유일한 승인 대기 테이블)
-2. **AI·규칙 생성물 검토 뷰** — `origin='ai'` / `'rule'` 필터 목록에서 잘못된 항목 즉시 삭제
+2. **AI·시스템 생성물 검토 뷰** — `origin='ai'` / `'system'` 필터 목록에서 잘못된 항목 즉시 삭제
 3. **파괴적 작업 승인** — 노드 병합·아카이브 등 되돌릴 수 없는 작업
 
 ---
@@ -17,7 +17,7 @@ v14에서 저장 모델이 자동 저장 + origin 추적으로 바뀌었고, v15
 ## 핵심 설계 원칙
 
 `/review` 검토 흐름의 5개 원칙은 **`docs/DESIGN_PRINCIPLES.md §3` /review 검토 원칙** 참고.
-(자동 저장 + origin 추적 · unresolved_tokens만 승인 대기 · 파괴적 작업만 승인 · AI/규칙 목록 뷰 · LLM 없이도 동작)
+(자동 저장 + origin 추적 · unresolved_tokens만 승인 대기 · 파괴적 작업만 승인 · AI/시스템 목록 뷰 · LLM 없이도 동작)
 
 ---
 
@@ -82,13 +82,13 @@ def external_generated(kind: str, limit: int) -> list[Suggestion]:
 
 **액션**: `유지` / `삭제`. Wikidata가 잘못 매핑한 경우(동명이인·동의어 충돌) 사용자가 즉시 제거.
 
-### rule_generated — 규칙 생성물 검수 (규칙 오류 추적용)
+### system_generated — 시스템 생성물 검수 (엔진 규칙 오류 추적용)
 
 ```python
-def rule_generated(kind: str, limit: int) -> list[Suggestion]:
+def system_generated(kind: str, limit: int) -> list[Suggestion]:
     # kind in ('category', 'alias')
-    # origin = 'rule'인 생성물 목록
-    # 사용자가 "잘못 분류됐네" 발견 시 해당 규칙을 이후 수정하기 위한 추적 경로
+    # origin = 'system'인 생성물 목록  (v17: 이전 origin='rule' 을 리네이밍)
+    # 사용자가 "잘못 분류됐네" 발견 시 해당 엔진 규칙을 이후 수정하기 위한 추적 경로
 ```
 
 **액션**: `유지` / `삭제`. 같은 규칙이 반복 오류 내면 엔지니어에게 규칙 수정 신호.
@@ -97,8 +97,20 @@ def rule_generated(kind: str, limit: int) -> list[Suggestion]:
 
 ```python
 def suspected_typos() -> list[Suggestion]:
-    # engine/save.py의 find_suspected_typos 재사용
-    # 자모 Levenshtein 거리 == 1 쌍을 후보로
+    # engine/save.py 의 find_suspected_typos 재사용
+    # 자모 Levenshtein 거리 == 1 쌍을 후보로 한다.
+    #
+    # v16 — Kiwi lemma 동일 쌍 자동 제외 (L3):
+    #   예: "배고파/배고프" 활용형 차이.
+    #
+    #   성격: 선택적 안전장치. v17 저장 파이프라인은 Kiwi lemma 정규화로 활용형을
+    #   같은 노드에 수렴시키므로 이 필터가 실제로 걸러낼 케이스는 거의 없다.
+    #   Kiwi 결정론적이지만 사전 커버리지 한계로 낯선 용언이 정규화 안 될 때
+    #   활용형 공존이 생길 수 있는 점만 방어하는 "DB 로직 기반 방어망" 한 겹.
+    #
+    #   제거 기준: 운영 관찰 결과 활용형 공존 사례가 장기간 0건이면 **제거 1순위**.
+    #   필터를 빼도 /review 의 수동 merge 로 여전히 합칠 수 있어 기능 손실 없음.
+    #
     # 옵션: "같음 (병합)", "별칭으로만", "다르지만 관련 (카테고리 공유)", "다름 (무시)"
 ```
 
@@ -109,6 +121,12 @@ def suspected_typos() -> list[Suggestion]:
 - "별칭으로만" → `type=alias` (aliases INSERT, origin='user')
 - "다르지만 관련" → `type=category` (양 노드에 공통 사용자 정의 카테고리 INSERT, origin='user')
 - "다름" → 무시 (이 쌍을 다음 번 도출에서 제외하는 상태는 별도 필요 시 추가)
+
+### ~~sentence_status~~ — 폐기 (v18)
+
+v17 까지는 `extract-state` 가 `inactive` / `pending` 으로 자동 태그한 sentence 를 사용자가 `/review` 에서 확정·되돌리는 섹션이 있었다. v18 에서 `sentences.status` 컬럼 · `extract-state` LLM 판정이 전면 폐기되어 이 섹션 자체가 소멸. 무효화는 `update_sentence` / `delete_sentence` 로, 시점 해석은 인출 LLM 의 `created_at` 기반 최근성 판단이 담당.
+
+---
 
 ### stale_nodes(days) — 노드 생존 (아카이브 승인)
 
@@ -147,7 +165,7 @@ def gaps() -> list[Suggestion]:
 
 자동 저장 + 엣지 폐기로 전환되며 아래 섹션은 `/review`에서 제거됨 — 이미 DB에 저장되어 있거나 개념 자체가 사라짐:
 
-- ~~`uncategorized` (미분류 노드)~~ — 저장 시점에 `origin='ai'` 또는 `'rule'`로 자동 분류
+- ~~`uncategorized` (미분류 노드)~~ — 저장 시점에 `origin='ai'` 또는 `'system'`로 자동 분류
 - ~~`cooccur_pairs` (공출현 노드 쌍)~~ — 문장 하이퍼엣지(`node_mentions`)에 이미 자동 포함
 - ~~`alias_suggestions` (별칭 제안)~~ — `origin='ai'` 별칭으로 자동 등록
 - ~~의미 엣지 제안·검수~~ — v15에서 엣지 테이블 폐기. 의미 관계는 sentence 원문에 이미 있고 외부 지능체가 해석
@@ -188,7 +206,7 @@ GET /review?sections=ai_generated&kind=category&limit=20
        "source": "wikidata", "created_at": "..."}
     ]
   },
-  "rule_generated": { "category": [...], "alias": [...] },
+  "system_generated": { "category": [...], "alias": [...] },
   "suspected_typos": [...],
   "stale_nodes": [...],
   "daily": [...],
@@ -204,7 +222,7 @@ GET /review?sections=ai_generated&kind=category&limit=20
   "unresolved": 2,
   "ai_generated": {"category": 8},
   "external_generated": {"alias": 3},
-  "rule_generated": {"category": 9, "alias": 0},
+  "system_generated": {"category": 9, "alias": 0},
   "suspected_typos": 1,
   "stale_nodes": 1
 }
@@ -243,7 +261,7 @@ GET /review?sections=ai_generated&kind=category&limit=20
 
 - 페이지 로드 시 `GET /review` 호출 → 섹션별 리스트 렌더
 - **`ai_generated` 섹션**: 기본 확장, 각 항목에 `[삭제]` 버튼 + 원문 컨텍스트 툴팁
-- **`rule_generated` 섹션**: 기본 접힘, 사용자가 펼쳐서 훑어볼 때만 부하 발생
+- **`system_generated` 섹션**: 기본 접힘, 사용자가 펼쳐서 훑어볼 때만 부하 발생
 - **`unresolved` 섹션**: 질문형 카드. 옵션 선택 시 `POST /review/apply type=token`
 - **`suspected_typos` / `stale_nodes`**: 파괴적이므로 확인 모달 포함
 - 사이드바 배지: `GET /review/count`로 섹션별 카운트 표시. `ai_generated` 배지는 "검수 대기 건수"로 기능
@@ -255,8 +273,8 @@ GET /review?sections=ai_generated&kind=category&limit=20
 
 LLM 없이도 모든 검토 섹션이 작동한다:
 
-- **쿼리만으로 완결**: `unresolved`(옵션 구성 제외), `ai_generated`, `rule_generated`, `suspected_typos`, `stale_nodes`, `daily`, `gaps`
-- **LLM 호출은 저장 시점에만** — extract 어댑터가 `origin='ai'`로 카테고리·별칭을 자동 생성할 때 1회. 이후 검토는 LLM 없이 가능.
+- **쿼리만으로 완결**: `unresolved`(옵션 구성 제외), `ai_generated`, `system_generated`, `suspected_typos`, `stale_nodes`, `daily`, `gaps`
+- **LLM 호출은 저장 시점에만** — 백그라운드 카테고리 분류 워커만 LLM 을 사용해 `origin='ai'` 카테고리를 자동 생성한다(v17: `extract`/`extract-merge` 폐기). 별칭은 Wikidata(`origin='external'`)로 생성되어 LLM 추론 안 씀. 이후 검토는 LLM 없이 가능.
 
 사용자는 여전히 카테고리·별칭을 자유 입력으로 직접 추가할 수 있다 (`origin='user'`).
 
