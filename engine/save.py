@@ -1,4 +1,4 @@
-"""Synapse 자동 저장 파이프라인 (v20 — PLAN-004 M1).
+"""Synapse 자동 저장 파이프라인 (v20 — PLAN-003 M2 확장).
 
 원칙:
 - 입력 단위 = 게시물 (posts 1건 = 저장 호출 1건).
@@ -22,9 +22,19 @@ v19 변경점 (PLAN-003 M1 — chat 모드 정립):
 - save(mode=) 파라미터 필수. 'chat' / 'markdown' 양자택일.
 - chat 모드: 모든 줄을 category_path=None 의 sentence 로 분리. `#` 은 해시태그로 취급해
   heading 으로 해석하지 않는다 (즉 sentence INSERT 대상).
-- markdown 모드: 기존 parse_markdown 그대로. kind 별 분기·save-pronoun skip 등의 세부
-  동작은 M2 에서 도입 (PLAN-004 선수행 필요).
 - posts.input_mode 컬럼에 mode 값 그대로 저장.
+
+v19 변경점 (PLAN-003 M2 — markdown 모드 확장):
+- parse_markdown 반환 튜플 (category_path, kind, text). kind ∈ heading/key_value/list/free.
+- markdown 모드 전체에서 save-pronoun **skip** (공문서·법령 원문 보존, 장문 병목 해소).
+- 메타 필터 대상 모드별 조정:
+  · chat     — 모든 줄
+  · markdown — 'list' · 'free' 만 (heading · key_value 제외)
+- kind 별 _save_one_item 분기:
+  · heading   : sentence INSERT 안 함. category path 등록만
+  · key_value : sentence 원문 "key:: value" 그대로 저장, save-pronoun skip, Kiwi·날짜 분할 적용
+  · list/free : sentence INSERT, save-pronoun skip(markdown)·호출(chat), 나머지 동일
+- chat 분기 파서도 (None, 'free', line) 로 통일 — kind 파라미터 단일 경로.
 
 v17 파이프라인 변경:
 - Kiwi 단독이 저장 기본 경로 (LLM extract/merge 폐기).
@@ -450,24 +460,44 @@ def _save_one_item(
     conn,
     item_text: str,
     category_path: Optional[str],
+    kind: str,
     post_id: int,
     position: int,
     post_context: str,
     use_llm: bool,
+    use_pronoun: bool,
     result: SaveResult,
 ) -> None:
-    """게시물 내 항목 하나 저장 (v17 Kiwi-first 파이프라인).
+    """게시물 내 항목 하나 저장 (Kiwi-first 파이프라인, v19 — PLAN-003 M2 kind 분기).
 
-    흐름: ① save-pronoun (LLM) → ② 날짜 정규화 → ③ unresolved 감지 →
-          ④ sentence INSERT → ⑤ Kiwi 형태소 분석 → ⑥ 날짜 분할 + 수량
-          정규식 + TIM.* 카테고리 → ⑦ 노드 upsert + mentions + category.
+    kind ∈ {'heading', 'key_value', 'list', 'free'}:
+      - 'heading'  : sentence INSERT 안 함. category_path 만 categories 에 재귀 upsert.
+                     Kiwi 형태소 분석·날짜 분할 모두 skip (heading 은 카테고리 표식일 뿐
+                     문장 아님).
+      - 'key_value': sentence INSERT (원문 "key:: value" 그대로). save-pronoun skip
+                     (use_pronoun=False 로 강제). 나머지(Kiwi·날짜·mentions) 동일.
+      - 'list'/'free': 일반 sentence. save-pronoun 은 use_pronoun 값에 따름
+                     (chat=True, markdown=False).
+
+    흐름: ① save-pronoun (LLM, use_pronoun=True 일 때만) → ② 날짜 정규화 →
+          ③ unresolved 감지 → ④ sentence INSERT → ⑤ Kiwi 형태소 분석 →
+          ⑥ 날짜 분할 + 수량 정규식 + TIM.* 카테고리 → ⑦ 노드 upsert + mentions.
 
     v18: ⑧ extract-state 전면 폐기 — 상태 레이어 없음 (sentences.status 컬럼 삭제).
     """
+    # heading 은 sentence 로 저장하지 않는다 — category path 등록만 수행.
+    if kind == "heading":
+        if category_path:
+            _upsert_category_path(
+                conn, category_path, warnings=result.category_warnings
+            )
+        return
+
     # ① save-pronoun — 지시어·날짜 치환 (LLM, 실패 시 원문 유지)
+    #    markdown 모드 전체 + key_value kind 는 use_pronoun=False 로 강제 skip.
     effective_text = item_text
     unresolved_tokens: list[str] = []
-    if use_llm:
+    if use_llm and use_pronoun and kind != "key_value":
         try:
             pre = _preprocess(item_text, post_context=post_context)
             if pre.get("question"):
@@ -543,17 +573,19 @@ def _save_one_item(
 _VALID_MODES = ("chat", "markdown")
 
 
-def _parse_for_chat(text: str) -> list[tuple[Optional[str], str]]:
-    """chat 모드 파서 — heading 해석 안 함. 각 줄 (None, 줄) 로 분리.
+def _parse_for_chat(text: str) -> list[tuple[Optional[str], str, str]]:
+    """chat 모드 파서 — heading 해석 안 함. 각 줄 (None, 'free', 줄) 로 분리.
 
     사용자가 `#야근` 처럼 해시태그 감각으로 입력해도 sentence 로 저장된다.
     빈 줄은 무시하고 각 줄은 strip 처리.
+
+    v19 M2: markdown 파서와 튜플 모양 통일 (kind 'free').
     """
-    result: list[tuple[Optional[str], str]] = []
+    result: list[tuple[Optional[str], str, str]] = []
     for raw in text.split("\n"):
         line = raw.strip()
         if line:
-            result.append((None, line))
+            result.append((None, "free", line))
     return result
 
 
@@ -572,12 +604,16 @@ def save(
       - 'markdown' : heading + list + 자유 문장 혼재. parse_markdown 으로 경로 상속.
       호출자가 UI 입력창 선택에 따라 필수로 지정. 기본값 없음.
 
-    v19 흐름 (PLAN-003 M1):
+    v19 흐름:
     - 매 save() 호출 = posts 1건 INSERT (mode 를 input_mode 컬럼에 저장).
-    - chat: 모든 줄 (None, line) → category_path 없이 일반 sentence.
-    - markdown: 기존 parse_markdown (category_path 상속). M2 에서 kind 별 분기 도입.
+    - chat (M1): 모든 줄 (None, 'free', line) → category_path 없이 일반 sentence.
+                 save-pronoun 호출, 메타 필터 전체 대상.
+    - markdown (M2): parse_markdown (category_path, kind, text) 반환.
+                 save-pronoun 전체 skip, 메타 필터는 list · free 만 대상.
+                 heading 은 sentence INSERT 안 하고 카테고리 path 만 등록, key_value 는
+                 원문 "key:: value" 그대로 저장.
     - 진입부 메타 필터 1회 (use_llm=True 시). 실패·MLX 다운 시 skip.
-    - 각 항목은 _save_one_item() 이 Kiwi-first 파이프라인(①~⑦) 으로 처리.
+    - 각 항목은 _save_one_item() 이 Kiwi-first 파이프라인(①~⑦) 으로 kind 별 분기 처리.
     - 상태 레이어 없음 (v18: extract-state 폐기, sentences.status 컬럼 삭제).
     """
     if mode not in _VALID_MODES:
@@ -598,31 +634,50 @@ def save(
         post_id = _insert_post(conn, text, input_mode=mode)
         result.post_id = post_id
 
+        # 모드별 파이프라인 스위치
+        # - use_pronoun: chat 만 save-pronoun 호출. markdown 전체 skip.
+        # - meta_filter_positions: 메타 필터 대상 index (chat=전체, markdown=list·free).
+        use_pronoun = mode == "chat"
+        if mode == "chat":
+            meta_filter_positions = list(range(len(parsed)))
+        else:
+            meta_filter_positions = [
+                i for i, (_, k, _) in enumerate(parsed) if k in ("list", "free")
+            ]
+
         # 진입부 메타 필터 (v17) — LLM 사용 시만. 실패·MLX 다운 시 빈 집합(과포함 허용)
-        item_texts = [item for _, item in parsed]
+        # 대상 문장만 LLM 에 넘기고, 반환된 상대 idx 를 전역 position 으로 역매핑.
         meta_idx: set[int] = set()
-        if use_llm:
+        if use_llm and meta_filter_positions:
+            target_texts = [parsed[i][2] for i in meta_filter_positions]
             try:
-                meta_idx = llm_meta_filter(item_texts)
+                rel_meta = llm_meta_filter(target_texts)
+                meta_idx = {meta_filter_positions[r] for r in rel_meta}
             except Exception:
                 meta_idx = set()
 
         # 항목별 저장
-        for position, (category_path, item_text) in enumerate(parsed):
+        for position, (category_path, kind, item_text) in enumerate(parsed):
             if position in meta_idx:
                 continue
-            # 현재 항목을 제외한 나머지 게시물 문장들을 context 로
-            others = [item for i, (_, item) in enumerate(parsed) if i != position]
+            # save-pronoun context = 현재 항목을 제외한 게시물 내 다른 **sentence 대상 줄**
+            # (heading 은 문장 아니라 제외. key_value · list · free 만 맥락 제공.)
+            others = [
+                t for i, (_, k, t) in enumerate(parsed)
+                if i != position and k != "heading"
+            ]
             post_context = "\n".join(others)
 
             _save_one_item(
                 conn,
                 item_text,
                 category_path,
+                kind,
                 post_id=post_id,
                 position=position,
                 post_context=post_context,
                 use_llm=use_llm,
+                use_pronoun=use_pronoun,
                 result=result,
             )
             if result.question:
