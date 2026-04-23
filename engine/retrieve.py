@@ -1,16 +1,22 @@
-"""Synapse 인출 파이프라인 (v15).
+"""Synapse 인출 파이프라인 (v20 — PLAN-004 M2).
 
 흐름:
   질문
-  → LLM 확장: 노드 후보 키워드 목록
+  → LLM 확장 + Kiwi: 노드 후보 키워드 목록
+  → 축 A 시드 (v20): 키워드가 categories.name 과 매칭되면 서브트리 재귀 CTE →
+    sentence_categories 로 연결된 문장을 BFS 초기 시드에 주입
   → DB 매칭: aliases 우선 → name 직접 → substring
   → BFS 루프: 노드 → node_mentions JOIN → sentences → 함께 언급된 노드 → 반복
-  → 카테고리 보완: 시작 노드 카테고리 → 인접 카테고리 노드 추가 → 재필터
+  → 축 B 보완: 시작 노드 major_category → 인접 소분류 노드 추가 → 재필터
   → 최종 sentences 컨텍스트 + LLM 답변
 
-v15 변경: edges 테이블 자체 폐기. 연결은 node_mentions(문장 바구니) + node_categories
-(카테고리 바구니) + aliases(별칭 바구니) 세 종류의 하이퍼엣지로만 표현. 의미 관계
-(cause/avoid/similar) 해석은 외부 지능체 몫이라, sentence 원문만 컨텍스트로 전달.
+v20 변경 (PLAN-004): 카테고리 바구니가 두 축으로 분리됨.
+- 축 A = categories(adjacency list) + sentence_categories(문장 주 매핑) — 사용자 heading 계층.
+  질문에서 "더나은 개발팀 휴가" 같은 heading 명 매칭 시 서브트리 스캔으로 관련 문장 일괄 수집.
+- 축 B = node_categories.major_category — 19 대분류 + 인접 맵 한 홉 (기존 경로 유지).
+
+v15: edges 테이블 폐기. 연결은 node_mentions + 카테고리 두 축(v20) + aliases 로 표현.
+의미 관계(cause/avoid/similar) 해석은 외부 지능체 몫.
 """
 
 from __future__ import annotations
@@ -60,6 +66,7 @@ class RetrieveResult:
     context_sentences: list[tuple[int, str]] = field(default_factory=list)
     answer: Optional[str] = None
     start_nodes: list[str] = field(default_factory=list)
+    start_categories: list[str] = field(default_factory=list)  # v20: 축 A 매칭된 카테고리 이름
 
 
 # ─── DB 헬퍼 ──────────────────────────────────────────────
@@ -112,6 +119,96 @@ def _match_start_nodes(conn, keywords: list[str], question: str = "") -> dict[st
                 matched[f"{r['name']}#{r['id']}"] = r["id"]
 
     return matched
+
+
+# ─── 축 A — 사용자 heading 계층 시드 (v20 PLAN-004 M2) ─────
+
+def _match_start_categories(conn, keywords: list[str]) -> dict[str, set[int]]:
+    """키워드와 categories.name 매칭 → 서브트리 id 집합 수집.
+
+    각 키워드마다 재귀 CTE 로 매칭 카테고리 + 모든 하위 카테고리 id 를 모은다.
+    반환: {matched_name: {id, ...}} — 질문 키워드 → 카테고리 서브트리 매핑.
+
+    예) categories: (더나은) → (개발팀·휴가), (건강) → (2026-04-10)
+        keywords=['더나은'] → {'더나은': {더나은.id, 개발팀.id, 휴가.id}}
+        keywords=['개발팀'] → {'개발팀': {개발팀.id}}
+    """
+    result: dict[str, set[int]] = {}
+    for kw in keywords:
+        if not kw or not kw.strip():
+            continue
+        rows = conn.execute(
+            """WITH RECURSIVE sub(id) AS (
+                   SELECT id FROM categories WHERE name = ?
+                   UNION ALL
+                   SELECT c.id FROM categories c JOIN sub ON c.parent_id = sub.id
+               )
+               SELECT id FROM sub""",
+            (kw,),
+        ).fetchall()
+        if rows:
+            result[kw] = {r["id"] for r in rows}
+    return result
+
+
+def _get_sentences_by_category_ids(
+    conn, category_ids: set[int]
+) -> list[Mention]:
+    """category_id 서브트리 → sentence_categories JOIN 으로 문장 + 공출현 노드 수집.
+
+    축 A 시드가 BFS 시작 레이어로 편입되도록 Mention 리스트로 반환.
+    한 문장에 여러 노드가 mention 되면 각 페어가 Mention 한 건씩 생성됨.
+    공출현 노드가 전혀 없는 문장(heading 전용)은 node_id=-1, node_name='' 로 최소 1건 반환
+    해 context_sentences 에 누락되지 않게 한다.
+    """
+    if not category_ids:
+        return []
+    ph = ",".join("?" * len(category_ids))
+    # 매칭된 서브트리의 고유 문장 id 집합 먼저 확보
+    sent_rows = conn.execute(
+        f"""SELECT DISTINCT s.id AS sentence_id, s.text AS sentence_text
+            FROM sentence_categories sc
+            JOIN sentences s ON s.id = sc.sentence_id
+            WHERE sc.category_id IN ({ph})""",
+        list(category_ids),
+    ).fetchall()
+    if not sent_rows:
+        return []
+    sentence_ids = {r["sentence_id"] for r in sent_rows}
+    sentence_text: dict[int, str] = {r["sentence_id"]: r["sentence_text"] for r in sent_rows}
+
+    # 공출현 노드 JOIN (문장별 모든 노드)
+    ph2 = ",".join("?" * len(sentence_ids))
+    mention_rows = conn.execute(
+        f"""SELECT m.sentence_id, m.node_id, n.name AS node_name
+            FROM node_mentions m
+            JOIN nodes n ON n.id = m.node_id AND n.status='active'
+            WHERE m.sentence_id IN ({ph2})""",
+        list(sentence_ids),
+    ).fetchall()
+    mentions_by_sid: dict[int, list[tuple[int, str]]] = {}
+    for r in mention_rows:
+        mentions_by_sid.setdefault(r["sentence_id"], []).append(
+            (r["node_id"], r["node_name"])
+        )
+
+    result: list[Mention] = []
+    for sid in sentence_ids:
+        text = sentence_text[sid]
+        nodes = mentions_by_sid.get(sid, [])
+        if nodes:
+            for nid, name in nodes:
+                result.append(Mention(
+                    node_id=nid, node_name=name,
+                    sentence_id=sid, sentence_text=text,
+                ))
+        else:
+            # 공출현 노드 없는 문장(예: key_value 만 있는 heading 하위) 도 context 로 노출
+            result.append(Mention(
+                node_id=-1, node_name="",
+                sentence_id=sid, sentence_text=text,
+            ))
+    return result
 
 
 def _get_mentions_for_nodes(conn, node_ids: set[int]) -> list[Mention]:
@@ -386,17 +483,35 @@ def retrieve(
         keywords = list(dict.fromkeys(keywords + question.split() + kiwi_kws))
 
         start_nodes = _match_start_nodes(conn, keywords, question=question)
-        if not start_nodes:
+        result.start_nodes = list(start_nodes.keys())
+
+        # 1-A. 축 A 시드 — categories 재귀 CTE 서브트리 → sentence_categories 경유 (v20)
+        cat_match = _match_start_categories(conn, keywords)
+        result.start_categories = list(cat_match.keys())
+        all_category_ids: set[int] = set()
+        for ids in cat_match.values():
+            all_category_ids.update(ids)
+        axis_a_mentions = _get_sentences_by_category_ids(conn, all_category_ids)
+
+        # 노드·카테고리 양쪽 다 비면 조기 종료
+        if not start_nodes and not axis_a_mentions:
             result.answer = "관련 정보를 찾을 수 없습니다."
             return result
 
-        result.start_nodes = list(start_nodes.keys())
-
-        # 2. BFS — node_mentions JOIN 단일 경로
+        # 2. BFS 초기화 — 노드 시드 + 축 A 시드 통합
         visited_node_ids: set[int] = set(start_nodes.values())
         visited_sentence_ids: set[int] = set()
-        all_mentions: list[Mention] = []
-        current_node_ids = set(start_nodes.values())
+        all_mentions: list[Mention] = list(axis_a_mentions)
+        # 축 A 시드 문장은 이미 수집 완료 — 다음 레이어 확장에만 쓰이도록 visited 업데이트
+        for m in axis_a_mentions:
+            visited_sentence_ids.add(m.sentence_id)
+            if m.node_id > 0:
+                visited_node_ids.add(m.node_id)
+        # 첫 BFS 레이어는 (a) 노드 시드 (b) 축 A 시드 문장의 공출현 노드 모두 포함
+        current_node_ids: set[int] = set(start_nodes.values())
+        for m in axis_a_mentions:
+            if m.node_id > 0:
+                current_node_ids.add(m.node_id)
 
         for _ in range(max_layers):
             mentions = [
