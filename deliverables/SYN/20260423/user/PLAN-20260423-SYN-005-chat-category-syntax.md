@@ -67,11 +67,12 @@ PLAN-003 dogfood 후 발견된 파서 동작 이슈. 점(`.`) 포함 heading 이
 
 ## 깊이 제한 정책
 
-- **시스템 제한 없음** — `categories` 테이블의 `parent_id` 체인은 무제한 깊이 지원
-- `#` 개수 자체는 markdown 스펙대로 1~6 (H1~H6) — 한 heading 에서 한 번에 만들 수 있는 깊이는 6
+- **시스템 제한 전면 없음** — `categories` 테이블의 `parent_id` 체인은 무제한
+- **`#` 개수 제한 없음** — markdown 표준은 H1~H6 이지만 synapse 는 `#######` 이상도 허용. 정규식 `^(#{1,6})\s+...` 의 상한 제거 (`{1,}` 또는 `+`)
 - 점(`.`) 으로는 한 줄에 무한 깊이 가능 (`# A.B.C.D.E.F.G…`)
-- **권장 깊이 3~4 단** — UX 가이드 (검색·브라우징·시각화 부담). 강제는 안 함
+- **권장 깊이 3~4 단** — UX 가이드 (검색·브라우징·시각화 부담). 강제·차단은 안 함
 - `/review` 에서 깊이 5 이상 분류는 경고 표시 (제안만, 차단 아님)
+- 사용자가 일부러 깊게 쓸 일은 드물지만 **일관성 위해 제한 없음** (사용자 결정 2026-04-24)
 
 ---
 
@@ -109,12 +110,13 @@ PLAN-003 dogfood 후 발견된 파서 동작 이슈. 점(`.`) 포함 heading 이
 - unit test 케이스 20개 내외 초안
 
 ### M1. 정규화 함수 + heading 상속 정정 + chat 경로 통합
+- `engine/markdown.py` `_HEADING_RE` 정규식 `{1,6}` → `+` (또는 `{1,}`) — `#` 개수 제한 제거
 - `engine/markdown.py` `path_stack.clear()` 분기 제거 (옵션 A 자연 상속)
 - `engine/markdown.py` 또는 `engine/preprocessor.py` 에 `normalize_hash_syntax` 신규
 - `engine/save.py` `save()` 에서 mode 무관하게 저장 직전 정규화 1회 호출
 - `_parse_for_chat` 제거 — chat 도 `parse_markdown` 경유로 통일
 - posts.markdown 컬럼에 정규화 후 텍스트 저장
-- **회귀 검증**: PLAN-003 M1·M2 회귀 전부 통과 + heading 상속 정정 회귀
+- **회귀 검증**: PLAN-003 M1·M2 회귀 전부 통과 + heading 상속 정정 + 7개 이상 `#` heading 회귀
 
 ### M2. 정규화 + heading 상속 회귀 테스트 + 실데이터 dogfood
 - `tests/regression_v20_chat_category.py` — 정규화 경계 케이스 20+
