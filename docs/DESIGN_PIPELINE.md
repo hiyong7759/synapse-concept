@@ -281,8 +281,14 @@ background_tasks.add_task(alias_worker, new_node_ids)
       관련성 판단 (pass/reject). 불확실하면 pass
     통과한 항목의 새 노드 → 다음 레이어
     양쪽 모두 새 노드 없으면 종료
+  ↓ [시간 순 정렬 (v18)]
+    통과한 sentence 들을 sentences.created_at 오름차순으로 정렬.
+    각 줄 앞에 `[YYYY-MM-DD]` 날짜 힌트를 붙여 LLM 프롬프트 컨텍스트 구성.
   ↓ [synapse/chat]  temperature=0.3, max_tokens=4096
-    인출 sentences를 컨텍스트로 자연어 답변 (의미 관계 해석은 외부 지능체 몫)
+    인출 sentences를 컨텍스트로 자연어 답변.
+    프롬프트 규칙: "충돌 시 최근 사실 우선", "'지금 어때?' 는 최신 기록 근거",
+    "과거 사실도 유지 — 시점 구분해 설명".
+    상태 레이어(v17 이하) 대신 시점 해석을 여기서 수행 (v18 설계 결정).
     답변 → sentences INSERT (role='assistant')
 ```
 
