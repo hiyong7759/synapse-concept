@@ -163,6 +163,10 @@ _SEED_ROOTS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
+# 외부 공개 — save.py 의 루트 충돌 감지, suggestions.py 의 사용자 루트 필터링에서 재사용.
+SEED_ROOT_NAMES: frozenset[str] = frozenset(root for root, _subs in _SEED_ROOTS)
+
+
 def _seed_major_categories(conn: sqlite3.Connection) -> None:
     """categories 테이블에 19 대분류 루트 + 소분류 시드 INSERT (이미 있으면 skip)."""
     for root_name, sub_names in _SEED_ROOTS:

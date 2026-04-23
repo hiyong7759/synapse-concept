@@ -54,7 +54,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Callable, Optional
 
-from .db import get_connection, DB_PATH
+from .db import get_connection, DB_PATH, SEED_ROOT_NAMES
 from .llm import (
     LLMError,
     llm_meta_filter,
@@ -75,6 +75,9 @@ class SaveResult:
     # v18: sentences_deactivated/pending/nodes_deactivated 폐기 (상태 레이어 제거)
     markdown_draft: Optional[str] = None  # v17: structure-suggest 폐기. 하위 호환용 필드 유지 (항상 None)
     question: Optional[str] = None
+    # v20 (PLAN-004 M3): heading 루트가 19 대분류 시드 이름과 일치해 자동 병합된 경고.
+    # 항목 예: "루트 'BOD' 이 19 대분류 시드와 동일 — 시드 트리에 병합됨"
+    category_warnings: list[str] = field(default_factory=list)
 
 
 # ─── 저장 완료 이벤트 훅 (v15-A2) ─────────────────────────
@@ -159,11 +162,17 @@ def _add_node_major_category(
     )
 
 
-def _upsert_category_path(conn, path: Optional[str]) -> Optional[int]:
+def _upsert_category_path(
+    conn, path: Optional[str], warnings: Optional[list[str]] = None
+) -> Optional[int]:
     """축 A: heading path (예: '더나은.개발팀') 를 categories 에 상위→하위 upsert.
 
     반환값: 말단 category_id (path 가 None/빈 문자열이면 None).
     parent_id 체인으로 저장하며 SQLite IS ? 로 NULL 비교.
+
+    v20 PLAN-004 M3: warnings 리스트가 주어지면 루트 세그먼트가 19 대분류 시드명
+    (`SEED_ROOT_NAMES`) 과 일치할 때 경고 메시지 누적. 현재 동작은 시드 트리에
+    자동 병합이며, 사용자 의도 충돌 가능성을 `/review` 에 노출하기 위함.
     """
     if not path:
         return None
@@ -172,7 +181,15 @@ def _upsert_category_path(conn, path: Optional[str]) -> Optional[int]:
         return None
     parent_id: Optional[int] = None
     leaf_id: Optional[int] = None
-    for seg in segments:
+    for idx, seg in enumerate(segments):
+        # 루트 세그먼트가 시드명과 일치 → 경고 (자동 병합 동작은 유지, 같은 메시지 dedup)
+        if idx == 0 and warnings is not None and seg in SEED_ROOT_NAMES:
+            msg = (
+                f"heading 루트 '{seg}' 이 19 대분류 시드 이름과 동일 — "
+                f"시드 트리에 병합됨. /review 에서 분리 여부 확인 필요."
+            )
+            if msg not in warnings:
+                warnings.append(msg)
         row = conn.execute(
             "SELECT id FROM categories WHERE name=? AND parent_id IS ?",
             (seg, parent_id),
@@ -481,7 +498,9 @@ def _save_one_item(
 
     # ④-2. 축 A — heading path 가 있으면 categories 재귀 upsert → sentence_categories 연결 (v20)
     if category_path:
-        leaf_id = _upsert_category_path(conn, category_path)
+        leaf_id = _upsert_category_path(
+            conn, category_path, warnings=result.category_warnings
+        )
         _add_sentence_category(conn, sid, leaf_id, origin="user")
 
     # ⑤ Kiwi 형태소 분석 — 저장 기본 경로 (LLM 사용 여부와 무관, 원칙 11)

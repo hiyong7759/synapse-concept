@@ -21,7 +21,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Optional
 
-from .db import get_connection, DB_PATH
+from .db import get_connection, DB_PATH, SEED_ROOT_NAMES
 from .save import find_suspected_typos
 from .llm import chat, LLMError
 
@@ -345,6 +345,71 @@ def external_generated(
 # v18: pending_sentences · recent_deactivated 폐기 (상태 레이어 제거).
 
 
+# ─── 축 A 사용자 루트 검수 (v20 PLAN-004 M3) ──────────────
+
+def recent_user_categories(db_path: str = DB_PATH, limit: int = 30) -> list[dict]:
+    """사용자가 heading 으로 자동 생성한 카테고리 루트 목록 — 최근순.
+
+    19 대분류 시드 루트(`SEED_ROOT_NAMES`) 는 제외. 각 루트에 대해:
+    - 하위 카테고리 개수 (서브트리 재귀)
+    - 서브트리에 연결된 sentence_categories 레코드 개수
+    - 시드명과 동일한 이름 사용 시 (시드 루트에 병합돼 이 쿼리엔 안 잡힘) → save 시점에
+      SaveResult.category_warnings 로 별도 노출.
+    """
+    conn = get_connection(db_path)
+    try:
+        root_rows = conn.execute(
+            """SELECT id, name, created_at
+               FROM categories
+               WHERE parent_id IS NULL
+               ORDER BY created_at DESC
+               LIMIT ?""",
+            (limit * 4,),  # 시드 배제 후에도 limit 채우도록 여유
+        ).fetchall()
+        user_roots = [r for r in root_rows if r["name"] not in SEED_ROOT_NAMES][:limit]
+        if not user_roots:
+            return []
+
+        out: list[dict] = []
+        for r in user_roots:
+            # 서브트리 재귀 CTE 한 번으로 descendants id 수집
+            sub_rows = conn.execute(
+                """WITH RECURSIVE sub(id) AS (
+                       SELECT id FROM categories WHERE id = ?
+                       UNION ALL
+                       SELECT c.id FROM categories c JOIN sub ON c.parent_id = sub.id
+                   )
+                   SELECT id FROM sub""",
+                (r["id"],),
+            ).fetchall()
+            sub_ids = [row["id"] for row in sub_rows]
+            descendants = len(sub_ids) - 1  # 루트 자기 자신 제외
+            if sub_ids:
+                ph = ",".join("?" * len(sub_ids))
+                sc_count = conn.execute(
+                    f"SELECT COUNT(*) FROM sentence_categories WHERE category_id IN ({ph})",
+                    sub_ids,
+                ).fetchone()[0]
+            else:
+                sc_count = 0
+            out.append({
+                "kind": "user_category_root",
+                "root_id": r["id"],
+                "name": r["name"],
+                "descendants": descendants,
+                "linked_sentences": sc_count,
+                "created_at": r["created_at"],
+                "question": (
+                    f"사용자 카테고리 루트 '{r['name']}' — "
+                    f"하위 {descendants}개, 연결 문장 {sc_count}건. 유지할까요?"
+                ),
+                "options": ["유지", "이름 변경", "삭제"],
+            })
+    finally:
+        conn.close()
+    return out
+
+
 # ─── 통합 ─────────────────────────────────────────────────
 
 def all_sections(
@@ -354,21 +419,25 @@ def all_sections(
 ) -> dict:
     """전체 섹션 호출. sections 인자로 일부만 선택 가능."""
     available = {
-        "unresolved":         lambda: unresolved(db_path=db_path),
-        "ai_generated":       lambda: ai_generated(db_path=db_path),
-        "external_generated": lambda: external_generated(db_path=db_path),
-        "suspected_typos":    lambda: suspected_typos(db_path=db_path),
-        "missing_basic_info": lambda: missing_basic_info(db_path=db_path),
-        "stale_nodes":        lambda: stale_nodes(db_path=db_path),
-        "daily":              lambda: daily(db_path=db_path),
-        "gaps":               lambda: gaps(db_path=db_path),
+        "unresolved":             lambda: unresolved(db_path=db_path),
+        "ai_generated":           lambda: ai_generated(db_path=db_path),
+        "external_generated":     lambda: external_generated(db_path=db_path),
+        "recent_user_categories": lambda: recent_user_categories(db_path=db_path),
+        "suspected_typos":        lambda: suspected_typos(db_path=db_path),
+        "missing_basic_info":     lambda: missing_basic_info(db_path=db_path),
+        "stale_nodes":            lambda: stale_nodes(db_path=db_path),
+        "daily":                  lambda: daily(db_path=db_path),
+        "gaps":                   lambda: gaps(db_path=db_path),
     }
     keys = sections if sections else list(available.keys())
     return {k: available[k]() for k in keys if k in available}
 
 
 def counts(db_path: str = DB_PATH) -> dict:
-    """배지용 집계 — 빠른 쿼리만."""
+    """배지용 집계 — 빠른 쿼리만.
+
+    v20 PLAN-004 M3: node_categories_by_origin 추가 (축 B 워커 정확도 모니터링).
+    """
     conn = get_connection(db_path)
     try:
         unresolved_n = conn.execute("SELECT COUNT(*) FROM unresolved_tokens").fetchone()[0]
@@ -378,6 +447,23 @@ def counts(db_path: str = DB_PATH) -> dict:
         ext_alias_n = conn.execute(
             "SELECT COUNT(*) FROM aliases WHERE origin='external'"
         ).fetchone()[0]
+        # v20 M3 — 축 B origin 분포 (ai vs system 자동 태깅 vs user 수정)
+        nc_by_origin_rows = conn.execute(
+            "SELECT origin, COUNT(*) AS n FROM node_categories GROUP BY origin"
+        ).fetchall()
+        nc_by_origin = {
+            o: 0 for o in ("user", "ai", "system", "external")
+        }
+        for r in nc_by_origin_rows:
+            nc_by_origin[r["origin"]] = r["n"]
+        # 사용자 루트 개수 (시드 배제)
+        user_roots_n = conn.execute(
+            "SELECT COUNT(*) FROM categories WHERE parent_id IS NULL "
+            "AND name NOT IN ({seeds})".format(
+                seeds=",".join("?" * len(SEED_ROOT_NAMES))
+            ),
+            list(SEED_ROOT_NAMES),
+        ).fetchone()[0]
     finally:
         conn.close()
     typos_n = len(find_suspected_typos(db_path=db_path))
@@ -385,10 +471,12 @@ def counts(db_path: str = DB_PATH) -> dict:
     total = (unresolved_n + typos_n + basic_n
              + ai_cat_n + ext_alias_n)
     return {
-        "total":              total,
-        "unresolved":         unresolved_n,
-        "ai_generated":       {"category": ai_cat_n},
-        "external_generated": {"alias": ext_alias_n},
-        "suspected_typos":    typos_n,
-        "missing_basic_info": basic_n,
+        "total":                    total,
+        "unresolved":               unresolved_n,
+        "ai_generated":             {"category": ai_cat_n},
+        "external_generated":       {"alias": ext_alias_n},
+        "suspected_typos":          typos_n,
+        "missing_basic_info":       basic_n,
+        "node_categories_by_origin": nc_by_origin,  # v20 M3
+        "user_category_roots":       user_roots_n,   # v20 M3
     }
