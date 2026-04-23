@@ -1,10 +1,14 @@
-"""v19 chat 모드 정립 회귀 테스트 (PLAN-20260422-SYN-003 M1).
+"""v19 chat 모드 정립 회귀 테스트 (PLAN-20260422-SYN-003 M1, v20 갱신 2026-04-24).
 
 목적:
 - save(mode='chat'|'markdown') 시그니처·검증 동작 확인
 - posts.input_mode 컬럼이 chat/markdown 값으로 정확히 저장되는지
-- chat 모드에서 `#` 으로 시작하는 줄도 sentence 로 저장 (heading 해석 안 함)
+- chat 모드에서 `#` 으로 시작하는 줄은 카테고리(heading) 로 저장 (PLAN-005 M1)
 - v18 → v19 마이그레이션 backfill 정합 (heading 포함 → markdown, 평문 → chat)
+
+v20 변경 (PLAN-005 M1):
+- CASE 3 갱신: chat 모드에서 `#야근` 은 카테고리 "야근" + sentence INSERT 안 함.
+  옛 PLAN-003 M1 동작 (chat 에서 `#` 평문 보존) 은 폐기. _parse_for_chat 도 폐기.
 
 M2 이후 도입될 markdown 분기(kind 별 분기·save-pronoun skip) 는 본 테스트 범위 외.
 
@@ -94,13 +98,18 @@ def case_input_mode_column() -> bool:
 
 
 def case_chat_preserves_hash() -> bool:
-    """chat 모드에서 `#` 을 heading 으로 해석하지 않고 sentence 로 저장."""
-    print("\n=== CASE 3: chat 모드 해시(#) 해시태그 처리 ===")
+    """chat 모드에서 `#야근` 은 카테고리 'heading' 으로 처리, sentence INSERT 안 함.
+
+    PLAN-005 M1 (v20) 변경: 옛 PLAN-003 M1 의 'chat 에서 # 평문 보존' 동작 폐기.
+    chat 도 normalize_hash_syntax + parse_markdown 경유로 통일.
+    """
+    print("\n=== CASE 3: chat 모드 해시(#) 카테고리 처리 (PLAN-005 M1) ===")
     d = _fresh_db_dir()
     from engine.save import save
     from engine.db import DB_PATH
 
-    r = save("# 야근\n오늘 회의 길었어", mode="chat", use_llm=False)
+    # `#야근` (공백 없음) 은 정규화 후 `# 야근` → heading 으로 인식
+    r = save("#야근\n오늘 회의 길었어", mode="chat", use_llm=False)
 
     conn = sqlite3.connect(DB_PATH)
     try:
@@ -111,12 +120,38 @@ def case_chat_preserves_hash() -> bool:
                 (r.post_id,),
             ).fetchall()
         ]
+        # posts.markdown 에는 정규화된 형태로 저장됐는지 확인
+        post_md = conn.execute(
+            "SELECT markdown FROM posts WHERE id=?", (r.post_id,)
+        ).fetchone()[0]
+        # 카테고리 '야근' 이 등록됐는지 확인
+        cat_row = conn.execute(
+            "SELECT id, name, parent_id FROM categories WHERE name='야근'"
+        ).fetchone()
     finally:
         conn.close()
 
     ok = True
-    ok &= _passed("sentence 2건 생성 (heading 줄 포함)", len(texts) == 2, f"texts={texts}")
-    ok &= _passed("첫 줄은 '# 야근' 원문 그대로", texts and texts[0] == "# 야근", f"texts[0]={texts[0] if texts else None!r}")
+    ok &= _passed(
+        "sentence 1건만 생성 (heading 은 INSERT 안 함)",
+        len(texts) == 1,
+        f"texts={texts}",
+    )
+    ok &= _passed(
+        "남은 sentence = 본문 줄 '오늘 회의 길었어'",
+        texts and texts[0] == "오늘 회의 길었어",
+        f"texts[0]={texts[0] if texts else None!r}",
+    )
+    ok &= _passed(
+        "posts.markdown 에 정규화된 텍스트 저장",
+        post_md == "# 야근\n오늘 회의 길었어",
+        f"post_md={post_md!r}",
+    )
+    ok &= _passed(
+        "카테고리 '야근' 등록 (root, parent_id IS NULL)",
+        cat_row is not None and cat_row[2] is None,
+        f"cat_row={cat_row}",
+    )
     return ok
 
 
