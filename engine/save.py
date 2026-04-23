@@ -1,11 +1,20 @@
-"""Synapse 자동 저장 파이프라인 (v17).
+"""Synapse 자동 저장 파이프라인 (v19 — PLAN-003 M1).
 
 원칙:
-- 입력 단위 = 마크다운 구조화된 게시물 (posts 1건 = 저장 호출 1건)
+- 입력 단위 = 게시물 (posts 1건 = 저장 호출 1건).
+- 저장 모드는 호출자가 mode='chat'|'markdown' 로 명시 (UI 입력창 선택 반영).
 - 자동 저장 범위: post + sentences + nodes + node_mentions (+ heading 경로·TIM.* 카테고리)
 - v15: edges 테이블 자체 폐기. 노드 간 연결은 node_mentions(문장 바구니) + node_categories
   (카테고리 바구니) + aliases(별칭 바구니) 세 하이퍼엣지로만 표현.
 - 의미 관계(cause/avoid/similar)는 sentence 원문에 이미 있고, 해석은 외부 지능체 몫.
+
+v19 변경점 (PLAN-003 M1 — chat 모드 정립):
+- save(mode=) 파라미터 필수. 'chat' / 'markdown' 양자택일.
+- chat 모드: 모든 줄을 category_path=None 의 sentence 로 분리. `#` 은 해시태그로 취급해
+  heading 으로 해석하지 않는다 (즉 sentence INSERT 대상).
+- markdown 모드: 기존 parse_markdown 그대로. kind 별 분기·save-pronoun skip 등의 세부
+  동작은 M2 에서 도입 (PLAN-004 선수행 필요).
+- posts.input_mode 컬럼에 mode 값 그대로 저장.
 
 v17 파이프라인 변경:
 - Kiwi 단독이 저장 기본 경로 (LLM extract/merge 폐기).
@@ -87,8 +96,11 @@ def _fire_post_save_hooks(result: "SaveResult", db_path: str) -> None:
 
 # ─── DB 헬퍼 ──────────────────────────────────────────────
 
-def _insert_post(conn, markdown: str) -> int:
-    cur = conn.execute("INSERT INTO posts (markdown) VALUES (?)", (markdown,))
+def _insert_post(conn, markdown: str, input_mode: str) -> int:
+    cur = conn.execute(
+        "INSERT INTO posts (markdown, input_mode) VALUES (?,?)",
+        (markdown, input_mode),
+    )
     return cur.lastrowid
 
 
@@ -447,32 +459,62 @@ def _save_one_item(
     # 시점 해석은 인출 LLM 이 created_at 기반 최근성 판단으로 처리.
 
 
+_VALID_MODES = ("chat", "markdown")
+
+
+def _parse_for_chat(text: str) -> list[tuple[Optional[str], str]]:
+    """chat 모드 파서 — heading 해석 안 함. 각 줄 (None, 줄) 로 분리.
+
+    사용자가 `#야근` 처럼 해시태그 감각으로 입력해도 sentence 로 저장된다.
+    빈 줄은 무시하고 각 줄은 strip 처리.
+    """
+    result: list[tuple[Optional[str], str]] = []
+    for raw in text.split("\n"):
+        line = raw.strip()
+        if line:
+            result.append((None, line))
+    return result
+
+
 def save(
     text: str,
+    *,
+    mode: str,
     db_path: str = DB_PATH,
     use_llm: bool = True,
     images: Optional[list[str]] = None,
 ) -> SaveResult:
     """텍스트를 게시물 단위로 저장. SaveResult 반환.
 
-    v18 흐름:
-    - 매 save() 호출 = posts 1건 INSERT (게시물 단위).
-    - 평문/마크다운 구분 없이 parse_markdown 결과를 그대로 저장 (structure-suggest 폐기).
-    - 진입부에서 메타 필터 1회 호출 → 메타 대화 문장 idx 는 저장 skip.
+    mode (필수, keyword-only):
+      - 'chat'     : 메신저 스타일 평문. `#` 을 해시태그로 해석 (heading 파싱 안 함).
+      - 'markdown' : heading + list + 자유 문장 혼재. parse_markdown 으로 경로 상속.
+      호출자가 UI 입력창 선택에 따라 필수로 지정. 기본값 없음.
+
+    v19 흐름 (PLAN-003 M1):
+    - 매 save() 호출 = posts 1건 INSERT (mode 를 input_mode 컬럼에 저장).
+    - chat: 모든 줄 (None, line) → category_path 없이 일반 sentence.
+    - markdown: 기존 parse_markdown (category_path 상속). M2 에서 kind 별 분기 도입.
+    - 진입부 메타 필터 1회 (use_llm=True 시). 실패·MLX 다운 시 skip.
     - 각 항목은 _save_one_item() 이 Kiwi-first 파이프라인(①~⑦) 으로 처리.
     - 상태 레이어 없음 (v18: extract-state 폐기, sentences.status 컬럼 삭제).
     """
+    if mode not in _VALID_MODES:
+        raise ValueError(
+            f"save(mode=): 'chat' 또는 'markdown' 필수, 받은 값: {mode!r}"
+        )
+
     result = SaveResult()
 
     conn = get_connection(db_path)
     try:
-        parsed = parse_markdown(text)
+        parsed = _parse_for_chat(text) if mode == "chat" else parse_markdown(text)
         if not parsed:
             conn.commit()
             return result
 
-        # posts 1건 INSERT (원본 마크다운 보관)
-        post_id = _insert_post(conn, text)
+        # posts 1건 INSERT (원본 마크다운 + input_mode 보관)
+        post_id = _insert_post(conn, text, input_mode=mode)
         result.post_id = post_id
 
         # 진입부 메타 필터 (v17) — LLM 사용 시만. 실패·MLX 다운 시 빈 집합(과포함 허용)
@@ -841,13 +883,14 @@ def delete_sentence(sentence_id: int, db_path: str = DB_PATH) -> dict:
 
 
 if __name__ == "__main__":
-    tests = [
-        "# 병원.2026-04-18\n오늘 병원 다녀왔어\n세레콕시브 처방받았어\n허리디스크 L4-L5 진단",
-        "# 직장.더나은\n## 개발팀\n- 팀장 박지수\n- 프론트엔드 김민수",
+    tests: list[tuple[str, str]] = [
+        ("markdown", "# 병원.2026-04-18\n오늘 병원 다녀왔어\n세레콕시브 처방받았어\n허리디스크 L4-L5 진단"),
+        ("markdown", "# 직장.더나은\n## 개발팀\n- 팀장 박지수\n- 프론트엔드 김민수"),
+        ("chat",     "나 요즘 피곤해\n허리가 또 아픔"),
     ]
-    for text in tests:
-        r = save(text, use_llm=False)
-        print(f"\n입력:\n{text}")
+    for mode, text in tests:
+        r = save(text, mode=mode, use_llm=False)
+        print(f"\n[mode={mode}] 입력:\n{text}")
         print(f"  post_id: {r.post_id}")
         print(f"  sentence_ids: {r.sentence_ids}")
         print(f"  nodes_added: {r.nodes_added}")

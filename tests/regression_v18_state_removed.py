@@ -62,9 +62,9 @@ def case_state_transition() -> bool:
     _reset_db()
 
     t0 = time.perf_counter()
-    r1 = save("허리 아팠음", use_llm=False)
-    r2 = save("허리 나았음", use_llm=False)
-    r3 = save("허리 또 아픔", use_llm=False)
+    r1 = save("허리 아팠음", mode="chat", use_llm=False)
+    r2 = save("허리 나았음", mode="chat", use_llm=False)
+    r3 = save("허리 또 아픔", mode="chat", use_llm=False)
     dt = time.perf_counter() - t0
     print(f"  (저장 3건, {dt:.3f}s)")
 
@@ -99,10 +99,10 @@ def case_past_event_retention() -> bool:
     print("\n=== CASE 2: 과거 사건 영구 유지 ===")
     _reset_db()
 
-    r = save("우울증 진단받았어", use_llm=False)
+    r = save("우울증 진단받았어", mode="chat", use_llm=False)
     _set_created_at(r.sentence_ids[0], "2025-09-01 09:00:00")  # 7개월 전
 
-    r = save("요즘은 많이 나아졌어", use_llm=False)
+    r = save("요즘은 많이 나아졌어", mode="chat", use_llm=False)
     _set_created_at(r.sentence_ids[0], "2026-04-20 09:00:00")
 
     r = retrieve("우울증 기록 있어?", use_llm=False)
@@ -135,7 +135,7 @@ def case_save_latency() -> bool:
     N = 5
     t0 = time.perf_counter()
     for i in range(N):
-        save(f"테스트 메시지 {i} — 오늘 날씨 좋네", use_llm=False)
+        save(f"테스트 메시지 {i} — 오늘 날씨 좋네", mode="chat", use_llm=False)
     avg = (time.perf_counter() - t0) / N
     print(f"  --no-llm 평균 저장 시간: {avg*1000:.1f}ms")
     return _passed(

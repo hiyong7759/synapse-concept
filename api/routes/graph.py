@@ -113,7 +113,9 @@ def chat(req: ChatRequest):
     # v18: context_sentences 폐기 (상태 레이어 제거 — extract-state 가 사라져 불필요)
 
     # ── 2단계: 저장 (save) ──
-    r_save = save(text, use_llm=USE_LLM)
+    # v19: chat 엔드포인트 → input_mode='chat'. 구조화된 마크다운 입력은 별도 경로에서
+    # mode='markdown' 로 지정해야 한다 (M2 이후 도입).
+    r_save = save(text, mode="chat", use_llm=USE_LLM)
 
     # 인출 결과·답변은 항상 구성 (저장 보류 시에도 전달)
     retrieve_model = RetrieveResponseModel(
@@ -546,7 +548,8 @@ def review_apply(req: ReviewApplyRequest):
                 raise HTTPException(status_code=400, detail="answer 비어있음")
             conn.close()
             # 일반 저장 파이프라인으로 위임 (게시물 1건 생성, 노드 추출)
-            r = save(answer, use_llm=USE_LLM)
+            # /review 의 basic_info 답변은 한 줄 기록 성격 → chat 모드.
+            r = save(answer, mode="chat", use_llm=USE_LLM)
             return {
                 "ok": True,
                 "post_id": r.post_id,

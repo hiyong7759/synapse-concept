@@ -1,6 +1,6 @@
 # Synapse 설계 — 저장/인출/대화 파이프라인
 
-**최종 업데이트**: 2026-04-23 (v18 — 상태 레이어 제거 / `sentences.status` 컬럼 폐기 / `extract-state` 폐기. 선행 v17: Kiwi-first + 메타 필터 + origin `rule→system`)
+**최종 업데이트**: 2026-04-23 (v19 계획 — PLAN-003 "입력 모드 분리" · `posts.input_mode` 신설. 선행 v18: 상태 레이어 제거 / `sentences.status` / `extract-state` 폐기. v17: Kiwi-first + 메타 필터 + origin `rule→system`)
 
 ## 근본 목표
 
@@ -8,10 +8,10 @@
 
 ---
 
-## DB 스키마 (v18 — 상태 레이어 제거)
+## DB 스키마 (v19 계획 · v18 현재)
 
 ```sql
-posts:             id, markdown, created_at, updated_at
+posts:             id, markdown, input_mode('chat'|'markdown'), created_at, updated_at   — v19: input_mode 신설
 sentences:         id, post_id, position, text, role('user'|'assistant'), created_at, updated_at
 nodes:             id, name, status('active'|'inactive'), created_at, updated_at
 node_mentions:     node_id, sentence_id, created_at                                       — PK(node_id, sentence_id)
@@ -19,6 +19,8 @@ node_categories:   node_id, category, origin('user'|'ai'|'system'|'external'), c
 aliases:           alias TEXT PRIMARY KEY, node_id, origin('user'|'ai'|'system'|'external'), created_at
 unresolved_tokens: sentence_id, token, created_at                                         — PK(sentence_id, token)
 ```
+
+**v19 계획 변경점(PLAN-003 M1)**: `posts.input_mode` 컬럼 신설. 저장 모드를 사용자 명시(UI 입력창 선택)로 기록 — `'chat'` / `'markdown'` 양자택일. 저장 파이프라인은 이 값을 보고 parse·save-pronoun·메타 필터 분기를 결정한다. 상세는 `docs/DESIGN_INPUT_MODES_AND_RETRIEVAL.md`.
 
 **v18 변경점**: `sentences.status` 컬럼 제거. 모든 sentence 는 영구 기록이며, "이건 이제 아님" 은 원문 `update_sentence` / `delete_sentence` 로 처리한다. `extract-state` LLM 판정 단계 자체를 폐기해 저장 시점 해석을 없앴다 (원칙 7·8·10·11 정합). 시점 해석은 인출 LLM 의 `created_at` 기반 최근성 판단이 담당.
 
@@ -46,33 +48,45 @@ unresolved_tokens: sentence_id, token, created_at                               
 
 모든 하이퍼그래프 변경은 **자동 저장**된다. 카테고리·별칭도 저장 시점에 `origin`을 부여받아 즉시 DB에 들어간다. 사용자는 `/review`의 AI·규칙 목록 뷰에서 잘못된 항목을 삭제할 수 있다. 유일한 예외는 `unresolved_tokens`(치환 실패 지시어) + 파괴적 작업(`merge_nodes`, 아카이브)이다.
 
-### 입력 모드 (v17)
+### 입력 모드 (v19 계획 — 사용자 명시 2-모드)
 
-사용자 입력은 모두 마크다운 파서(`engine/markdown.py`)를 거치고 **그대로 저장**된다.
+**모드는 UI 입력창 선택으로 결정**한다. `save()` 호출자는 `mode='chat'` / `mode='markdown'` 중 하나를 **필수** 로 지정. 자동 판정(`has_heading()`) 폐기. 결정된 모드는 `posts.input_mode` 에 그대로 저장된다.
 
-- **heading·list 구조가 있는 마크다운** → heading 경로는 `node_categories`(origin='user'), list·본문은 sentence 로 저장
-- **heading·list 없는 평문** → `markdown.py` 가 `category_path=None` 으로 처리, 평문 줄들이 그대로 sentence 단위로 저장됨
+| 모드 | API `mode` | DB `input_mode` | 주된 용도 |
+|---|---|---|---|
+| **chat** | `'chat'` | `'chat'` | 메신저 스타일 평문, 즉흥 기록 |
+| **markdown** | `'markdown'` | `'markdown'` | heading·key-value·list·자유 문장 혼재 구조화 기록 |
 
-**`structure-suggest` 폐기 (v17)** — 기존 v16 까지는 평문 입력 시 LLM 이 heading 초안을 강제로 달아 마크다운 모드로 재진입시켰으나, 2026-04-21 dogfood 에서 14건 중 6건이 같은 날짜 heading 으로 뭉쳐 "카테고리 공유 = 연결" 원칙을 무력화. 평문은 평문인 채로 저장하는 것이 원칙 4·원칙 9 와 일치.
+두 모드의 저장 파이프라인 분기 차이(메타 필터 대상·save-pronoun skip·parse_markdown kind 별 처리)는 바로 아래 "파이프라인 흐름" 섹션 + 요약표 참고. 전체 명세는 **`docs/DESIGN_INPUT_MODES_AND_RETRIEVAL.md`**.
 
-### 마크다운 모드
+**`structure-suggest` 폐기 (v17)** — 기존 v16 까지는 평문 입력 시 LLM 이 heading 초안을 강제로 달아 마크다운 모드로 재진입시켰으나, 2026-04-21 dogfood 에서 14건 중 6건이 같은 날짜 heading 으로 뭉쳐 "카테고리 공유 = 연결" 원칙을 무력화. 평문은 평문인 채로 저장하는 것이 원칙 4·원칙 9 와 일치. v19 의 사용자 명시 모드 분리는 이 방향의 연장 — 저장 시점에 모델/규칙이 구조를 판정하지 않는다.
+
+### 마크다운 모드 예시
 
 ```markdown
 # 더나은
 ## 개발팀
-- 팀장 박지수
+- 팀장:: 박지수
 - 프론트엔드 김민수
+오늘 회의가 세 개 연속이었다.
 ```
 
-heading 경로(`더나은.개발팀`)가 사용자 명시 카테고리 경로가 된다.
+- heading 경로(`더나은.개발팀`) → `node_categories`(origin='user')
+- `- 팀장:: 박지수` → key_value 로 파싱, sentence 통째 저장(`text="팀장:: 박지수"`), save-pronoun skip
+- `- 프론트엔드 김민수` → list, 일반 sentence
+- 자유 문장 → free, 메타 필터 대상
 
-### 파이프라인 흐름 (v17 — Kiwi-first)
+### 파이프라인 흐름 (v19 계획 · v17~18 현재 · Kiwi-first)
+
+> 아래 흐름은 **chat 모드** 기준. markdown 모드는 ① save-pronoun 전체 skip 이고 메타 필터가 자유 문장·list 한정이며, `parse_markdown` 이 kind(heading/key_value/list/free) 별로 분기한다. 모드별 전체 비교는 `docs/DESIGN_INPUT_MODES_AND_RETRIEVAL.md` "저장 파이프라인 — 모드별 비교" 표.
 
 ```
-사용자 입력 (마크다운 or 평문)
-  ↓ parse_markdown(text) — heading/list/평문 분리
+사용자 입력 (mode='chat' or 'markdown')
+  ↓ posts INSERT (markdown=원문, input_mode=mode)
+  ↓ parse_markdown(text) — heading/list/평문 분리 (markdown), 전부 (None,'free',text) (chat)
   ↓
   [메타 필터 — 게시물 단위 1회]                                     ← NEW (v17)
+    chat: 모든 줄 대상 / markdown: 자유 문장·list 만 대상 (heading·key_value 제외)
     (b) 규칙 사전필터: Kiwi 명사 0개 + '?' 종결 → 즉시 메타 확정
     (a) 나머지 줄을 한 번에 LLM 배치 호출
         프롬프트: docs/META_FILTER_SYSTEMPROMPT.md
@@ -82,7 +96,7 @@ heading 경로(`더나은.개발팀`)가 사용자 명시 카테고리 경로가
   ↓
 문장별로 (메타 idx 제외):
   ↓
-  ① [save-pronoun — 베이스 모델]  temp=0, max_tokens=256
+  ① [save-pronoun — 베이스 모델]  temp=0, max_tokens=256     ← chat 모드 전용 (markdown 전체 skip)
       프롬프트: docs/SAVE_PRONOUN_SYSTEMPROMPT.md
       세션리스 — 직전 대화 context 주입 없음
       모호 케이스(`{"question": "..."}` 반환) → 저장 중단

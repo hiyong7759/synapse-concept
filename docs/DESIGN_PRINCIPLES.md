@@ -1,6 +1,6 @@
 # Synapse 설계 원칙
 
-**최종 업데이트**: 2026-04-23 (v18 — 상태 레이어 제거 / `sentences.status` · `extract-state` 폐기. 선행 v17: Kiwi-first + 메타 필터 + origin `rule→system`)
+**최종 업데이트**: 2026-04-23 (v19 계획 — PLAN-003 "입력 모드 분리" · 원칙 9 갱신 (chat 도 1급 모드). 선행 v18: 상태 레이어 제거 / `sentences.status` · `extract-state` 폐기. v17: Kiwi-first + 메타 필터 + origin `rule→system`)
 
 시냅스 프로젝트의 **모든 원칙을 한 곳에 모은 문서**. 각 설계 문서는 이 문서의 해당 섹션을 참조한다. 원칙이 여러 문서에 중복되면 이 문서가 **유일한 출처(source of truth)**.
 
@@ -35,7 +35,7 @@
 
 7. **저장은 자동, 출처는 기록한다 — 저장은 순수 기록.** 원문 sentence + 노드 + `node_mentions` + `node_categories` + `aliases`는 모두 자동 저장한다. 각 레코드는 `origin` 컬럼(`user` / `ai` / `system` / `external`)으로 출처가 식별되며, 사용자는 언제든 AI·시스템·외부 생성물을 수정·삭제할 수 있다. **치환 실패 지시어(`unresolved_tokens`)와 파괴적 작업(노드 병합 등)만** `/review` 승인을 거친다. (v18: 저장 시점 해석·판정은 전면 배제 — `extract-state` 폐기 근거. 시점 해석은 인출 시점 LLM 책임.)
 8. **DB의 모든 레코드는 출처가 식별된다 — 파괴적 자동 작업 없음.** `node_categories`, `aliases`에는 `origin`이 붙는다. UI·`/review`는 이 값으로 필터링해 "AI가 자동으로 단 것만 훑어보기" 같은 검토 뷰를 제공한다. 출처별 역할: `user` 사용자 명시, `ai` LLM 추론(오류 검수용), `system` 결정론적 엔진 규칙(Kiwi·날짜·부정부사·인칭대명사 시드 등 — 규칙 오류 추적용), `external` 외부 API(예: Wikidata altLabel, 외부 데이터 오염 검수용). **`rule` 은 v17 에서 `system` 으로 리네이밍**했다 — 출처는 데이터 생성 "주체"이며 규칙은 수단이기 때문. (v18: 자동 deactivate·pending 같은 파괴적 자동 판정 없음. 무효화는 `update_sentence`·`delete_sentence` 로 사용자가 직접.)
-9. **입력 단위 = 마크다운 구조화된 게시물.** 세션·맥락 경계 자동 추론 없음. 평문 게시물은 heading 없이 그대로 sentence 단위로 저장된다(v17 이후 `structure-suggest` 폐기 — 평문을 마크다운으로 강제 변환하지 않는다).
+9. **입력 단위는 게시물, 저장 모드는 사용자가 명시한다.** 한 번의 저장 = 한 개의 `posts` 행. 저장 모드는 두 가지 — **chat**(메신저 스타일 평문) / **markdown**(heading·`- key:: value`·list·자유 문장 혼재 구조화 기록). 둘 다 1급 모드이며 UI 입력창 선택으로 결정된다(v19 계획 — PLAN-003). 세션·맥락 경계 자동 추론 없음. 내용 기반 자동 모드 판정 없음 — v17 `structure-suggest` 폐기(평문을 마크다운으로 강제 변환 금지)의 연장으로, v19 는 `has_heading()` 자동 분기도 제거하고 모드를 사용자 의도로 격상한다. 모드별 저장 파이프라인 차이(save-pronoun skip 여부·메타 필터 대상 범위·kind 별 처리)는 `docs/DESIGN_INPUT_MODES_AND_RETRIEVAL.md`.
 
 ### 동작
 
@@ -143,5 +143,6 @@
 | `DESIGN_CATEGORY.md` | §4 |
 | `DESIGN_UI.md` | §5 |
 | `DESIGN_PIPELINE.md` | §6 (날짜) — 정규화 규칙표만 유지 |
+| `DESIGN_INPUT_MODES_AND_RETRIEVAL.md` | §1 원칙 9 (입력 단위·저장 모드) + §1 원칙 11 (지능체 분리) |
 | `DESIGN_FINETUNE.md` | §7 파인튜닝 작업 원칙 |
 | `CLAUDE.md` | §1 요약 + §7 요약 |
