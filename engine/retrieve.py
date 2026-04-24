@@ -1,24 +1,25 @@
-"""Synapse 인출 파이프라인 (v20 — PLAN-004 M4).
+"""Synapse 인출 파이프라인 (v21 — PLAN-007 M3).
 
 흐름:
   질문
   → LLM 확장 + Kiwi: 노드 후보 키워드 목록
-  → 축 A 시드 (v20 M2): 키워드가 categories.name 과 매칭되면 서브트리 재귀 CTE →
-    sentence_categories 로 연결된 문장을 BFS 초기 시드에 주입
-  → DB 매칭: aliases 우선 → name 직접 → substring
-  → BFS 루프: 노드 → node_mentions JOIN → sentences → 함께 언급된 노드 → 반복
-  → 축 B 보완: 시작 노드 major_category → 인접 소분류 노드 추가 → 재필터
-  → 결과 과다 시 원문 LIKE fallback (v20 M4): 임계치 초과 시 원본 질문 토큰으로 좁힘.
+  → DB 매칭: aliases 우선 → name 직접 → substring → start_nodes
+  → 축 A 시드 (v21 M3): start_nodes → node_category_mentions 매핑 →
+    서브트리 재귀 CTE → sentence_categories 로 연결된 문장을 BFS 초기 시드에 주입
+  → BFS 루프: 노드 → node_sentence_mentions JOIN → sentences → 함께 언급된 노드 → 반복
+  → 축 B 보완 (v21 M3 재설계): 시작 노드 → 같은 카테고리의 다른 노드 (node_category_mentions
+    역조회) 한 홉 추가. 19 대분류 TEXT 인접 맵은 폐기, heading 구조 자체가 도메인 인접성.
+  → 결과 과다 시 원문 LIKE fallback: 임계치 초과 시 원본 질문 토큰으로 좁힘.
     Kiwi 가 쪼갠 외래어 조각(예: React, Native) 을 원문 구절로 통짜 회복.
   → 최종 sentences 컨텍스트 + LLM 답변
 
-v20 변경 (PLAN-004): 카테고리 바구니가 두 축으로 분리됨.
-- 축 A = categories(adjacency list) + sentence_categories(문장 주 매핑) — 사용자 heading 계층.
-  질문에서 "더나은 개발팀 휴가" 같은 heading 명 매칭 시 서브트리 스캔으로 관련 문장 일괄 수집.
-- 축 B = node_categories.major_category — 19 대분류 + 인접 맵 한 홉 (기존 경로 유지).
+v21 변경 (PLAN-007 M3): 축 A · B 단일화.
+- node_category_mentions 한 테이블로 사용자 heading 매핑 + 19 대분류 태깅 모두 표현.
+- categories.name exact match 폐기 → Kiwi 토큰화된 노드 경유 매핑으로 대체.
+- 19 대분류 TEXT 인접 맵 · _ADJACENT_PAIRS 상수 폐기.
 
-v15: edges 테이블 폐기. 연결은 node_mentions + 카테고리 두 축(v20) + aliases 로 표현.
-의미 관계(cause/avoid/similar) 해석은 외부 지능체 몫.
+v15: edges 테이블 폐기. 연결은 node_sentence_mentions + node_category_mentions + aliases
+세 하이퍼엣지로 표현. 의미 관계(cause/avoid/similar) 해석은 외부 지능체 몫.
 """
 
 from __future__ import annotations
@@ -86,7 +87,7 @@ def _match_start_nodes(conn, keywords: list[str], question: str = "") -> dict[st
     if question:
         rows = conn.execute(
             "SELECT a.alias, n.id, n.name FROM aliases a "
-            "JOIN nodes n ON n.id = a.node_id WHERE n.status = 'active'"
+            "JOIN nodes n ON n.id = a.node_id"
         ).fetchall()
         for r in rows:
             if r["alias"] in question:
@@ -98,7 +99,7 @@ def _match_start_nodes(conn, keywords: list[str], question: str = "") -> dict[st
             row = conn.execute(
                 """SELECT n.id, n.name FROM aliases a
                    JOIN nodes n ON n.id = a.node_id
-                   WHERE a.alias = ? AND n.status = 'active'""",
+                   WHERE a.alias = ?""",
                 (kw,),
             ).fetchone()
             if row:
@@ -109,7 +110,7 @@ def _match_start_nodes(conn, keywords: list[str], question: str = "") -> dict[st
         if kw in alias_resolved_names:
             continue
         rows = conn.execute(
-            "SELECT id, name FROM nodes WHERE name = ? AND status = 'active'", (kw,)
+            "SELECT id, name FROM nodes WHERE name = ?", (kw,)
         ).fetchall()
         if rows:
             for r in rows:
@@ -118,7 +119,7 @@ def _match_start_nodes(conn, keywords: list[str], question: str = "") -> dict[st
             continue
 
         rows = conn.execute(
-            "SELECT id, name FROM nodes WHERE name LIKE ? AND status = 'active' LIMIT 5",
+            "SELECT id, name FROM nodes WHERE name LIKE ? LIMIT 5",
             (f"%{kw}%",),
         ).fetchall()
         for r in rows:
@@ -128,33 +129,39 @@ def _match_start_nodes(conn, keywords: list[str], question: str = "") -> dict[st
     return matched
 
 
-# ─── 축 A — 사용자 heading 계층 시드 (v20 PLAN-004 M2) ─────
+# ─── 축 A — 노드 경유 카테고리 시드 (v21 PLAN-007 M3) ─────
 
-def _match_start_categories(conn, keywords: list[str]) -> dict[str, set[int]]:
-    """키워드와 categories.name 매칭 → 서브트리 id 집합 수집.
+def _match_start_categories(
+    conn, start_nodes: dict[str, int]
+) -> dict[str, set[int]]:
+    """start_nodes(질문 키워드 매칭 결과) 의 node_category_mentions 매핑 →
+    서브트리 id 집합 수집.
 
-    각 키워드마다 재귀 CTE 로 매칭 카테고리 + 모든 하위 카테고리 id 를 모은다.
-    반환: {matched_name: {id, ...}} — 질문 키워드 → 카테고리 서브트리 매핑.
+    v21 PLAN-007 M3 변경:
+    - 기존: categories.name 과 키워드 exact match. 긴 heading(`제6장 휴일 및 휴가`)
+      은 짧은 키워드(`휴가`) 로 잡지 못해 dogfood 에서 start_categories 가 항상 빈 배열
+    - 신규: 질문 키워드는 이미 _match_start_nodes 가 노드로 해소. 그 노드가 속한
+      카테고리를 node_category_mentions 로 찾은 뒤 재귀 CTE 로 서브트리 전체 확장.
+      Kiwi 토큰화가 저장 시 heading 의 의미 토큰을 노드에 매핑해줬으므로 이 경로가
+      정확히 동작.
 
-    예) categories: (더나은) → (개발팀·휴가), (건강) → (2026-04-10)
-        keywords=['더나은'] → {'더나은': {더나은.id, 개발팀.id, 휴가.id}}
-        keywords=['개발팀'] → {'개발팀': {개발팀.id}}
+    반환: {start_node_display: {category_ids}} — 표시용 키는 매칭 노드 이름(#id).
     """
     result: dict[str, set[int]] = {}
-    for kw in keywords:
-        if not kw or not kw.strip():
-            continue
+    if not start_nodes:
+        return result
+    for display_name, node_id in start_nodes.items():
         rows = conn.execute(
             """WITH RECURSIVE sub(id) AS (
-                   SELECT id FROM categories WHERE name = ?
+                   SELECT category_id FROM node_category_mentions WHERE node_id = ?
                    UNION ALL
                    SELECT c.id FROM categories c JOIN sub ON c.parent_id = sub.id
                )
-               SELECT id FROM sub""",
-            (kw,),
+               SELECT DISTINCT id FROM sub""",
+            (node_id,),
         ).fetchall()
         if rows:
-            result[kw] = {r["id"] for r in rows}
+            result[display_name] = {r["id"] for r in rows}
     return result
 
 
@@ -188,8 +195,8 @@ def _get_sentences_by_category_ids(
     ph2 = ",".join("?" * len(sentence_ids))
     mention_rows = conn.execute(
         f"""SELECT m.sentence_id, m.node_id, n.name AS node_name
-            FROM node_mentions m
-            JOIN nodes n ON n.id = m.node_id AND n.status='active'
+            FROM node_sentence_mentions m
+            JOIN nodes n ON n.id = m.node_id
             WHERE m.sentence_id IN ({ph2})""",
         list(sentence_ids),
     ).fetchall()
@@ -219,17 +226,17 @@ def _get_sentences_by_category_ids(
 
 
 def _get_mentions_for_nodes(conn, node_ids: set[int]) -> list[Mention]:
-    """노드 ID 집합이 언급된 모든 sentences 조회 (node_mentions JOIN sentences)."""
+    """노드 ID 집합이 언급된 모든 sentences 조회 (node_sentence_mentions JOIN sentences)."""
     if not node_ids:
         return []
     ph = ",".join("?" * len(node_ids))
     rows = conn.execute(
         f"""
         SELECT m.node_id, n.name AS node_name, m.sentence_id, s.text AS sentence_text
-        FROM node_mentions m
+        FROM node_sentence_mentions m
         JOIN nodes n     ON n.id = m.node_id
         JOIN sentences s ON s.id = m.sentence_id
-        WHERE m.node_id IN ({ph}) AND n.status='active'
+        WHERE m.node_id IN ({ph})
         """,
         list(node_ids),
     ).fetchall()
@@ -253,9 +260,9 @@ def _get_co_mentioned_node_ids(conn, sentence_ids: set[int]) -> dict[int, list[t
     rows = conn.execute(
         f"""
         SELECT m.sentence_id, m.node_id, n.name
-        FROM node_mentions m
+        FROM node_sentence_mentions m
         JOIN nodes n ON n.id = m.node_id
-        WHERE m.sentence_id IN ({ph}) AND n.status='active'
+        WHERE m.sentence_id IN ({ph})
         """,
         list(sentence_ids),
     ).fetchall()
@@ -265,137 +272,42 @@ def _get_co_mentioned_node_ids(conn, sentence_ids: set[int]) -> dict[int, list[t
     return result
 
 
-# ─── 카테고리 인접 맵 ─────────────────────────────────────────
+# ─── 축 B 인접 시드 — 같은 카테고리 구성원 노드 (v21 PLAN-007 M3) ──────
 
-def _build_adjacent_map(pairs: list[tuple[str, str]]) -> dict[str, list[str]]:
-    result: dict[str, list[str]] = {}
-    for a, b in pairs:
-        result.setdefault(a, []).append(b)
-        result.setdefault(b, []).append(a)
-    return result
+# v21 PLAN-007 M3 변경:
+# - 기존 19 대분류 TEXT 인접 맵 (_ADJACENT_PAIRS · ADJACENT_SUBCATEGORIES) 폐기.
+#   19 대분류는 LLM 워커 의존 + categories 트리와 분리된 이중 시스템이었음
+# - 새 방식: start_nodes 가 속한 카테고리를 node_category_mentions 로 찾고,
+#   같은 카테고리의 다른 노드를 한 홉 인접 시드로 편입. 사용자 heading 구조
+#   자체가 도메인 인접성을 표현하므로 정의한 매핑 없이도 의미 있는 확장.
 
-_ADJACENT_PAIRS: list[tuple[str, str]] = [
-    ("BOD.disease",    "MND.mental"),
-    ("BOD.sleep",      "MND.mental"),
-    ("BOD.sleep",      "MND.coping"),
-    ("BOD.exercise",   "HOB.sport"),
-    ("BOD.nutrition",  "FOD.ingredient"),
-    ("BOD.nutrition",  "FOD.product"),
-    ("BOD.medical",    "MON.insurance"),
-    ("MND.emotion",    "REL.romance"),
-    ("MND.emotion",    "REL.conflict"),
-    ("MND.motivation", "WRK.jobchange"),
-    ("MND.motivation", "EDU.online"),
-    ("MND.coping",     "HOB.sport"),
-    ("MND.coping",     "HOB.outdoor"),
-    ("MND.coping",     "REG.practice"),
-    ("HOB.sing",       "CUL.music"),
-    ("HOB.outdoor",    "TRV.domestic"),
-    ("HOB.outdoor",    "NAT.terrain"),
-    ("HOB.outdoor",    "NAT.weather"),
-    ("HOB.game",       "TEC.sw"),
-    ("HOB.game",       "TEC.hw"),
-    ("HOB.craft",      "LIV.supply"),
-    ("HOB.collect",    "CUL.art"),
-    ("HOB.collect",    "MON.spending"),
-    ("HOB.social",     "REL.comm"),
-    ("HOB.social",     "TRV.place"),
-    ("CUL.book",       "EDU.reading"),
-    ("CUL.book",       "EDU.academic"),
-    ("CUL.media",      "TEC.sw"),
-    ("CUL.show",       "TRV.place"),
-    ("WRK.workplace",  "PER.colleague"),
-    ("WRK.workplace",  "MON.income"),
-    ("WRK.workplace",  "LAW.rights"),
-    ("WRK.jobchange",  "MON.income"),
-    ("WRK.cert",       "EDU.exam"),
-    ("WRK.cert",       "EDU.online"),
-    ("WRK.business",   "MON.income"),
-    ("WRK.business",   "LAW.contract"),
-    ("WRK.tool",       "TEC.sw"),
-    ("WRK.tool",       "TEC.ai"),
-    ("MON.income",     "LAW.tax"),
-    ("MON.payment",    "LAW.tax"),
-    ("MON.loan",       "LIV.housing"),
-    ("MON.loan",       "LAW.contract"),
-    ("MON.insurance",  "LAW.contract"),
-    ("MON.invest",     "SOC.economy"),
-    ("LAW.contract",   "LIV.housing"),
-    ("LAW.rights",     "TEC.security"),
-    ("LAW.statute",    "WRK.workplace"),
-    ("LAW.admin",      "LIV.moving"),
-    ("EDU.school",     "WRK.cert"),
-    ("EDU.online",     "TEC.sw"),
-    ("EDU.language",   "TRV.abroad"),
-    ("TRV.domestic",   "FOD.restaurant"),
-    ("TRV.domestic",   "HOB.outdoor"),
-    ("TRV.domestic",   "NAT.weather"),
-    ("TRV.abroad",     "FOD.restaurant"),
-    ("TRV.abroad",     "SOC.international"),
-    ("TRV.place",      "NAT.terrain"),
-    ("NAT.animal",     "LIV.supply"),
-    ("NAT.ecology",    "SOC.issue"),
-    ("LIV.housing",    "MON.loan"),
-    ("LIV.housing",    "LAW.contract"),
-    ("LIV.appliance",  "TEC.hw"),
-    ("LIV.appliance",  "TEC.sw"),
-    ("LIV.moving",     "TRV.place"),
-    ("TEC.ai",         "SOC.issue"),
-    ("PER.colleague",  "WRK.workplace"),
-    ("PER.org",        "WRK.workplace"),
-    ("PER.family",     "REL.romance"),
-    ("PER.friend",     "REL.comm"),
-    ("REL.conflict",   "WRK.workplace"),
-    ("REL.online",     "SOC.issue"),
-    ("SOC.international", "TRV.abroad"),
-    ("SOC.politics",   "LAW.statute"),
-    ("REG.practice",   "MND.coping"),
-]
-
-ADJACENT_SUBCATEGORIES: dict[str, list[str]] = _build_adjacent_map(_ADJACENT_PAIRS)
+_ADJACENT_SUPPLEMENT_LIMIT = 50
 
 
 def _get_category_supplement_nodes(
     conn, start_node_ids: set[int], visited_ids: set[int]
 ) -> set[int]:
-    """시작 노드 소분류의 인접 소분류 노드 ID 집합 (미방문)."""
+    """start_nodes 가 속한 카테고리의 다른 구성원 노드 ID 집합 (미방문).
+
+    node_category_mentions 역조회로 "같은 바구니에 담긴 다른 노드" 를 구한다.
+    예) start_node='징계' → 카테고리 '제61조 (징계)'·'제11장 표창 및 징계' 등 →
+       같은 바구니의 '종류'·'표창'·'심의' 노드를 시드로 편입.
+    """
     if not start_node_ids:
         return set()
 
     ph = ",".join("?" * len(start_node_ids))
     rows = conn.execute(
-        f"SELECT nc.major_category FROM node_categories nc WHERE nc.node_id IN ({ph})",
-        list(start_node_ids),
+        f"""SELECT DISTINCT ncm2.node_id
+            FROM node_category_mentions ncm1
+            JOIN node_category_mentions ncm2 ON ncm1.category_id = ncm2.category_id
+            WHERE ncm1.node_id IN ({ph})
+              AND ncm2.node_id NOT IN ({ph})
+            LIMIT ?""",
+        list(start_node_ids) + list(start_node_ids) + [_ADJACENT_SUPPLEMENT_LIMIT],
     ).fetchall()
 
-    subcats: set[str] = {
-        r["major_category"] for r in rows
-        if r["major_category"] and re.match(r"^[A-Z]{3}\.", r["major_category"])
-    }
-    if not subcats:
-        return set()
-
-    adjacent: set[str] = set()
-    for sub in subcats:
-        adjacent.update(ADJACENT_SUBCATEGORIES.get(sub, []))
-    adjacent -= subcats
-
-    if not adjacent:
-        return set()
-
-    result: set[int] = set()
-    for sub in adjacent:
-        cat_rows = conn.execute(
-            "SELECT nc.node_id FROM node_categories nc "
-            "JOIN nodes n ON n.id = nc.node_id "
-            "WHERE nc.major_category = ? AND n.status='active' LIMIT 20",
-            (sub,),
-        ).fetchall()
-        for r in cat_rows:
-            if r["node_id"] not in visited_ids:
-                result.add(r["node_id"])
-
-    return result
+    return {r["node_id"] for r in rows if r["node_id"] not in visited_ids}
 
 
 # ─── LIKE fallback — 결과 과다 시 원문 구절로 좁힘 (v20 PLAN-004 M4) ─
@@ -530,9 +442,11 @@ def retrieve(
 ) -> RetrieveResult:
     """질문에 대한 BFS 인출 + LLM 답변.
 
-    v20 (PLAN-004): 카테고리 두 축 사용. 축 A(`sentence_categories`) 는 서브트리 재귀
-    CTE 로 heading 매칭 시드, 축 B(`node_categories.major_category`) 는 인접 맵 보완.
-    BFS 결과가 `like_fallback_threshold` 를 넘으면 원문 LIKE AND 매칭으로 좁힘(M4).
+    v21 (PLAN-007 M3): node_category_mentions 단일 매핑으로 축 A·B 통합.
+    - 축 A: start_nodes → node_category_mentions → 서브트리 재귀 CTE →
+      sentence_categories 경유 문장 수집
+    - 축 B: start_nodes → 같은 카테고리의 다른 노드 역조회 (인접 맵 대체)
+    BFS 결과가 `like_fallback_threshold` 를 넘으면 원문 LIKE AND 매칭으로 좁힘.
     """
     result = RetrieveResult()
 
@@ -554,8 +468,8 @@ def retrieve(
         start_nodes = _match_start_nodes(conn, keywords, question=question)
         result.start_nodes = list(start_nodes.keys())
 
-        # 1-A. 축 A 시드 — categories 재귀 CTE 서브트리 → sentence_categories 경유 (v20)
-        cat_match = _match_start_categories(conn, keywords)
+        # 1-A. 축 A 시드 — 노드 경유 node_category_mentions → 서브트리 재귀 → sentence_categories (v21 PLAN-007 M3)
+        cat_match = _match_start_categories(conn, start_nodes)
         result.start_categories = list(cat_match.keys())
         all_category_ids: set[int] = set()
         for ids in cat_match.values():

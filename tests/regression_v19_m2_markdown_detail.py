@@ -225,7 +225,7 @@ def case_key_value_kiwi_extracts_nodes() -> bool:
             row[0]
             for row in conn.execute(
                 """SELECT n.name FROM nodes n
-                   JOIN node_mentions m ON m.node_id=n.id
+                   JOIN node_sentence_mentions m ON m.node_id=n.id
                    JOIN sentences s ON s.id=m.sentence_id
                    WHERE s.post_id=?""",
                 (r.post_id,),

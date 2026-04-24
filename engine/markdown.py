@@ -101,17 +101,20 @@ def parse_markdown(text: str) -> list[tuple[str | None, str, str]]:
 
 
 def normalize_hash_syntax(text: str) -> str:
-    """`#` 분류 문법을 마크다운 표준 형태로 정규화 (DB 저장 직전 1회 호출 — PLAN-005 M1).
+    """`#` 분류 문법을 마크다운 표준 형태로 정규화 (DB 저장 직전 1회 호출).
 
-    규칙:
+    규칙 (PLAN-007 M1):
     1. **줄 첫 문자가 `#` 인 줄만** 정규화 대상. 앞에 공백 있으면 평문.
     2. `#분류` → `# 분류` — `#` 뒤 공백이 없으면 하나 삽입.
-    3. `# 분류 본문…` → `# 분류\\n본문…` — 분류명 뒤 첫 공백을 개행으로 치환.
-    4. **분류명 비면 정규화 안 함** (`#`, `# `, `#\\n본문` 등). 평문 처리.
-    5. **첫 `#` 만 분류** — 줄 안의 두 번째 이후 `#` 은 평문 (분리 후 본문 줄에 그대로).
+    3. **분류명 비면 정규화 안 함** (`#`, `# `, `#\\n본문` 등). 평문 처리.
+    4. **첫 `#` 만 분류** — 줄 안의 두 번째 이후 `#` 은 평문.
 
-    분류명은 사용자 책임 — 시스템은 자동 변환·구두점 제거 안 함. `_`, `.`, `?`,
-    빈 점 세그먼트(`A..B`) 모두 그대로 저장.
+    heading 줄 **전체가 분류명** (표준 마크다운). 공백·괄호·특수문자 허용.
+    분류명은 사용자 책임 — 시스템은 자동 변환·구두점 제거 안 함.
+
+    ※ 이전 PLAN-005 M1 의 "분류명 뒤 첫 공백 → 개행 분리" 규칙은
+    PLAN-007 M1 에서 폐기됨 (표준 마크다운 heading 복귀). chat 모드 한 줄
+    입력 편의는 LLM 변환 핫키로 대체 예정 (본 PLAN 범위 밖).
     """
     out_lines: list[str] = []
     for line in text.split("\n"):
@@ -127,37 +130,24 @@ def normalize_hash_syntax(text: str) -> str:
         hashes = line[:i]
         rest = line[i:]
 
-        # 규칙 4: rest 가 비면 분류명 없음 → 평문
+        # 규칙 3: rest 가 비면 분류명 없음 → 평문
         if not rest:
             out_lines.append(line)
             continue
 
-        # `#` 뒤 공백이 있으면 떼고, 없으면 그대로 → content = 분류명+본문 후보
+        # `#` 뒤 공백이 있으면 떼고, 없으면 그대로
         if rest[0] == " ":
             content = rest[1:]
         else:
             content = rest
 
-        # 규칙 4: 분류명 자체가 비면 평문
+        # 규칙 3: 분류명 자체가 비면 평문
         if not content.strip():
             out_lines.append(line)
             continue
 
-        # 규칙 3: 분류명 뒤 첫 공백 → 개행 분리. 없으면 분류만 (본문 없음)
-        sp_idx = content.find(" ")
-        if sp_idx == -1:
-            out_lines.append(f"{hashes} {content}")
-        else:
-            cat = content[:sp_idx]
-            body = content[sp_idx + 1:].lstrip()
-            if cat and body:
-                out_lines.append(f"{hashes} {cat}")
-                out_lines.append(body)
-            elif cat:
-                out_lines.append(f"{hashes} {cat}")
-            else:
-                # cat 빈 경우 (예: rest=" 본문" 만 있는 비정상) → 원문 보존
-                out_lines.append(line)
+        # heading 줄 전체가 분류명 (표준 마크다운).
+        out_lines.append(f"{hashes} {content}")
 
     return "\n".join(out_lines)
 

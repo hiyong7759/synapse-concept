@@ -8,7 +8,7 @@
 
 v15 폐기 섹션 (DESIGN_REVIEW.md §폐기된 섹션 참고):
 - `uncategorized` — 저장 시점에 origin='ai'/'system'로 자동 분류 (예정)
-- `cooccur_pairs` — 문장 하이퍼엣지(node_mentions)에 이미 자동 포함되므로 별도 제안 불필요
+- `cooccur_pairs` — 문장 하이퍼엣지(node_sentence_mentions)에 이미 자동 포함되므로 별도 제안 불필요
 - `alias_suggestions` — 저장 후 백그라운드 워커가 origin='external' 별칭 자동 등록 (v15-A2)
 - 의미 엣지 관련 섹션 — edges 테이블 폐기로 전체 제거
 
@@ -59,17 +59,17 @@ def unresolved(db_path: str = DB_PATH, limit: int = 30) -> list[dict]:
             (limit,),
         ).fetchall()
 
-        # 사용자의 카테고리별 최근 노드 (옵션 후보) — v20: major_category 기준
+        # 사용자의 카테고리별 최근 노드 (옵션 후보) — v21 PLAN-007 M3: node_category_mentions + categories JOIN
         recent_by_cat: dict[str, list[str]] = {}
         cat_rows = conn.execute(
-            """SELECT nc.major_category, n.name, n.updated_at
-               FROM node_categories nc
-               JOIN nodes n ON n.id = nc.node_id
-               WHERE n.status='active'
+            """SELECT c.name AS category, n.name, n.updated_at
+               FROM node_category_mentions ncm
+               JOIN nodes n ON n.id = ncm.node_id
+               JOIN categories c ON c.id = ncm.category_id
                ORDER BY n.updated_at DESC LIMIT 200"""
         ).fetchall()
         for r in cat_rows:
-            recent_by_cat.setdefault(r["major_category"], []).append(r["name"])
+            recent_by_cat.setdefault(r["category"], []).append(r["name"])
     finally:
         conn.close()
 
@@ -143,14 +143,16 @@ def stale_nodes(db_path: str = DB_PATH, days: int = 90, limit: int = 20) -> list
     try:
         rows = conn.execute(
             """SELECT n.id, n.name, n.updated_at,
-                      (SELECT COUNT(*) FROM node_mentions WHERE node_id = n.id) AS mention_count
+                      (SELECT COUNT(*) FROM node_sentence_mentions WHERE node_id = n.id) AS mention_count
                FROM nodes n
-               WHERE n.status='active' AND n.updated_at < ?
+               WHERE n.updated_at < ?
                ORDER BY n.updated_at LIMIT ?""",
             (cutoff, limit),
         ).fetchall()
     finally:
         conn.close()
+    # v21 PLAN-007 M2: nodes.status 폐기 — 아카이브 옵션은 노드 물리 삭제로 의미 변경.
+    # /review/apply 핸들러에서 merge_nodes 류 파괴적 작업으로 처리되어야 함 (후속 과제).
     return [
         {
             "node_id": r["id"],
@@ -158,7 +160,7 @@ def stale_nodes(db_path: str = DB_PATH, days: int = 90, limit: int = 20) -> list
             "updated_at": r["updated_at"],
             "mention_count": r["mention_count"],
             "question": f"'{r['name']}'은(는) {r['updated_at']} 이후 변동이 없습니다. 어떻게 할까요?",
-            "options": ["유지", "아카이브 (status=inactive)"],
+            "options": ["유지", "삭제"],
         }
         for r in rows
     ]
@@ -208,12 +210,12 @@ def missing_basic_info(db_path: str = DB_PATH) -> list[dict]:
     conn = get_connection(db_path)
     try:
         me = conn.execute(
-            "SELECT id FROM nodes WHERE name='나' AND status='active' LIMIT 1"
+            "SELECT id FROM nodes WHERE name='나' LIMIT 1"
         ).fetchone()
         if not me:
             return []
         rows = conn.execute(
-            """SELECT s.text FROM node_mentions m
+            """SELECT s.text FROM node_sentence_mentions m
                JOIN sentences s ON s.id = m.sentence_id
                WHERE m.node_id = ?""",
             (me["id"],),
@@ -273,21 +275,22 @@ def gaps(db_path: str = DB_PATH, threshold_days: int = 7, limit: int = 5) -> lis
 def ai_generated(
     db_path: str = DB_PATH, kind: str = "category", limit: int = 30
 ) -> list[dict]:
-    """AI 생성물 검수 — v15-A2: kind='category'만 (별칭은 external로 이전).
+    """AI 생성물 검수 — v21 PLAN-007 M3: kind='category'만 (별칭은 external로).
 
-    node_categories.origin='ai' 레코드를 최근순으로 반환. 각 항목에 대상 노드명
-    을 함께 주어 사용자가 "이 분류가 맞나?"를 즉시 판단할 수 있게 한다.
+    node_category_mentions.origin='ai' 레코드 + categories JOIN 으로 카테고리 이름
+    함께 반환. 사용자가 "이 분류가 맞나?"를 즉시 판단할 수 있게 한다.
     """
     if kind != "category":
         return []  # v15-A2: AI origin alias는 존재하지 않음
     conn = get_connection(db_path)
     try:
         rows = conn.execute(
-            """SELECT nc.node_id, n.name AS node_name, nc.major_category, nc.created_at
-               FROM node_categories nc
-               JOIN nodes n ON n.id = nc.node_id
-               WHERE nc.origin='ai' AND n.status='active'
-               ORDER BY nc.created_at DESC LIMIT ?""",
+            """SELECT ncm.node_id, n.name AS node_name, c.name AS category_name, ncm.created_at
+               FROM node_category_mentions ncm
+               JOIN nodes n ON n.id = ncm.node_id
+               JOIN categories c ON c.id = ncm.category_id
+               WHERE ncm.origin='ai'
+               ORDER BY ncm.created_at DESC LIMIT ?""",
             (limit,),
         ).fetchall()
     finally:
@@ -297,9 +300,9 @@ def ai_generated(
             "kind": "category",
             "node_id": r["node_id"],
             "node_name": r["node_name"],
-            "major_category": r["major_category"],
+            "category_name": r["category_name"],
             "created_at": r["created_at"],
-            "question": f"'{r['node_name']}' 노드의 AI 분류 '{r['major_category']}' 이 맞나요?",
+            "question": f"'{r['node_name']}' 노드의 AI 분류 '{r['category_name']}' 이 맞나요?",
             "options": ["유지", "삭제"],
         }
         for r in rows
@@ -322,7 +325,7 @@ def external_generated(
             """SELECT a.alias, a.node_id, n.name AS node_name, a.created_at
                FROM aliases a
                JOIN nodes n ON n.id = a.node_id
-               WHERE a.origin='external' AND n.status='active'
+               WHERE a.origin='external'
                ORDER BY a.created_at DESC LIMIT ?""",
             (limit,),
         ).fetchall()
@@ -436,26 +439,26 @@ def all_sections(
 def counts(db_path: str = DB_PATH) -> dict:
     """배지용 집계 — 빠른 쿼리만.
 
-    v20 PLAN-004 M3: node_categories_by_origin 추가 (축 B 워커 정확도 모니터링).
+    v21 PLAN-007 M3: node_category_mentions 통합 기준 origin 분포.
     """
     conn = get_connection(db_path)
     try:
         unresolved_n = conn.execute("SELECT COUNT(*) FROM unresolved_tokens").fetchone()[0]
         ai_cat_n = conn.execute(
-            "SELECT COUNT(*) FROM node_categories WHERE origin='ai'"
+            "SELECT COUNT(*) FROM node_category_mentions WHERE origin='ai'"
         ).fetchone()[0]
         ext_alias_n = conn.execute(
             "SELECT COUNT(*) FROM aliases WHERE origin='external'"
         ).fetchone()[0]
-        # v20 M3 — 축 B origin 분포 (ai vs system 자동 태깅 vs user 수정)
-        nc_by_origin_rows = conn.execute(
-            "SELECT origin, COUNT(*) AS n FROM node_categories GROUP BY origin"
+        # 노드-카테고리 매핑 origin 분포 (rule: Kiwi 자동, ai: 워커, user: /review 수정)
+        ncm_by_origin_rows = conn.execute(
+            "SELECT origin, COUNT(*) AS n FROM node_category_mentions GROUP BY origin"
         ).fetchall()
-        nc_by_origin = {
-            o: 0 for o in ("user", "ai", "system", "external")
+        ncm_by_origin = {
+            o: 0 for o in ("user", "ai", "rule", "external")
         }
-        for r in nc_by_origin_rows:
-            nc_by_origin[r["origin"]] = r["n"]
+        for r in ncm_by_origin_rows:
+            ncm_by_origin[r["origin"]] = r["n"]
         # 사용자 루트 개수 (시드 배제)
         user_roots_n = conn.execute(
             "SELECT COUNT(*) FROM categories WHERE parent_id IS NULL "
@@ -477,6 +480,6 @@ def counts(db_path: str = DB_PATH) -> dict:
         "external_generated":       {"alias": ext_alias_n},
         "suspected_typos":          typos_n,
         "missing_basic_info":       basic_n,
-        "node_categories_by_origin": nc_by_origin,  # v20 M3
-        "user_category_roots":       user_roots_n,   # v20 M3
+        "node_category_mentions_by_origin": ncm_by_origin,  # v21 PLAN-007 M3
+        "user_category_roots":       user_roots_n,
     }

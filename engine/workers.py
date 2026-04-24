@@ -1,6 +1,14 @@
-"""백그라운드 워커 — 저장 후 AI/외부 출처의 카테고리·별칭 수집 (v15-A2).
+"""백그라운드 워커 — 저장 후 AI/외부 출처의 카테고리·별칭 수집.
+
+v21 PLAN-007 M3 변경:
+- `node_categories` 테이블 폐기 → AI 분류 결과를 `node_category_mentions(origin='ai')`
+  로 이관. CATEGORY LLM 이 반환한 "BOD.medical" 같은 대분류 코드를 `categories`
+  트리의 시드 노드(BOD → medical) id 로 역매핑 후 insert.
+- 역매핑 실패(`categories` 에 시드 없음·오타) 시 해당 카테고리는 skip — 무결성 유지.
+
 ① 카테고리 분류: base 모델 + CATEGORY_SYSTEMPROMPT.md → origin='ai'
 ② Wikidata 별칭: altLabel(ko·en) → origin='external'
+
 register_post_save_hook 디스패처가 SaveResult.node_ids_added 를 수신.
 실패·빈 결과는 무음 스킵(자연 재시도). llm_fn/wikidata_fn 주입으로 단위 테스트.
 설계: docs/DESIGN_PIPELINE.md "백그라운드 워커".
@@ -43,7 +51,7 @@ def _recent_sentences(db_path: str, node_id: int, limit: int = 5) -> list[str]:
     conn = get_connection(db_path)
     try:
         rows = conn.execute(
-            """SELECT s.text FROM node_mentions m JOIN sentences s ON s.id=m.sentence_id
+            """SELECT s.text FROM node_sentence_mentions m JOIN sentences s ON s.id=m.sentence_id
                WHERE m.node_id=? ORDER BY s.created_at DESC LIMIT ?""",
             (node_id, limit),
         ).fetchall()
@@ -97,11 +105,28 @@ def category_worker(
             continue
         conn = get_connection(db_path)
         try:
+            # v21 PLAN-007 M3: "BOD.medical" 같은 대분류 코드를 categories.id 로 역매핑 후
+            # node_category_mentions 에 insert. 매핑 실패 (카테고리 없음) 시 skip.
             for cat in categories:
+                if "." in cat:
+                    root, sub = cat.split(".", 1)
+                    row = conn.execute(
+                        """SELECT c.id FROM categories c
+                           JOIN categories p ON p.id = c.parent_id
+                           WHERE c.name = ? AND p.name = ? AND p.parent_id IS NULL""",
+                        (sub, root),
+                    ).fetchone()
+                else:
+                    row = conn.execute(
+                        "SELECT id FROM categories WHERE name=? AND parent_id IS NULL",
+                        (cat,),
+                    ).fetchone()
+                if not row:
+                    continue
                 cur = conn.execute(
-                    "INSERT OR IGNORE INTO node_categories "
-                    "(node_id, major_category, origin) VALUES (?,?,?)",
-                    (node_id, cat, "ai"),
+                    "INSERT OR IGNORE INTO node_category_mentions "
+                    "(node_id, category_id, origin) VALUES (?,?,?)",
+                    (node_id, row["id"], "ai"),
                 )
                 inserted += cur.rowcount
             conn.commit()

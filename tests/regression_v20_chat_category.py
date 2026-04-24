@@ -1,16 +1,21 @@
-"""v20 chat 분류 입력 회귀 테스트 (PLAN-20260423-SYN-005 M2).
+"""v20 chat 분류 입력 회귀 테스트 (PLAN-20260423-SYN-005 M2 + PLAN-20260424-SYN-007 M1 반영).
 
 목적:
-- normalize_hash_syntax 정규화 경계 케이스 43개 검증
+- normalize_hash_syntax 정규화 경계 케이스 검증
 - heading 자연 상속 (점 포함 heading 의 path_stack.clear 제거 효과)
-- chat / markdown 동등성 (같은 의도 입력 = 같은 DB 상태)
-- 실데이터 dogfood 시뮬레이션 (#건강, #건강.허리, #건강 본문, 다층 heading)
+- 실데이터 dogfood 시뮬레이션 (#건강, #건강.허리, 다층 heading 등)
 
 PLAN-005 M0 결정 (2026-04-24):
 - 결정 1: 첫 # 만 분류, 두 번째 이후 # 은 평문
 - 결정 2: normalize_hash_syntax(text: str) -> str, engine/markdown.py 위치
 - 결정 3: DB 에는 정규화된 형태만 엄격히 저장
 - 결정 4: 앞 공백·분류명 없는 # 평문 처리, 모호한 점 그대로, depth 건너뛰기 자연 상속
+
+PLAN-007 M1 업데이트 (2026-04-24):
+- **규칙 3 "분류명 뒤 첫 공백 → 개행 분리" 폐기** (표준 마크다운 heading 복귀)
+- heading 줄 전체가 분류명 (공백·괄호·특수문자 허용)
+- chat 모드 한 줄 편의는 LLM 변환 핫키로 대체 예정 (본 PLAN 범위 밖)
+- CASE E (chat/markdown 단순 등가성) 은 규칙 3 전제였으므로 제거. 핫키 도입 후 재검토
 
 실행: python3 tests/regression_v20_chat_category.py
 """
@@ -50,14 +55,14 @@ def case_normalization_basic() -> bool:
     from engine.markdown import normalize_hash_syntax
 
     cases: list[tuple[str, str]] = [
-        # 1~4: PLAN 본문 표 핵심
+        # 1~4: PLAN 본문 표 핵심 (M1: 규칙 3 폐기로 한 줄 전체가 heading)
         ("#건강", "# 건강"),
         ("# 건강", "# 건강"),
-        ("#건강 허리 아픔", "# 건강\n허리 아픔"),
-        ("# 건강 허리 아픔", "# 건강\n허리 아픔"),
+        ("#건강 허리 아픔", "# 건강 허리 아픔"),
+        ("# 건강 허리 아픔", "# 건강 허리 아픔"),
         # 5~8: depth 1·3·7·10
         ("##허리", "## 허리"),
-        ("### 깊은 분류", "### 깊은\n분류"),
+        ("### 깊은 분류", "### 깊은 분류"),
         ("#######일곱개", "####### 일곱개"),
         ("##########열개", "########## 열개"),
         # 9~12: 줄 머리 게이트
@@ -84,15 +89,15 @@ def case_normalization_special_chars() -> bool:
     from engine.markdown import normalize_hash_syntax
 
     cases: list[tuple[str, str]] = [
-        # 16~19: 점 / 언더스코어 / 구두점
-        ("#건강.허리 오늘 아픔", "# 건강.허리\n오늘 아픔"),
+        # 16~19: 점 / 언더스코어 / 구두점 (M1: 규칙 3 폐기로 한 줄 전체가 heading)
+        ("#건강.허리 오늘 아픔", "# 건강.허리 오늘 아픔"),
         ("#제55조_연차휴가", "# 제55조_연차휴가"),
         ("#건강?", "# 건강?"),
         ("#건강!", "# 건강!"),
         # 20: depth 10 (점 계층)
         (
             "#A.B.C.D.E.F.G.H.I.J 본문",
-            "# A.B.C.D.E.F.G.H.I.J\n본문",
+            "# A.B.C.D.E.F.G.H.I.J 본문",
         ),
         # 21~23: 모호한 점 (사용자 책임 — 그대로 저장)
         ("#A..B", "# A..B"),
@@ -109,15 +114,17 @@ def case_normalization_special_chars() -> bool:
 # ─── C. 다중 `#` 한 줄 — 첫 # 만 분류 (4개) ────────────────
 
 def case_normalization_multiple_hash() -> bool:
-    print("\n=== CASE C: 다중 # 한 줄 — 첫 # 만 분류 (PLAN-005 결정 1) (4개) ===")
+    print("\n=== CASE C: 다중 # 한 줄 — 첫 # 만 분류, 나머지는 평문 (4개) ===")
     from engine.markdown import normalize_hash_syntax
 
+    # M1 (PLAN-007): 규칙 3 폐기로 두 번째 이후 # 은 같은 줄에 평문으로 남음.
+    # heading 이름 안에 `#` 문자가 포함되는 형태가 되지만, 이는 사용자 책임
+    # (분류명 뒤 공백을 쓰는 건 LLM 변환 핫키 도입 전까지 비권장).
     cases: list[tuple[str, str]] = [
-        # 24~27: 두 번째 # 은 평문
-        ("#건강 #허리 오늘 아픔", "# 건강\n#허리 오늘 아픔"),
-        ("#A #B #C 본문", "# A\n#B #C 본문"),
-        ("##A #B 본문", "## A\n#B 본문"),
-        ("#A.B #C.D 본문", "# A.B\n#C.D 본문"),
+        ("#건강 #허리 오늘 아픔", "# 건강 #허리 오늘 아픔"),
+        ("#A #B #C 본문", "# A #B #C 본문"),
+        ("##A #B 본문", "## A #B 본문"),
+        ("#A.B #C.D 본문", "# A.B #C.D 본문"),
     ]
     ok = True
     for inp, expected in cases:
@@ -159,100 +166,12 @@ def case_heading_natural_inheritance() -> bool:
     return ok
 
 
-# ─── E. chat / markdown 동등성 (4개) ────────────────────
-
-def case_chat_markdown_equivalence() -> bool:
-    print("\n=== CASE E: chat / markdown 동등성 — 같은 의도 = 같은 DB 상태 (4개) ===")
-    _fresh_db_dir()
-    from engine.save import save
-    from engine.db import DB_PATH
-
-    def dump(post_id: int) -> dict:
-        conn = sqlite3.connect(DB_PATH)
-        try:
-            md = conn.execute("SELECT markdown FROM posts WHERE id=?", (post_id,)).fetchone()[0]
-            sents = [
-                r[0] for r in conn.execute(
-                    "SELECT text FROM sentences WHERE post_id=? ORDER BY position", (post_id,)
-                ).fetchall()
-            ]
-            cats = [
-                r[0] for r in conn.execute(
-                    """SELECT c.name FROM sentence_categories sc
-                       JOIN categories c ON c.id = sc.category_id
-                       JOIN sentences s ON s.id = sc.sentence_id
-                       WHERE s.post_id = ?
-                       ORDER BY sc.sentence_id, c.id""",
-                    (post_id,),
-                ).fetchall()
-            ]
-        finally:
-            conn.close()
-        return {"markdown": md, "sentences": sents, "sentence_cats": cats}
-
-    ok = True
-
-    # 36: chat #건강 허리 아픔 ≡ markdown # 건강\n허리 아픔
-    r1 = save("#건강 허리 아픔", mode="chat", use_llm=False)
-    r2 = save("# 건강\n허리 아픔", mode="markdown", use_llm=False)
-    d1, d2 = dump(r1.post_id), dump(r2.post_id)
-    ok &= _passed(
-        "36: chat '#건강 허리 아픔' ≡ markdown '# 건강\\n허리 아픔'",
-        d1["sentences"] == d2["sentences"] and d1["sentence_cats"] == d2["sentence_cats"],
-        f"chat={d1}, md={d2}",
-    )
-
-    # 37: chat #건강 단독 → posts 1, sentences 0, category 1
-    r3 = save("#건강", mode="chat", use_llm=False)
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        sc = conn.execute("SELECT COUNT(*) FROM sentences WHERE post_id=?", (r3.post_id,)).fetchone()[0]
-        cat_exists = conn.execute("SELECT 1 FROM categories WHERE name='건강'").fetchone() is not None
-    finally:
-        conn.close()
-    ok &= _passed(
-        "37: '#건강' 단독 → posts 1, sentences 0, category '건강' 등록",
-        sc == 0 and cat_exists,
-        f"sentences={sc}, category 건강 존재={cat_exists}",
-    )
-
-    # 38: chat #건강.허리 오늘 아픔 → category 건강+허리 + sentence_categories 연결
-    r4 = save("#건강.허리 오늘 아픔", mode="chat", use_llm=False)
-    d4 = dump(r4.post_id)
-    # categories 테이블에 건강, 허리 둘 다 (parent 관계)
-    conn = sqlite3.connect(DB_PATH)
-    try:
-        rows = conn.execute(
-            """WITH RECURSIVE cp AS (
-                   SELECT id, name, parent_id, name AS path
-                   FROM categories WHERE parent_id IS NULL
-                   UNION ALL
-                   SELECT c.id, c.name, c.parent_id, cp.path || '.' || c.name
-                   FROM categories c JOIN cp ON c.parent_id = cp.id
-               )
-               SELECT path FROM cp WHERE path LIKE '건강%' ORDER BY length(path)"""
-        ).fetchall()
-        paths = [r[0] for r in rows]
-    finally:
-        conn.close()
-    ok &= _passed(
-        "38: '#건강.허리 오늘 아픔' → 건강·건강.허리 모두 등록 + sentence 연결",
-        "건강" in paths and "건강.허리" in paths and d4["sentences"] == ["오늘 아픔"]
-        and "허리" in d4["sentence_cats"],
-        f"paths={paths}, dump={d4}",
-    )
-
-    # 39: chat #건강.허리.무릎 어제 아픔 ≡ markdown # 건강.허리.무릎\n어제 아픔 (점 계층 + 본문 동등성)
-    r5 = save("#건강.허리.무릎 어제 아픔", mode="chat", use_llm=False)
-    r6 = save("# 건강.허리.무릎\n어제 아픔", mode="markdown", use_llm=False)
-    d5, d6 = dump(r5.post_id), dump(r6.post_id)
-    ok &= _passed(
-        "39: 점 계층 깊이 3 + 본문 — chat ≡ markdown",
-        d5["sentences"] == d6["sentences"] and d5["sentence_cats"] == d6["sentence_cats"],
-        f"chat={d5}, md={d6}",
-    )
-
-    return ok
+# ─── E. (폐기 — PLAN-007 M1) ────────────────────────────
+# chat / markdown 단순 등가성 테스트는 "첫 공백 = 개행" 규칙(PLAN-005 M1) 을
+# 전제로 설계됐음. PLAN-007 M1 에서 해당 규칙이 폐기되고 표준 마크다운 heading
+# 으로 복귀하면서 chat 한 줄 입력과 markdown 멀티라인 입력은 **의도적으로
+# 다르게** 처리됨. chat 편의는 LLM 변환 핫키(별도 작업) 가 담당.
+# 핫키 도입 후 "의미 등가성" 기준으로 테스트를 재작성할 것.
 
 
 # ─── F. 회귀 방지 (4개) ────────────────────────────────
@@ -282,7 +201,12 @@ def case_robustness() -> bool:
 # ─── G. 실데이터 dogfood 시뮬레이션 ─────────────────────
 
 def case_dogfood_simulation() -> bool:
-    """PLAN 본문 §M2 dogfood — 실제 사용 패턴 시뮬레이션."""
+    """실제 사용 패턴 시뮬레이션.
+
+    PLAN-007 M1 업데이트: chat 한 줄 입력 (시나리오 2, 3) 케이스는 제거됨.
+    규칙 3 폐기로 이제 `#분류 본문` 한 줄은 `분류 본문` 전체가 heading 으로
+    저장됨. chat 한 줄 편의는 LLM 변환 핫키 (별도 작업) 도입 후 재검증.
+    """
     print("\n=== CASE G: dogfood 시뮬레이션 — 실입력 패턴 ===")
     _fresh_db_dir()
     from engine.save import save
@@ -292,12 +216,6 @@ def case_dogfood_simulation() -> bool:
 
     # 시나리오 1: chat 빠른 메모 — 분류만
     r1 = save("#건강", mode="chat", use_llm=False)
-
-    # 시나리오 2: chat 한 줄 — 분류 + 본문
-    r2 = save("#건강 오늘 또 아픔", mode="chat", use_llm=False)
-
-    # 시나리오 3: chat 점 계층
-    r3 = save("#건강.허리 다리 저림", mode="chat", use_llm=False)
 
     # 시나리오 4: markdown 다층 heading
     r4 = save(
@@ -321,43 +239,6 @@ def case_dogfood_simulation() -> bool:
             "시나리오 1: '#건강' → posts.markdown 정규화 후 '# 건강'",
             md1 == "# 건강",
             f"posts.markdown={md1!r}",
-        )
-
-        # 시나리오 2: sentence '오늘 또 아픔' + sentence_categories 건강 연결
-        sents2 = [
-            r[0] for r in conn.execute(
-                "SELECT text FROM sentences WHERE post_id=?", (r2.post_id,)
-            ).fetchall()
-        ]
-        cats2 = [
-            r[0] for r in conn.execute(
-                """SELECT c.name FROM sentence_categories sc
-                   JOIN categories c ON c.id = sc.category_id
-                   JOIN sentences s ON s.id = sc.sentence_id
-                   WHERE s.post_id = ?""",
-                (r2.post_id,),
-            ).fetchall()
-        ]
-        ok &= _passed(
-            "시나리오 2: chat '#건강 오늘 또 아픔' → sentence '오늘 또 아픔' + 건강 카테고리",
-            sents2 == ["오늘 또 아픔"] and cats2 == ["건강"],
-            f"sents={sents2}, cats={cats2}",
-        )
-
-        # 시나리오 3: 점 계층 — 건강·허리 둘 다 카테고리 등록, sentence '다리 저림' 은 허리에 연결
-        cats3 = [
-            r[0] for r in conn.execute(
-                """SELECT c.name FROM sentence_categories sc
-                   JOIN categories c ON c.id = sc.category_id
-                   JOIN sentences s ON s.id = sc.sentence_id
-                   WHERE s.post_id = ?""",
-                (r3.post_id,),
-            ).fetchall()
-        ]
-        ok &= _passed(
-            "시나리오 3: chat '#건강.허리 다리 저림' → sentence_cat = '허리'",
-            cats3 == ["허리"],
-            f"cats={cats3}",
         )
 
         # 시나리오 4: markdown 다층 — '직장' '더나은' '개발팀' 카테고리 모두 생성, sentences 4건
@@ -409,7 +290,7 @@ def main() -> int:
         case_normalization_special_chars,  # 8
         case_normalization_multiple_hash,  # 4
         case_heading_natural_inheritance,  # 8
-        case_chat_markdown_equivalence,    # 4
+        # case_chat_markdown_equivalence,  # PLAN-007 M1 폐기 (규칙 3 전제)
         case_robustness,                   # 4
         case_dogfood_simulation,           # dogfood
     ]
