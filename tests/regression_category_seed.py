@@ -6,24 +6,27 @@
 - 본 테스트는 **수정 전 실패 케이스를 잠금** — M3 (인출 경로 교체) 이후 assert 가
   뒤집혀 통과하는 것이 성공 기준 (최소 5/7 이상 `start_categories` 비지 않음).
 
-현재 main 동작 (lock-in 대상):
+현재 동작 (lock-in 대상, PLAN-007 M1 이후):
 - `_match_start_categories` 가 `WHERE name = ?` exact match. 짧은 자연어 키워드
-  (`연차`·`휴가`·`징계`) 가 categories.name 과 매칭 실패
-- `normalize_hash_syntax` 규칙 3 ("첫 공백 = 개행") 으로 긴 heading 이 번호 조각
-  (`제6장`·`제55조`) 만 categories 에 저장됨 → 의미 토큰 부재
+  (`연차`·`휴가`·`징계`) 가 긴 heading 이름과 매칭 실패
+- M1 에서 `normalize_hash_syntax` 규칙 3 폐기로 이제 heading 줄 전체가
+  categories 에 저장 (예: `제6장 휴일 및 휴가`, `제55조 (해고의 제한)`).
+  그럼에도 exact match 한계로 여전히 매칭 불가
+- 의미 토큰의 카테고리 매핑 (M2 `node_category_mentions`) 전까지 증상 지속
 - 결과: 7 질문 전부 `start_categories=[]`
 
 가정:
-- `use_llm=False` — MLX 서버 독립 재현. 버그가 LLM 독립(exact match + 저장 규칙)
+- `use_llm=False` — MLX 서버 독립 재현. 버그가 LLM 독립(exact match 한계)
   이므로 LLM off 에서도 증상 재현됨
 - 저장 원본: `archive/docs/(주)더나은_취업규칙_개정(안)_20250430.md`
   (공백 포맷 원본 그대로 — PLAN-003 M3 dogfood 와 동일 입력)
 
 검증:
-1. 저장 정상성 — post_id 생성, categories 테이블에 heading 번호 조각 저장됨
-2. 7 질문 retrieve → `start_categories == []` lock-in (현재 증상)
-3. `start_nodes` 는 최소 1 건 이상 질문에서 채워짐 (노드 매칭은 생존)
-4. categories 에 의미 토큰(`휴가`·`연차`·`징계`) 이 존재하지 않음 (증상 진단)
+1. 저장 정상성 — post_id 생성
+2. M1 효과 — categories 에 공백 포함 긴 heading 이 저장됨
+   (`제6장 휴일 및 휴가` 등 — 규칙 3 폐기로 본문 분리 안 됨)
+3. 7 질문 retrieve → `start_categories == []` lock-in (현재 증상)
+4. `start_nodes` 는 최소 1 건 이상 질문에서 채워짐 (노드 매칭은 생존)
 
 실행: python3 -m tests.regression_category_seed
 """
@@ -98,17 +101,28 @@ def case_seed_reproduction() -> bool:
     finally:
         conn.close()
 
-    has_chapter_6 = "제6장" in cat_names
-    has_article_55 = "제55조" in cat_names
+    has_chapter_6_full = "제6장 휴일 및 휴가" in cat_names
+    has_article_55_full = any(n.startswith("제55조") and "(" in n for n in cat_names)
+    has_any_spaced_name = any(" " in n for n in cat_names)
     semantic_tokens_present = any(n in cat_names for n in ("휴가", "연차", "징계", "휴일", "수습기간"))
 
     ok &= _passed(
-        "categories 에 번호 조각 저장됨 ('제6장', '제55조')",
-        has_chapter_6 and has_article_55,
-        f"제6장={has_chapter_6} 제55조={has_article_55}",
+        "M1 효과 — categories 에 공백 포함 긴 heading 저장됨",
+        has_any_spaced_name,
+        f"spaced_count={sum(1 for n in cat_names if ' ' in n)}",
     )
     ok &= _passed(
-        "categories 에 의미 토큰 단독 등장 안 함 (증상 진단: normalize 규칙 3 때문)",
+        "categories 에 '제6장 휴일 및 휴가' 전체 저장 (규칙 3 폐기 검증)",
+        has_chapter_6_full,
+        f"sample={[n for n in cat_names if '제6장' in n][:2]}",
+    )
+    ok &= _passed(
+        "categories 에 '제55조 (…)' 괄호 포함 전체 저장",
+        has_article_55_full,
+        f"sample={[n for n in cat_names if '제55조' in n][:2]}",
+    )
+    ok &= _passed(
+        "categories 에 의미 토큰 단독은 아직 없음 (M2 node_category_mentions 전까지)",
         not semantic_tokens_present,
         "휴가/연차/징계/휴일/수습기간 전부 단독으로는 categories.name 에 없음",
     )
