@@ -1,6 +1,6 @@
 # Synapse 설계 — /review 검토 편입
 
-**최종 업데이트**: 2026-04-23 (v18 — 상태 레이어 제거 / `sentence_status` 섹션 폐기. 선행 v17: origin `rule→system`, `rule_generated`→`system_generated`)
+**최종 업데이트**: 2026-04-24 (v22 계획 — **통찰 삭제 섹션 신설** (`insight_delete` — `origin='insight'` sentence 는 편집 불가·삭제는 승인). 선행 v21 리네임 반영. v18: 상태 레이어 제거. v17: origin `rule→system`)
 
 ## 배경
 
@@ -10,7 +10,7 @@ v14에서 저장 모델이 자동 저장 + origin 추적으로 바뀌었고, v15
 
 1. **`unresolved_tokens` 해소** — 치환 실패 지시어(유일한 승인 대기 테이블)
 2. **AI·시스템 생성물 검토 뷰** — `origin='ai'` / `'system'` 필터 목록에서 잘못된 항목 즉시 삭제
-3. **파괴적 작업 승인** — 노드 병합·아카이브 등 되돌릴 수 없는 작업
+3. **파괴적 작업 승인** — 노드 병합·아카이브·**통찰 삭제** (v22) 등 되돌릴 수 없는 작업
 
 ---
 
@@ -133,12 +133,27 @@ v17 까지는 `extract-state` 가 `inactive` / `pending` 으로 자동 태그한
 ```python
 def stale_nodes(days: int) -> list[Suggestion]:
     # nodes.updated_at 기준 N일 이상 미갱신 + 최근 참조 없음
-    # 옵션: "유지", "아카이브 (status=inactive)"
+    # v21: nodes.status 폐기 → 아카이브는 물리 DELETE (merge_nodes 와 동일 방식, FK CASCADE)
+    # 옵션: "유지", "아카이브 (물리 삭제)"
 ```
 
-아카이브는 status 변경이라 파괴적이지 않지만, 사용자가 모르게 비활성화되면 당황하므로 승인 유지.
+v21 이후 아카이브는 물리 DELETE 이므로 확실히 파괴적. 사용자가 모르게 삭제되면 복구 불가이므로 승인 유지.
 
 승인 흐름: `POST /review/apply type=archive` / 유지는 카드만 닫기.
+
+### insight_delete — 통찰 삭제 (파괴적 작업 승인, v22 신설)
+
+```python
+def insight_delete_candidates() -> list[Suggestion]:
+    # posts.kind='insight' 전체 목록. 자동 도출 아님 —
+    # 사용자가 /hypergraph 또는 /chat 에서 특정 insight post 선택 후 삭제 요청 시
+    # 여기서 파괴성 확인 승인 후 실행.
+    # 옵션: "삭제 (허브 연결도 CASCADE)", "유지"
+```
+
+통찰은 본체 sentence 가 `origin='insight'` 로 편집 불가. 삭제만이 변경 수단이며, 삭제는 **시냅스 세션에서 축적된 허브 연결(노드 스냅샷 전체)까지 함께 사라지므로** 파괴적. 승인 필수.
+
+승인 흐름: `POST /review/apply type=insight_delete` + `{post_id}` → post 행 DELETE → FK CASCADE 로 본체 sentence + `node_sentence_mentions` + `node_category_mentions` 자동 정리. 고아 노드(해당 통찰만 참조하던 노드) 도 rollback 로직처럼 정리.
 
 ### daily(date) — 일일 회고 (정보 뷰)
 
