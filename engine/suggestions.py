@@ -8,7 +8,7 @@
 
 v15 폐기 섹션 (DESIGN_REVIEW.md §폐기된 섹션 참고):
 - `uncategorized` — 저장 시점에 origin='ai'/'system'로 자동 분류 (예정)
-- `cooccur_pairs` — 문장 하이퍼엣지(node_mentions)에 이미 자동 포함되므로 별도 제안 불필요
+- `cooccur_pairs` — 문장 하이퍼엣지(node_sentence_mentions)에 이미 자동 포함되므로 별도 제안 불필요
 - `alias_suggestions` — 저장 후 백그라운드 워커가 origin='external' 별칭 자동 등록 (v15-A2)
 - 의미 엣지 관련 섹션 — edges 테이블 폐기로 전체 제거
 
@@ -65,7 +65,6 @@ def unresolved(db_path: str = DB_PATH, limit: int = 30) -> list[dict]:
             """SELECT nc.major_category, n.name, n.updated_at
                FROM node_categories nc
                JOIN nodes n ON n.id = nc.node_id
-               WHERE n.status='active'
                ORDER BY n.updated_at DESC LIMIT 200"""
         ).fetchall()
         for r in cat_rows:
@@ -143,14 +142,16 @@ def stale_nodes(db_path: str = DB_PATH, days: int = 90, limit: int = 20) -> list
     try:
         rows = conn.execute(
             """SELECT n.id, n.name, n.updated_at,
-                      (SELECT COUNT(*) FROM node_mentions WHERE node_id = n.id) AS mention_count
+                      (SELECT COUNT(*) FROM node_sentence_mentions WHERE node_id = n.id) AS mention_count
                FROM nodes n
-               WHERE n.status='active' AND n.updated_at < ?
+               WHERE n.updated_at < ?
                ORDER BY n.updated_at LIMIT ?""",
             (cutoff, limit),
         ).fetchall()
     finally:
         conn.close()
+    # v21 PLAN-007 M2: nodes.status 폐기 — 아카이브 옵션은 노드 물리 삭제로 의미 변경.
+    # /review/apply 핸들러에서 merge_nodes 류 파괴적 작업으로 처리되어야 함 (후속 과제).
     return [
         {
             "node_id": r["id"],
@@ -158,7 +159,7 @@ def stale_nodes(db_path: str = DB_PATH, days: int = 90, limit: int = 20) -> list
             "updated_at": r["updated_at"],
             "mention_count": r["mention_count"],
             "question": f"'{r['name']}'은(는) {r['updated_at']} 이후 변동이 없습니다. 어떻게 할까요?",
-            "options": ["유지", "아카이브 (status=inactive)"],
+            "options": ["유지", "삭제"],
         }
         for r in rows
     ]
@@ -208,12 +209,12 @@ def missing_basic_info(db_path: str = DB_PATH) -> list[dict]:
     conn = get_connection(db_path)
     try:
         me = conn.execute(
-            "SELECT id FROM nodes WHERE name='나' AND status='active' LIMIT 1"
+            "SELECT id FROM nodes WHERE name='나' LIMIT 1"
         ).fetchone()
         if not me:
             return []
         rows = conn.execute(
-            """SELECT s.text FROM node_mentions m
+            """SELECT s.text FROM node_sentence_mentions m
                JOIN sentences s ON s.id = m.sentence_id
                WHERE m.node_id = ?""",
             (me["id"],),
@@ -286,7 +287,7 @@ def ai_generated(
             """SELECT nc.node_id, n.name AS node_name, nc.major_category, nc.created_at
                FROM node_categories nc
                JOIN nodes n ON n.id = nc.node_id
-               WHERE nc.origin='ai' AND n.status='active'
+               WHERE nc.origin='ai'
                ORDER BY nc.created_at DESC LIMIT ?""",
             (limit,),
         ).fetchall()
@@ -322,7 +323,7 @@ def external_generated(
             """SELECT a.alias, a.node_id, n.name AS node_name, a.created_at
                FROM aliases a
                JOIN nodes n ON n.id = a.node_id
-               WHERE a.origin='external' AND n.status='active'
+               WHERE a.origin='external'
                ORDER BY a.created_at DESC LIMIT ?""",
             (limit,),
         ).fetchall()

@@ -6,7 +6,7 @@
   → 축 A 시드 (v20 M2): 키워드가 categories.name 과 매칭되면 서브트리 재귀 CTE →
     sentence_categories 로 연결된 문장을 BFS 초기 시드에 주입
   → DB 매칭: aliases 우선 → name 직접 → substring
-  → BFS 루프: 노드 → node_mentions JOIN → sentences → 함께 언급된 노드 → 반복
+  → BFS 루프: 노드 → node_sentence_mentions JOIN → sentences → 함께 언급된 노드 → 반복
   → 축 B 보완: 시작 노드 major_category → 인접 소분류 노드 추가 → 재필터
   → 결과 과다 시 원문 LIKE fallback (v20 M4): 임계치 초과 시 원본 질문 토큰으로 좁힘.
     Kiwi 가 쪼갠 외래어 조각(예: React, Native) 을 원문 구절로 통짜 회복.
@@ -17,7 +17,7 @@ v20 변경 (PLAN-004): 카테고리 바구니가 두 축으로 분리됨.
   질문에서 "더나은 개발팀 휴가" 같은 heading 명 매칭 시 서브트리 스캔으로 관련 문장 일괄 수집.
 - 축 B = node_categories.major_category — 19 대분류 + 인접 맵 한 홉 (기존 경로 유지).
 
-v15: edges 테이블 폐기. 연결은 node_mentions + 카테고리 두 축(v20) + aliases 로 표현.
+v15: edges 테이블 폐기. 연결은 node_sentence_mentions + 카테고리 두 축(v20) + aliases 로 표현.
 의미 관계(cause/avoid/similar) 해석은 외부 지능체 몫.
 """
 
@@ -86,7 +86,7 @@ def _match_start_nodes(conn, keywords: list[str], question: str = "") -> dict[st
     if question:
         rows = conn.execute(
             "SELECT a.alias, n.id, n.name FROM aliases a "
-            "JOIN nodes n ON n.id = a.node_id WHERE n.status = 'active'"
+            "JOIN nodes n ON n.id = a.node_id"
         ).fetchall()
         for r in rows:
             if r["alias"] in question:
@@ -98,7 +98,7 @@ def _match_start_nodes(conn, keywords: list[str], question: str = "") -> dict[st
             row = conn.execute(
                 """SELECT n.id, n.name FROM aliases a
                    JOIN nodes n ON n.id = a.node_id
-                   WHERE a.alias = ? AND n.status = 'active'""",
+                   WHERE a.alias = ?""",
                 (kw,),
             ).fetchone()
             if row:
@@ -109,7 +109,7 @@ def _match_start_nodes(conn, keywords: list[str], question: str = "") -> dict[st
         if kw in alias_resolved_names:
             continue
         rows = conn.execute(
-            "SELECT id, name FROM nodes WHERE name = ? AND status = 'active'", (kw,)
+            "SELECT id, name FROM nodes WHERE name = ?", (kw,)
         ).fetchall()
         if rows:
             for r in rows:
@@ -118,7 +118,7 @@ def _match_start_nodes(conn, keywords: list[str], question: str = "") -> dict[st
             continue
 
         rows = conn.execute(
-            "SELECT id, name FROM nodes WHERE name LIKE ? AND status = 'active' LIMIT 5",
+            "SELECT id, name FROM nodes WHERE name LIKE ? LIMIT 5",
             (f"%{kw}%",),
         ).fetchall()
         for r in rows:
@@ -188,8 +188,8 @@ def _get_sentences_by_category_ids(
     ph2 = ",".join("?" * len(sentence_ids))
     mention_rows = conn.execute(
         f"""SELECT m.sentence_id, m.node_id, n.name AS node_name
-            FROM node_mentions m
-            JOIN nodes n ON n.id = m.node_id AND n.status='active'
+            FROM node_sentence_mentions m
+            JOIN nodes n ON n.id = m.node_id
             WHERE m.sentence_id IN ({ph2})""",
         list(sentence_ids),
     ).fetchall()
@@ -219,17 +219,17 @@ def _get_sentences_by_category_ids(
 
 
 def _get_mentions_for_nodes(conn, node_ids: set[int]) -> list[Mention]:
-    """노드 ID 집합이 언급된 모든 sentences 조회 (node_mentions JOIN sentences)."""
+    """노드 ID 집합이 언급된 모든 sentences 조회 (node_sentence_mentions JOIN sentences)."""
     if not node_ids:
         return []
     ph = ",".join("?" * len(node_ids))
     rows = conn.execute(
         f"""
         SELECT m.node_id, n.name AS node_name, m.sentence_id, s.text AS sentence_text
-        FROM node_mentions m
+        FROM node_sentence_mentions m
         JOIN nodes n     ON n.id = m.node_id
         JOIN sentences s ON s.id = m.sentence_id
-        WHERE m.node_id IN ({ph}) AND n.status='active'
+        WHERE m.node_id IN ({ph})
         """,
         list(node_ids),
     ).fetchall()
@@ -253,9 +253,9 @@ def _get_co_mentioned_node_ids(conn, sentence_ids: set[int]) -> dict[int, list[t
     rows = conn.execute(
         f"""
         SELECT m.sentence_id, m.node_id, n.name
-        FROM node_mentions m
+        FROM node_sentence_mentions m
         JOIN nodes n ON n.id = m.node_id
-        WHERE m.sentence_id IN ({ph}) AND n.status='active'
+        WHERE m.sentence_id IN ({ph})
         """,
         list(sentence_ids),
     ).fetchall()
@@ -388,7 +388,7 @@ def _get_category_supplement_nodes(
         cat_rows = conn.execute(
             "SELECT nc.node_id FROM node_categories nc "
             "JOIN nodes n ON n.id = nc.node_id "
-            "WHERE nc.major_category = ? AND n.status='active' LIMIT 20",
+            "WHERE nc.major_category = ? LIMIT 20",
             (sub,),
         ).fetchall()
         for r in cat_rows:

@@ -3,9 +3,9 @@
 원칙:
 - 입력 단위 = 게시물 (posts 1건 = 저장 호출 1건).
 - 저장 모드는 호출자가 mode='chat'|'markdown' 로 명시 (UI 입력창 선택 반영).
-- 자동 저장 범위: post + sentences + nodes + node_mentions + sentence_categories(축 A)
+- 자동 저장 범위: post + sentences + nodes + node_sentence_mentions + sentence_categories(축 A)
   + node_categories(축 B — TIM.* 규칙만 동기, 나머지는 워커)
-- v15: edges 테이블 자체 폐기. 노드 간 연결은 node_mentions(문장 바구니) + 카테고리
+- v15: edges 테이블 자체 폐기. 노드 간 연결은 node_sentence_mentions(문장 바구니) + 카테고리
   두 축(v20 사용자 heading / 19 대분류) + aliases 세 하이퍼엣지로만 표현.
 - 의미 관계(cause/avoid/similar)는 sentence 원문에 이미 있고, 해석은 외부 지능체 몫.
 
@@ -142,9 +142,13 @@ def _insert_sentence(
 
 
 def _upsert_node(conn, name: str) -> tuple[int, bool]:
-    """노드 삽입 또는 기존 ID 반환. 대소문자 무시, active 노드만 매칭."""
+    """노드 삽입 또는 기존 ID 반환. 대소문자 무시.
+
+    v21 (PLAN-007 M2): status 컬럼 폐기로 'active' 필터 제거.
+    merge_nodes 가 물리 DELETE 로 전환됨에 따라 inactive 노드 자체가 존재하지 않음.
+    """
     row = conn.execute(
-        "SELECT id FROM nodes WHERE name=? COLLATE NOCASE AND status='active' "
+        "SELECT id FROM nodes WHERE name=? COLLATE NOCASE "
         "ORDER BY updated_at DESC LIMIT 1",
         (name,),
     ).fetchone()
@@ -183,6 +187,11 @@ def _upsert_category_path(
     v20 PLAN-004 M3: warnings 리스트가 주어지면 루트 세그먼트가 19 대분류 시드명
     (`SEED_ROOT_NAMES`) 과 일치할 때 경고 메시지 누적. 현재 동작은 시드 트리에
     자동 병합이며, 사용자 의도 충돌 가능성을 `/review` 에 노출하기 위함.
+
+    v21 PLAN-007 M2: 각 세그먼트를 Kiwi 로 토큰화해 nouns 를 `nodes` 에 upsert 하고
+    `node_category_mentions(origin='rule')` 에 매핑. 인출 시 질문 키워드 → 노드 매칭 →
+    카테고리 서브트리 경로가 성립하게 한다. Kiwi 실패·빈 결과는 skip (카테고리 자체
+    저장은 영향 없음).
     """
     if not path:
         return None
@@ -213,6 +222,18 @@ def _upsert_category_path(
             )
             leaf_id = cur.lastrowid
         parent_id = leaf_id
+
+        # v21 PLAN-007 M2: 세그먼트를 Kiwi 로 토큰화 → nodes upsert + node_category_mentions
+        try:
+            tokens = kiwi_extract_for_save(seg)
+            nouns: list[str] = tokens.get("nouns", []) if isinstance(tokens, dict) else []
+        except Exception:
+            nouns = []
+        for noun in nouns:
+            if not noun or not noun.strip():
+                continue
+            node_id, _ = _upsert_node(conn, noun.strip())
+            _add_category_mention(conn, node_id, leaf_id, origin="rule")
     return leaf_id
 
 
@@ -231,8 +252,24 @@ def _add_sentence_category(
 
 def _add_mention(conn, node_id: int, sentence_id: int) -> bool:
     cur = conn.execute(
-        "INSERT OR IGNORE INTO node_mentions (node_id, sentence_id) VALUES (?,?)",
+        "INSERT OR IGNORE INTO node_sentence_mentions (node_id, sentence_id) VALUES (?,?)",
         (node_id, sentence_id),
+    )
+    return cur.rowcount > 0
+
+
+def _add_category_mention(
+    conn, node_id: int, category_id: int, origin: str = "rule"
+) -> bool:
+    """노드 ↔ 카테고리 하이퍼엣지 멤버십 insert (PLAN-007 M2).
+
+    heading 문자열을 Kiwi 로 토큰화해 얻은 node 들을 category_id 에 매핑.
+    origin='rule' — 규칙(형태소) 기반 자동 생성.
+    """
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO node_category_mentions (node_id, category_id, origin) "
+        "VALUES (?,?,?)",
+        (node_id, category_id, origin),
     )
     return cur.rowcount > 0
 
@@ -692,7 +729,7 @@ def save(
 def rollback(sentence_ids: list[int], node_ids: list[int], db_path: str = DB_PATH) -> dict:
     """문장/노드 삭제. v15: edges 폐기로 문장 단위 롤백이 기본.
 
-    sentence_ids: 삭제할 sentence들 (node_mentions CASCADE)
+    sentence_ids: 삭제할 sentence들 (node_sentence_mentions CASCADE)
     node_ids: 공출현 참조가 없는 노드만 실제 삭제 (고아 정리)
     """
     conn = get_connection(db_path)
@@ -709,7 +746,7 @@ def rollback(sentence_ids: list[int], node_ids: list[int], db_path: str = DB_PAT
             orphan_ids = [
                 r[0] for r in conn.execute(
                     f"""SELECT id FROM nodes WHERE id IN ({ph})
-                        AND id NOT IN (SELECT node_id FROM node_mentions)""",
+                        AND id NOT IN (SELECT node_id FROM node_sentence_mentions)""",
                     node_ids,
                 ).fetchall()
             ]
@@ -733,7 +770,7 @@ def split_node(
     db_path: str = DB_PATH,
 ) -> dict:
     """동명이의어 분리: 같은 이름 노드를 둘로 쪼개되, 지정한 sentence들의
-    node_mentions를 새 노드로 이관. v15: edges 테이블 폐기로 문장 단위 이관만 수행."""
+    node_sentence_mentions를 새 노드로 이관. v15: edges 테이블 폐기로 문장 단위 이관만 수행."""
     conn = get_connection(db_path)
     try:
         orig = conn.execute("SELECT id, name FROM nodes WHERE id=?", (node_id,)).fetchone()
@@ -752,7 +789,7 @@ def split_node(
         if sentence_ids_to_move:
             ph = ",".join("?" * len(sentence_ids_to_move))
             cur2 = conn.execute(
-                f"""UPDATE node_mentions SET node_id=?
+                f"""UPDATE node_sentence_mentions SET node_id=?
                     WHERE node_id=? AND sentence_id IN ({ph})""",
                 [new_id, node_id, *sentence_ids_to_move],
             )
@@ -786,11 +823,11 @@ def merge_nodes(
             return {"error": "node not found"}
 
         conn.execute(
-            """INSERT OR IGNORE INTO node_mentions (node_id, sentence_id, created_at)
-               SELECT ?, sentence_id, created_at FROM node_mentions WHERE node_id=?""",
+            """INSERT OR IGNORE INTO node_sentence_mentions (node_id, sentence_id, created_at)
+               SELECT ?, sentence_id, created_at FROM node_sentence_mentions WHERE node_id=?""",
             (keep_id, remove_id),
         )
-        cur_m = conn.execute("DELETE FROM node_mentions WHERE node_id=?", (remove_id,))
+        cur_m = conn.execute("DELETE FROM node_sentence_mentions WHERE node_id=?", (remove_id,))
         mentions_moved = cur_m.rowcount
 
         conn.execute(
@@ -802,6 +839,16 @@ def merge_nodes(
         )
         conn.execute("DELETE FROM node_categories WHERE node_id=?", (remove_id,))
 
+        # v21 PLAN-007 M2: node_category_mentions 도 이관
+        conn.execute(
+            """INSERT OR IGNORE INTO node_category_mentions
+               (node_id, category_id, origin, created_at)
+               SELECT ?, category_id, origin, created_at
+               FROM node_category_mentions WHERE node_id=?""",
+            (keep_id, remove_id),
+        )
+        conn.execute("DELETE FROM node_category_mentions WHERE node_id=?", (remove_id,))
+
         aliases_moved = []
         for r in conn.execute("SELECT alias FROM aliases WHERE node_id=?", (remove_id,)).fetchall():
             aliases_moved.append(r["alias"])
@@ -812,10 +859,10 @@ def merge_nodes(
             (remove["name"], keep_id),
         )
 
-        conn.execute(
-            "UPDATE nodes SET status='inactive', updated_at=datetime('now') WHERE id=?",
-            (remove_id,),
-        )
+        # v21 PLAN-007 M2: soft-delete (status='inactive') 대신 물리 DELETE.
+        # 모든 하이퍼엣지 (node_sentence_mentions·node_category_mentions·aliases) 가
+        # keep_id 로 이관된 뒤라 무결성 영향 없음. 원칙 10 "도메인은 관찰" 준수.
+        conn.execute("DELETE FROM nodes WHERE id=?", (remove_id,))
 
         conn.commit()
     finally:
@@ -839,8 +886,8 @@ def find_suspected_typos(db_path: str = DB_PATH) -> list[dict]:
     try:
         rows = conn.execute(
             """SELECT n.id, n.name,
-                  (SELECT COUNT(*) FROM node_mentions WHERE node_id=n.id) AS mention_count
-               FROM nodes n WHERE n.status='active'"""
+                  (SELECT COUNT(*) FROM node_sentence_mentions WHERE node_id=n.id) AS mention_count
+               FROM nodes n"""
         ).fetchall()
     finally:
         conn.close()
@@ -960,7 +1007,7 @@ def get_sentence_impact(sentence_id: int, db_path: str = DB_PATH) -> dict:
     try:
         mentions = conn.execute(
             """SELECT n.id, n.name
-               FROM node_mentions m
+               FROM node_sentence_mentions m
                JOIN nodes n ON n.id = m.node_id
                WHERE m.sentence_id = ?""",
             (sentence_id,),
@@ -986,7 +1033,7 @@ def update_sentence(
     (게시물 단위 재저장은 post 수정 API를 통해). Phase 2에서는 최소 인터페이스만."""
     conn = get_connection(db_path)
     try:
-        conn.execute("DELETE FROM node_mentions WHERE sentence_id = ?", (sentence_id,))
+        conn.execute("DELETE FROM node_sentence_mentions WHERE sentence_id = ?", (sentence_id,))
         conn.execute(
             "UPDATE sentences SET text = ?, updated_at = datetime('now') WHERE id = ?",
             (new_text, sentence_id),
@@ -1002,7 +1049,7 @@ def delete_sentence(sentence_id: int, db_path: str = DB_PATH) -> dict:
     conn = get_connection(db_path)
     try:
         mentions_deleted = conn.execute(
-            "SELECT COUNT(*) FROM node_mentions WHERE sentence_id = ?",
+            "SELECT COUNT(*) FROM node_sentence_mentions WHERE sentence_id = ?",
             (sentence_id,),
         ).fetchone()[0]
         conn.execute("DELETE FROM sentences WHERE id = ?", (sentence_id,))

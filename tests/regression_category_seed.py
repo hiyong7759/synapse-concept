@@ -158,8 +158,73 @@ def case_seed_reproduction() -> bool:
     return ok
 
 
+def case_m2_node_category_mapping() -> bool:
+    """PLAN-007 M2 — node_category_mentions 매핑 동작 검증.
+
+    취업규칙 저장 후 _upsert_category_path 가 heading 을 Kiwi 로 토큰화해
+    node_category_mentions 에 올바르게 insert 했는지 확인.
+    """
+    print("\n=== CASE: PLAN-007 M2 — node_category_mentions 매핑 ===")
+    from engine import save as save_mod
+    from engine.db import get_connection, DB_PATH
+
+    _fresh_db_dir()
+    text = _load_chwi_gyuchik_text()
+    save_mod.save(text, mode="markdown", use_llm=False, db_path=DB_PATH)
+
+    conn = get_connection(DB_PATH)
+    try:
+        ncm_count = conn.execute("SELECT COUNT(*) FROM node_category_mentions").fetchone()[0]
+        # 의미 토큰별 매핑 검증
+        def cat_names_for_token(tok: str) -> list[str]:
+            rows = conn.execute(
+                """SELECT c.name FROM node_category_mentions ncm
+                   JOIN nodes n ON n.id = ncm.node_id
+                   JOIN categories c ON c.id = ncm.category_id
+                   WHERE n.name = ?""",
+                (tok,),
+            ).fetchall()
+            return [r["name"] for r in rows]
+
+        h_cats = cat_names_for_token("휴가")
+        y_cats = cat_names_for_token("연차")
+        j_cats = cat_names_for_token("징계")
+        ss_cats = cat_names_for_token("수습")
+        gg_cats = cat_names_for_token("기간")
+    finally:
+        conn.close()
+
+    ok = True
+    ok &= _passed(
+        "node_category_mentions 에 최소 100 건 이상 매핑",
+        ncm_count >= 100,
+        f"count={ncm_count}",
+    )
+    ok &= _passed(
+        "'휴가' 노드 → 여러 휴가 관련 카테고리 매핑",
+        len(h_cats) >= 3 and any("휴가" in n for n in h_cats),
+        f"cats={h_cats[:5]}",
+    )
+    ok &= _passed(
+        "'연차' 노드 → 연차 관련 카테고리 매핑",
+        len(y_cats) >= 1 and any("연차" in n for n in y_cats),
+        f"cats={y_cats[:5]}",
+    )
+    ok &= _passed(
+        "'징계' 노드 → 여러 징계 관련 카테고리 매핑",
+        len(j_cats) >= 3 and any("징계" in n for n in j_cats),
+        f"cats={j_cats[:5]}",
+    )
+    ok &= _passed(
+        "'수습' · '기간' 노드 → 수습기간 조 매핑 (복합어 토큰화 검증)",
+        any("수습기간" in n for n in ss_cats) and any("수습기간" in n for n in gg_cats),
+        f"수습={ss_cats[:3]}, 기간={gg_cats[:3]}",
+    )
+    return ok
+
+
 def main() -> int:
-    cases = [case_seed_reproduction]
+    cases = [case_seed_reproduction, case_m2_node_category_mapping]
     results = [c() for c in cases]
     passed = sum(results)
     print(f"\n요약: {passed}/{len(results)} 통과")
