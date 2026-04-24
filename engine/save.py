@@ -70,7 +70,7 @@ from .llm import (
     llm_meta_filter,
     save_pronoun,
 )
-from .markdown import parse_markdown
+from .markdown import normalize_hash_syntax, parse_markdown
 from .tokenizer import extract_for_save as kiwi_extract_for_save
 
 
@@ -573,20 +573,10 @@ def _save_one_item(
 _VALID_MODES = ("chat", "markdown")
 
 
-def _parse_for_chat(text: str) -> list[tuple[Optional[str], str, str]]:
-    """chat 모드 파서 — heading 해석 안 함. 각 줄 (None, 'free', 줄) 로 분리.
-
-    사용자가 `#야근` 처럼 해시태그 감각으로 입력해도 sentence 로 저장된다.
-    빈 줄은 무시하고 각 줄은 strip 처리.
-
-    v19 M2: markdown 파서와 튜플 모양 통일 (kind 'free').
-    """
-    result: list[tuple[Optional[str], str, str]] = []
-    for raw in text.split("\n"):
-        line = raw.strip()
-        if line:
-            result.append((None, "free", line))
-    return result
+# v20 (PLAN-005 M1): _parse_for_chat 폐기. chat 도 parse_markdown 경유로 통일 —
+# normalize_hash_syntax 가 `#분류` 를 표준 heading 으로 정규화한 뒤 parse_markdown
+# 이 (path, kind, text) 튜플을 만든다. heading sentence INSERT 정책은 _save_one_item
+# 의 kind=='heading' 분기에서 일원화.
 
 
 def save(
@@ -604,15 +594,16 @@ def save(
       - 'markdown' : heading + list + 자유 문장 혼재. parse_markdown 으로 경로 상속.
       호출자가 UI 입력창 선택에 따라 필수로 지정. 기본값 없음.
 
+    v20 (PLAN-005 M1):
+    - 진입 시 normalize_hash_syntax 1회 호출 — `#분류` → `# 분류`, 두 번째 공백 → 개행.
+    - posts.markdown 에는 정규화된 형태만 저장 (DB 엄격성 — 원문 복원 안 함).
+    - chat 도 parse_markdown 경유로 통일 (_parse_for_chat 폐기).
+    - 메타 필터 대상: chat·markdown 모두 list·free 만 (heading·key_value 제외).
+
     v19 흐름:
     - 매 save() 호출 = posts 1건 INSERT (mode 를 input_mode 컬럼에 저장).
-    - chat (M1): 모든 줄 (None, 'free', line) → category_path 없이 일반 sentence.
-                 save-pronoun 호출, 메타 필터 전체 대상.
-    - markdown (M2): parse_markdown (category_path, kind, text) 반환.
-                 save-pronoun 전체 skip, 메타 필터는 list · free 만 대상.
-                 heading 은 sentence INSERT 안 하고 카테고리 path 만 등록, key_value 는
-                 원문 "key:: value" 그대로 저장.
-    - 진입부 메타 필터 1회 (use_llm=True 시). 실패·MLX 다운 시 skip.
+    - save-pronoun: chat 만 호출, markdown 전체 skip (장문 병목 해소).
+    - 메타 필터 1회 (use_llm=True 시). 실패·MLX 다운 시 skip.
     - 각 항목은 _save_one_item() 이 Kiwi-first 파이프라인(①~⑦) 으로 kind 별 분기 처리.
     - 상태 레이어 없음 (v18: extract-state 폐기, sentences.status 컬럼 삭제).
     """
@@ -621,29 +612,31 @@ def save(
             f"save(mode=): 'chat' 또는 'markdown' 필수, 받은 값: {mode!r}"
         )
 
+    # v20 (PLAN-005 M1): 진입부 정규화 — DB 에는 정규화된 텍스트만 저장
+    text = normalize_hash_syntax(text)
+
     result = SaveResult()
 
     conn = get_connection(db_path)
     try:
-        parsed = _parse_for_chat(text) if mode == "chat" else parse_markdown(text)
+        parsed = parse_markdown(text)
         if not parsed:
             conn.commit()
             return result
 
-        # posts 1건 INSERT (원본 마크다운 + input_mode 보관)
+        # posts 1건 INSERT (정규화된 마크다운 + input_mode 보관)
         post_id = _insert_post(conn, text, input_mode=mode)
         result.post_id = post_id
 
         # 모드별 파이프라인 스위치
         # - use_pronoun: chat 만 save-pronoun 호출. markdown 전체 skip.
-        # - meta_filter_positions: 메타 필터 대상 index (chat=전체, markdown=list·free).
+        # - meta_filter_positions: 메타 필터 대상 (chat·markdown 모두 list·free 만).
+        #   v20 (PLAN-005 M1): chat 도 parse_markdown 경유로 통일됨에 따라 메타 필터
+        #   대상도 markdown 과 동일 정책 — heading·key_value 는 메타 대화일 수 없음.
         use_pronoun = mode == "chat"
-        if mode == "chat":
-            meta_filter_positions = list(range(len(parsed)))
-        else:
-            meta_filter_positions = [
-                i for i, (_, k, _) in enumerate(parsed) if k in ("list", "free")
-            ]
+        meta_filter_positions = [
+            i for i, (_, k, _) in enumerate(parsed) if k in ("list", "free")
+        ]
 
         # 진입부 메타 필터 (v17) — LLM 사용 시만. 실패·MLX 다운 시 빈 집합(과포함 허용)
         # 대상 문장만 LLM 에 넘기고, 반환된 상대 idx 를 전역 position 으로 역매핑.

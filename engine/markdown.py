@@ -1,4 +1,4 @@
-"""마크다운 파서 — heading 경로 + kind 별 항목 분리 (v19 — PLAN-003 M2).
+"""마크다운 파서 — heading 경로 + kind 별 항목 분리 (v20 — PLAN-005 M1).
 
 입력 텍스트를 (category_path, kind, text) 튜플 스트림으로 변환.
 
@@ -12,6 +12,13 @@ kind 체계:
                 빈 줄은 무시, strip 후 저장.
 
 heading 없으면 category_path 는 모두 None.
+
+v20 변경점 (PLAN-005 M1):
+- `normalize_hash_syntax(text)` 신설 — `#분류` → `# 분류`, 두 번째 공백 → 개행.
+  save() 진입부에서 mode 무관하게 1회 호출, posts.markdown 에 정규화 후 저장.
+- heading 자연 상속 — 점 포함 heading 의 path_stack.clear() 분기 제거. 점 포함
+  이름도 한 깊이에 통째로 push 하고, _upsert_category_path 가 점 split 해서
+  다단 categories 저장. (`# A` + `## B.C` → `A.B.C`)
 
 v12 → v19 변경점:
 - 반환 튜플 확장: (path, text) → (path, kind, text). kind 추가.
@@ -58,17 +65,12 @@ def parse_markdown(text: str) -> list[tuple[str | None, str, str]]:
             depth = len(hm.group(1))
             name = hm.group(2).strip()
 
-            # 점 구분 경로: # 더나은.개발부.개발팀
-            if "." in name:
-                parts = name.split(".")
-                path_stack.clear()
-                for i, part in enumerate(parts):
-                    path_stack.append((i + 1, part.strip()))
-            else:
-                # 같은 깊이 또는 상위로 돌아가면 스택 정리
-                while path_stack and path_stack[-1][0] >= depth:
-                    path_stack.pop()
-                path_stack.append((depth, name))
+            # v20 (PLAN-005 M1): 자연 상속 — 점 포함 heading 도 일반 heading 과 동일하게
+            # depth 기준 pop·push. 점 분리는 _upsert_category_path 가 담당.
+            # 같은 깊이 또는 상위로 돌아가면 스택 정리
+            while path_stack and path_stack[-1][0] >= depth:
+                path_stack.pop()
+            path_stack.append((depth, name))
             # heading 자체도 결과에 포함 (save.py 가 path 등록만 하고 sentence INSERT skip)
             result.append((current_path(), "heading", name))
             continue
@@ -96,6 +98,68 @@ def parse_markdown(text: str) -> list[tuple[str | None, str, str]]:
         result.append((current_path(), "free", line))
 
     return result
+
+
+def normalize_hash_syntax(text: str) -> str:
+    """`#` 분류 문법을 마크다운 표준 형태로 정규화 (DB 저장 직전 1회 호출 — PLAN-005 M1).
+
+    규칙:
+    1. **줄 첫 문자가 `#` 인 줄만** 정규화 대상. 앞에 공백 있으면 평문.
+    2. `#분류` → `# 분류` — `#` 뒤 공백이 없으면 하나 삽입.
+    3. `# 분류 본문…` → `# 분류\\n본문…` — 분류명 뒤 첫 공백을 개행으로 치환.
+    4. **분류명 비면 정규화 안 함** (`#`, `# `, `#\\n본문` 등). 평문 처리.
+    5. **첫 `#` 만 분류** — 줄 안의 두 번째 이후 `#` 은 평문 (분리 후 본문 줄에 그대로).
+
+    분류명은 사용자 책임 — 시스템은 자동 변환·구두점 제거 안 함. `_`, `.`, `?`,
+    빈 점 세그먼트(`A..B`) 모두 그대로 저장.
+    """
+    out_lines: list[str] = []
+    for line in text.split("\n"):
+        # 규칙 1: 줄 첫 문자가 `#` 이 아니면 평문
+        if not line.startswith("#"):
+            out_lines.append(line)
+            continue
+
+        # `#` 개수 카운트 (depth)
+        i = 0
+        while i < len(line) and line[i] == "#":
+            i += 1
+        hashes = line[:i]
+        rest = line[i:]
+
+        # 규칙 4: rest 가 비면 분류명 없음 → 평문
+        if not rest:
+            out_lines.append(line)
+            continue
+
+        # `#` 뒤 공백이 있으면 떼고, 없으면 그대로 → content = 분류명+본문 후보
+        if rest[0] == " ":
+            content = rest[1:]
+        else:
+            content = rest
+
+        # 규칙 4: 분류명 자체가 비면 평문
+        if not content.strip():
+            out_lines.append(line)
+            continue
+
+        # 규칙 3: 분류명 뒤 첫 공백 → 개행 분리. 없으면 분류만 (본문 없음)
+        sp_idx = content.find(" ")
+        if sp_idx == -1:
+            out_lines.append(f"{hashes} {content}")
+        else:
+            cat = content[:sp_idx]
+            body = content[sp_idx + 1:].lstrip()
+            if cat and body:
+                out_lines.append(f"{hashes} {cat}")
+                out_lines.append(body)
+            elif cat:
+                out_lines.append(f"{hashes} {cat}")
+            else:
+                # cat 빈 경우 (예: rest=" 본문" 만 있는 비정상) → 원문 보존
+                out_lines.append(line)
+
+    return "\n".join(out_lines)
 
 
 def has_heading(text: str) -> bool:
