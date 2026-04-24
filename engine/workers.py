@@ -97,11 +97,28 @@ def category_worker(
             continue
         conn = get_connection(db_path)
         try:
+            # v21 PLAN-007 M3: "BOD.medical" 같은 대분류 코드를 categories.id 로 역매핑 후
+            # node_category_mentions 에 insert. 매핑 실패 (카테고리 없음) 시 skip.
             for cat in categories:
+                if "." in cat:
+                    root, sub = cat.split(".", 1)
+                    row = conn.execute(
+                        """SELECT c.id FROM categories c
+                           JOIN categories p ON p.id = c.parent_id
+                           WHERE c.name = ? AND p.name = ? AND p.parent_id IS NULL""",
+                        (sub, root),
+                    ).fetchone()
+                else:
+                    row = conn.execute(
+                        "SELECT id FROM categories WHERE name=? AND parent_id IS NULL",
+                        (cat,),
+                    ).fetchone()
+                if not row:
+                    continue
                 cur = conn.execute(
-                    "INSERT OR IGNORE INTO node_categories "
-                    "(node_id, major_category, origin) VALUES (?,?,?)",
-                    (node_id, cat, "ai"),
+                    "INSERT OR IGNORE INTO node_category_mentions "
+                    "(node_id, category_id, origin) VALUES (?,?,?)",
+                    (node_id, row["id"], "ai"),
                 )
                 inserted += cur.rowcount
             conn.commit()

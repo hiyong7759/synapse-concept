@@ -3,10 +3,10 @@
 원칙:
 - 입력 단위 = 게시물 (posts 1건 = 저장 호출 1건).
 - 저장 모드는 호출자가 mode='chat'|'markdown' 로 명시 (UI 입력창 선택 반영).
-- 자동 저장 범위: post + sentences + nodes + node_sentence_mentions + sentence_categories(축 A)
-  + node_categories(축 B — TIM.* 규칙만 동기, 나머지는 워커)
-- v15: edges 테이블 자체 폐기. 노드 간 연결은 node_sentence_mentions(문장 바구니) + 카테고리
-  두 축(v20 사용자 heading / 19 대분류) + aliases 세 하이퍼엣지로만 표현.
+- 자동 저장 범위: post + sentences + nodes + node_sentence_mentions + sentence_categories
+  + node_category_mentions (축 A·B 통합, v21 PLAN-007 M3)
+- v15: edges 테이블 자체 폐기. 노드 간 연결은 node_sentence_mentions(문장 바구니)
+  + node_category_mentions(카테고리 바구니) + aliases(별칭 바구니) 세 하이퍼엣지로만 표현.
 - 의미 관계(cause/avoid/similar)는 sentence 원문에 이미 있고, 해석은 외부 지능체 몫.
 
 v20 변경점 (PLAN-004 M1 — 카테고리 재설계):
@@ -14,8 +14,9 @@ v20 변경점 (PLAN-004 M1 — 카테고리 재설계):
   heading path segments 를 상위→하위로 categories upsert 하고 말단 category_id 만
   sentence_categories 에 origin='user' 로 INSERT. 과거 "Kiwi 노드 전부에 heading
   경로 부여" 하던 과포함 제거.
-- 축 B(19 대분류 의미 태깅) = node_categories.major_category. 저장 시점엔 결정론적
-  규칙(TIM.* 자동 태깅) 만 origin='system' 으로 INSERT. AI 분류는 워커가 담당.
+- 축 B(19 대분류 의미 태깅) = v21 PLAN-007 M3 에서 node_category_mentions 로 흡수.
+  TIM.* 자동 태깅은 categories 트리의 시드 노드(id=117 TIM, 118 year 등) 에 노드를
+  node_category_mentions(origin='rule') 로 INSERT. AI 분류는 같은 테이블에 origin='ai'.
 - 호출자 API 변경 없음 (save(text, mode=) 동일).
 
 v19 변경점 (PLAN-003 M1 — chat 모드 정립):
@@ -45,7 +46,7 @@ v17 파이프라인 변경:
 
 v15-A2 저장 정책 (v17 유지):
 - 동기 단계에서 aliases는 user·system origin만 INSERT (Wikidata·LLM 추천 경로 없음).
-- 동기 단계에서 node_categories는 TIM.* 규칙 시드만 (AI 분류는 워커).
+- 동기 단계에서 node_category_mentions 는 TIM.* 규칙 시드만 (AI 분류는 워커).
 - AI 카테고리 분류와 external 별칭 수집은 저장 완료 이벤트로 넘기고 백그라운드 워커가
   담당. save() 는 commit 성공 후 등록된 훅을 호출한다 (register_post_save_hook).
 
@@ -158,22 +159,9 @@ def _upsert_node(conn, name: str) -> tuple[int, bool]:
     return cur.lastrowid, True
 
 
-def _add_node_major_category(
-    conn, node_id: int, major_category: Optional[str], origin: str = "system"
-) -> None:
-    """축 B: 노드 → 19 대분류 코드 INSERT (v20).
-
-    origin:
-      - 'ai'     LLM 분류 워커 (백그라운드, 기본 경로)
-      - 'system' 결정론적 엔진 규칙 (TIM.* 자동 태깅 등)
-      - 'user'   /review 에서 수동 교정
-    """
-    if not major_category:
-        return
-    conn.execute(
-        "INSERT OR IGNORE INTO node_categories (node_id, major_category, origin) VALUES (?,?,?)",
-        (node_id, major_category, origin),
-    )
+# v21 PLAN-007 M3: _add_node_major_category 폐기. 노드-카테고리 매핑은
+# _add_category_mention (node_category_mentions) 로 일원화. 19 대분류 태깅 필요 시에도
+# categories 트리의 시드 노드(PER·BOD 등) 에 node_category_mentions insert 하면 됨.
 
 
 def _upsert_category_path(
@@ -593,10 +581,19 @@ def _save_one_item(
         nid, is_new = _upsert_node(conn, name)
         if _add_mention(conn, nid, sid):
             result.mentions_added += 1
-        # 축 B — TIM.* 자동 major_category (origin='system')
+        # v21 PLAN-007 M3: TIM.* 자동 태깅을 node_category_mentions 로 이관.
+        # "TIM.year" 같은 문자열을 categories 시드 노드의 id 로 역매핑 후 insert.
         tim_cat = _tim_category_for(name)
-        if tim_cat:
-            _add_node_major_category(conn, nid, tim_cat, origin="system")
+        if tim_cat and "." in tim_cat:
+            root, sub = tim_cat.split(".", 1)
+            row = conn.execute(
+                """SELECT c.id FROM categories c
+                   JOIN categories p ON p.id = c.parent_id
+                   WHERE c.name = ? AND p.name = ? AND p.parent_id IS NULL""",
+                (sub, root),
+            ).fetchone()
+            if row:
+                _add_category_mention(conn, nid, row["id"], origin="rule")
         if is_new:
             result.nodes_added.append(name)
             result.node_ids_added.append(nid)
@@ -779,11 +776,9 @@ def split_node(
 
         cur = conn.execute("INSERT INTO nodes (name) VALUES (?)", (orig["name"],))
         new_id = cur.lastrowid
-        conn.execute(
-            "INSERT OR IGNORE INTO node_categories (node_id, major_category, origin) "
-            "SELECT ?, major_category, origin FROM node_categories WHERE node_id=?",
-            (new_id, node_id),
-        )
+        # v21 PLAN-007 M3: node_categories 폐기. 카테고리 매핑은 node_category_mentions.
+        # split 시 새 노드는 카테고리 매핑을 물려받지 않음 — 원 노드 기준 유지.
+        # (필요 시 사용자가 /review 로 명시적 이관 가능.)
 
         moved = 0
         if sentence_ids_to_move:
@@ -830,16 +825,7 @@ def merge_nodes(
         cur_m = conn.execute("DELETE FROM node_sentence_mentions WHERE node_id=?", (remove_id,))
         mentions_moved = cur_m.rowcount
 
-        conn.execute(
-            """INSERT OR IGNORE INTO node_categories
-               (node_id, major_category, origin, created_at)
-               SELECT ?, major_category, origin, created_at
-               FROM node_categories WHERE node_id=?""",
-            (keep_id, remove_id),
-        )
-        conn.execute("DELETE FROM node_categories WHERE node_id=?", (remove_id,))
-
-        # v21 PLAN-007 M2: node_category_mentions 도 이관
+        # v21 PLAN-007 M3: node_categories 폐기. 카테고리 매핑은 node_category_mentions.
         conn.execute(
             """INSERT OR IGNORE INTO node_category_mentions
                (node_id, category_id, origin, created_at)

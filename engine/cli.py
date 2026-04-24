@@ -32,7 +32,6 @@ def cmd_stats() -> None:
     print(f"  노드-카테고리 언급 {stats['node_category_mentions_total']} (node_category_mentions)")
     print(f"  카테고리 마스터 {stats['categories_master']} (categories 트리 — 시드 19 대분류 + 사용자 heading)")
     print(f"  축 A 문장-카테고리 {stats['sentence_categories_total']} (sentence_categories, 사용자 heading 주 매핑)")
-    print(f"  축 B 노드-대분류 {stats['node_categories_total']} (node_categories.major_category, M3 폐기 예정)")
     print(f"  별칭 {stats['aliases_total']}")
     print(f"  미해결 토큰 {stats['unresolved_total']}")
 
