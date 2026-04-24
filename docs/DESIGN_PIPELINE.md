@@ -1,6 +1,6 @@
 # Synapse 설계 — 저장/인출/대화 파이프라인
 
-**최종 업데이트**: 2026-04-23 (v20 계획 — PLAN-004 "카테고리 재설계" · `categories` · `sentence_categories` 신설, `node_categories` 를 19 대분류 태깅용으로 재정의. 선행 v19: `posts.input_mode` 신설. v18: 상태 레이어 제거 / `sentences.status` / `extract-state` 폐기. v17: Kiwi-first + 메타 필터 + origin `rule→system`)
+**최종 업데이트**: 2026-04-24 (v22 계획 — post 가 "세션 그릇" 으로 일반화. `kind ∈ {chat, markdown, synapse, insight}` 4 모드. `synapse` 인출·융합 모드는 질문·답을 역사로만 기록(노드 편입 안 함). `insight` 는 사용자 명시 승격 → 시냅스 세션 retrieve 캐시 노드 전부와 허브 연결. 선행 v21: PLAN-007 `node_mentions` → `node_sentence_mentions`, `node_categories` → `node_category_mentions` 통합. v20: PLAN-004 카테고리 재설계. v19: `posts.input_mode` 신설. v18: 상태 레이어 제거. v17: Kiwi-first + origin `rule→system`)
 
 ## 근본 목표
 
@@ -8,26 +8,30 @@
 
 ---
 
-## DB 스키마 (v20 계획 · v19 현재)
+## DB 스키마 (v22 계획)
 
 ```sql
-posts:               id, markdown, input_mode('chat'|'markdown'), created_at, updated_at
-sentences:           id, post_id, position, text, role('user'|'assistant'), created_at, updated_at
-nodes:               id, name, status('active'|'inactive'), created_at, updated_at
-node_mentions:       node_id, sentence_id, created_at                                        — PK(node_id, sentence_id)
-categories:          id, name, parent_id, created_at                                         — v20 신설, UNIQUE(parent_id, name), INDEX(parent_id)
-sentence_categories: sentence_id, category_id, origin('user'|'ai'|'system'|'external'), created_at  — v20 신설, PK(sentence_id, category_id)
-node_categories:     node_id, major_category, origin('user'|'ai'|'system'|'external'), created_at   — v20 재정의, PK(node_id, major_category)
-aliases:             alias TEXT PRIMARY KEY, node_id, origin('user'|'ai'|'system'|'external'), created_at
-unresolved_tokens:   sentence_id, token, created_at                                          — PK(sentence_id, token)
+posts:                  id, kind('chat'|'markdown'|'synapse'|'insight'), title, source, created_at, updated_at
+sentences:              id, post_id NOT NULL, position, text, role('user'|'assistant'), origin(NULL|'user'|'insight'), created_at, updated_at
+nodes:                  id, name, created_at, updated_at
+node_sentence_mentions: node_id, sentence_id, origin('user'|'ai'|'system'|'external'), created_at  — PK(node_id, sentence_id)
+categories:             id, name, parent_id, created_at                                            — UNIQUE(parent_id, name), INDEX(parent_id)
+sentence_categories:    sentence_id, category_id, origin('user'|'ai'|'system'|'external'), created_at  — PK(sentence_id, category_id)
+node_category_mentions: node_id, category_id, origin('user'|'ai'|'system'|'external'), created_at     — v21 통합, PK(node_id, category_id)
+aliases:                alias TEXT PRIMARY KEY, node_id, origin('user'|'ai'|'system'|'external'), created_at
+unresolved_tokens:      sentence_id, token, created_at                                             — PK(sentence_id, token)
 ```
 
-**v20 계획 변경점(PLAN-004)**: 카테고리 재설계 — `node_categories` 가 혼용하던 두 역할을 두 축으로 분리.
-- **`categories` 신설** — 사용자 heading 계층 마스터 (adjacency list, `parent_id` FK). 19 대분류 시드 루트 19 개 + 사용자 정의 루트 공존.
-- **`sentence_categories` 신설** — 문장 ↔ 사용자 카테고리 연결 (주 매핑). heading 말단 카테고리만 등록, `origin` 유지.
-- **`node_categories` 재정의** — `category TEXT` → `major_category TEXT`. 19 대분류 코드(`CATEGORY_SYSTEMPROMPT.md` 상수, 약 100 개)만 저장, CATEGORY 워커 전용. heading 경로 저장 금지.
-- 마이그레이션: 기존 `node_categories.category` 문자열이 heading path 이면 `categories` 분해 + `sentence_categories` 재배선, 19 대분류 코드면 `major_category` 로 보존.
-- 저장 파이프라인: 저장 시점에 `sentence_categories` 만 INSERT (heading 말단), `node_categories` 는 백그라운드 워커로 이관.
+**v22 계획 변경점**: post 를 "세션 그릇" 으로 일반화.
+- **`posts.kind`** — `input_mode` 리네임 + 값 확장. 4 모드 (`chat`/`markdown`/`synapse`/`insight`).
+- **`posts.title`** — 목록 표시용. 첫 행 자동, 사용자 편집 가능. NULL 허용.
+- **`posts.source`** — `markdown` 리네임. 세션 전체 원본 누적 저장 (모드별 포맷 다름). NULL 허용.
+- **`sentences.post_id NOT NULL`** — "미아 sentence 없음". assistant 응답도 그 대화 post 에 귀속.
+- **`sentences.origin`** — 통찰 식별용. `NULL`/`'user'`/`'insight'`. `'insight'` 는 편집 불가 + retrieve 가중치 +.
+
+**v21 변경점**: `node_mentions` → `node_sentence_mentions` 리네임, `node_categories` → `node_category_mentions` 통합 (축 A·B 흡수). `nodes.status` 폐기 (merge_nodes 물리 DELETE).
+
+**v20 변경점**: 카테고리 재설계 — `categories` · `sentence_categories` 신설로 heading 계층 분리.
 
 **v19 변경점(PLAN-003 M1)**: `posts.input_mode` 컬럼 신설. 저장 모드를 사용자 명시(UI 입력창 선택)로 기록 — `'chat'` / `'markdown'` 양자택일. 저장 파이프라인은 이 값을 보고 parse·save-pronoun·메타 필터 분기를 결정한다. 상세는 `docs/DESIGN_INPUT_MODES_AND_RETRIEVAL.md`.
 
@@ -57,18 +61,27 @@ unresolved_tokens:   sentence_id, token, created_at                             
 
 모든 하이퍼그래프 변경은 **자동 저장**된다. `sentence_categories`(사용자 heading 축) · `node_categories`(19 대분류 축) · `aliases` 모두 저장 시점에 `origin`을 부여받아 즉시 DB에 들어간다. 사용자는 `/review`의 AI·규칙 목록 뷰에서 잘못된 항목을 삭제할 수 있다. 유일한 예외는 `unresolved_tokens`(치환 실패 지시어) + 파괴적 작업(`merge_nodes`, 아카이브)이다.
 
-### 입력 모드 (v19 계획 — 사용자 명시 2-모드)
+### 입력 모드 (v22 계획 — 4 모드)
 
-**모드는 UI 입력창 선택으로 결정**한다. `save()` 호출자는 `mode='chat'` / `mode='markdown'` 중 하나를 **필수** 로 지정. 자동 판정(`has_heading()`) 폐기. 결정된 모드는 `posts.input_mode` 에 그대로 저장된다.
+**모드는 UI 라우트 선택으로 결정**한다. `save()` · `retrieve()` 호출자는 `kind` 를 **필수** 지정. 자동 판정 없음. 결정된 모드는 `posts.kind` 에 그대로 저장된다.
 
-| 모드 | API `mode` | DB `input_mode` | 주된 용도 |
-|---|---|---|---|
-| **chat** | `'chat'` | `'chat'` | 메신저 스타일 평문, 즉흥 기록 |
-| **markdown** | `'markdown'` | `'markdown'` | heading·key-value·list·자유 문장 혼재 구조화 기록 |
+| 모드 | 라우트 | save 파이프라인 | 노드 편입 | 용도 |
+|---|---|---|---|---|
+| **chat** | `/chat` | save-pronoun ✓, 메타 필터 전체, Kiwi 노드 추출 | ✓ | 메신저 스타일 평문 축적 |
+| **markdown** | `/compose` | save-pronoun ✗ (공문서 원형 보존), 메타 필터 자유문장·list, parse_markdown heading 경로 상속 | ✓ | 구조화된 글 축적 |
+| **synapse** | `/synapse` | save-pronoun ✗, 메타 필터 ✗, retrieve 후 답 생성, 질문·답 sentence 로 기록 | **✗ (역사만)** | 인출·융합 세션 |
+| **insight** | 승격 전용 | 시냅스 세션의 retrieve 노드 전부와 `node_sentence_mentions` 일괄 INSERT | ✓ (허브) | 사용자 승격 통찰 1 본체 |
 
-두 모드의 저장 파이프라인 분기 차이(메타 필터 대상·save-pronoun skip·parse_markdown kind 별 처리)는 바로 아래 "파이프라인 흐름" 섹션 + 요약표 참고. 전체 명세는 **`docs/DESIGN_INPUT_MODES_AND_RETRIEVAL.md`**.
+**모드 차이의 근거** (원칙 13 참조):
+- `chat` vs `markdown` — save-pronoun 차이는 **문서 성격** (일상 대화 vs 공식 문서). heading 경로 차이는 **입력 문법의 유무**. Kiwi 노드 추출 + 19 대분류 태깅은 두 모드 동일.
+- `synapse` — 저장이 아니라 **인출·조합** 이므로 파이프라인이 다르게 탄다. 질문·답은 `sentences` 에 `role='user'`/`'assistant'` 로 기록되지만 `node_sentence_mentions` 편입 없음 (원칙 15-1).
+- `insight` — 시냅스 세션 메시지의 사용자 승격으로만 생성. 본체 1 sentence, 시냅스 세션의 retrieve 캐시 노드 전부와 자동 허브 연결 (Hebbian — 원칙 15-2).
 
-**`structure-suggest` 폐기 (v17)** — 기존 v16 까지는 평문 입력 시 LLM 이 heading 초안을 강제로 달아 마크다운 모드로 재진입시켰으나, 2026-04-21 dogfood 에서 14건 중 6건이 같은 날짜 heading 으로 뭉쳐 "카테고리 공유 = 연결" 원칙을 무력화. 평문은 평문인 채로 저장하는 것이 원칙 4·원칙 9 와 일치. v19 의 사용자 명시 모드 분리는 이 방향의 연장 — 저장 시점에 모델/규칙이 구조를 판정하지 않는다.
+전체 명세는 **`docs/DESIGN_INPUT_MODES_AND_RETRIEVAL.md`**.
+
+**`structure-suggest` 폐기 (v17)** — 기존 v16 까지는 평문 입력 시 LLM 이 heading 초안을 강제로 달아 마크다운 모드로 재진입시켰으나, 2026-04-21 dogfood 에서 14건 중 6건이 같은 날짜 heading 으로 뭉쳐 "카테고리 공유 = 연결" 원칙을 무력화. 평문은 평문인 채로 저장하는 것이 원칙 4·원칙 9 와 일치. v19 의 사용자 명시 모드 분리, v22 의 4 모드 확장은 이 방향의 연장 — 저장 시점에 모델/규칙이 구조를 판정하지 않는다.
+
+**자연어 → 마크다운 핫키 (v22)** — `markdown` 모드 에디터 전용. 사용자가 STT 로 자연어 입력 → 핫키(`⌘⇧M` 등) → LLM 이 현재 에디터 내용을 마크다운 문법으로 정제 → in-place 치환 → 사용자 추가 편집 후 저장. 채팅 모드엔 제공하지 않는다 (모드 경계 흐리지 않기 — 원칙 14 참조).
 
 ### 마크다운 모드 예시
 
