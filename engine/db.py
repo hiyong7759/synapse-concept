@@ -1,4 +1,17 @@
-"""Synapse DB — SQLite v21 스키마 (PLAN-007 M2).
+"""Synapse DB — SQLite v22 스키마 (PLAN-20260424-SYN-v22rewrite M3).
+
+v22 변경점 (2026-04-24):
+- posts 를 "세션 그릇" 으로 확장 (4 모드 통용):
+  · 리네임 input_mode → kind, CHECK 값 확장 ('chat','markdown','synapse','insight')
+  · 리네임 markdown → source + NULL 허용 (모드별 원본 포맷 공통 누적 저장소)
+  · 신설 title (목록 표시용, NULL 허용)
+- sentences 강화:
+  · post_id NOT NULL 강제 (assistant 응답도 같은 post 에 귀속, 미아 sentence 폐지)
+  · 신설 origin TEXT NULL CHECK(NULL|'user'|'insight') — 통찰 승격 sentence 표식
+- 통찰 허브(Hebbian): kind='insight' post 생성 시 synapse 세션 retrieve 결과 노드를
+  node_sentence_mentions 에 일괄 INSERT (코드 구현은 M4, 스키마만 M3 에서 수용).
+- "DB 리셋 전제": v21 이하 DB 는 _is_current_schema 에서 False → 기존 경로로 백업 후
+  v22 재생성. 레거시 v14~v19 무손실 마이그레이션 함수는 유지 (M11 에서 일괄 정리).
 
 v21 변경점 (2026-04-24):
 - 하이퍼엣지 매핑 단일 대칭 구조:
@@ -63,18 +76,21 @@ DB_PATH = os.path.join(DATA_DIR, "synapse.db")
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS posts (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    markdown   TEXT    NOT NULL,
-    input_mode TEXT    NOT NULL DEFAULT 'chat' CHECK(input_mode IN ('chat', 'markdown')),
+    kind       TEXT    NOT NULL DEFAULT 'chat'
+                       CHECK(kind IN ('chat', 'markdown', 'synapse', 'insight')),
+    title      TEXT,
+    source     TEXT,
     created_at TEXT    NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS sentences (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    post_id         INTEGER REFERENCES posts(id) ON DELETE CASCADE,
+    post_id         INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
     position        INTEGER NOT NULL DEFAULT 0,
     text            TEXT    NOT NULL,
     role            TEXT    NOT NULL DEFAULT 'user' CHECK(role IN ('user', 'assistant')),
+    origin          TEXT             CHECK(origin IS NULL OR origin IN ('user', 'insight')),
     created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
     updated_at      TEXT    NOT NULL DEFAULT (datetime('now'))
 );
@@ -242,6 +258,43 @@ def _check_posts_input_mode_constraint(conn: sqlite3.Connection) -> bool:
     return "input_mode" in row[0] and "'chat'" in row[0] and "'markdown'" in row[0]
 
 
+def _check_posts_kind_constraint(conn: sqlite3.Connection) -> bool:
+    """v22: posts.kind CHECK 제약이 4 모드 (chat/markdown/synapse/insight) 를 모두 포함하는지 검사."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='posts'"
+    ).fetchone()
+    if not row or not row[0]:
+        return False
+    sql = row[0]
+    return (
+        "kind" in sql
+        and "'chat'" in sql
+        and "'markdown'" in sql
+        and "'synapse'" in sql
+        and "'insight'" in sql
+    )
+
+
+def _is_col_notnull(conn: sqlite3.Connection, table: str, column: str) -> bool:
+    """pragma table_info 의 notnull 필드를 확인 (1=NOT NULL)."""
+    for row in conn.execute(f"PRAGMA table_info({table})").fetchall():
+        # row: (cid, name, type, notnull, dflt_value, pk)
+        if row[1] == column:
+            return bool(row[3])
+    return False
+
+
+def _check_sentences_origin_constraint(conn: sqlite3.Connection) -> bool:
+    """v22: sentences.origin CHECK 제약이 'insight' 값을 허용하는지 검사."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='sentences'"
+    ).fetchone()
+    if not row or not row[0]:
+        return False
+    sql = row[0]
+    return "origin" in sql and "'insight'" in sql
+
+
 _HEADING_RE_FOR_BACKFILL = re.compile(r"^\s*#{1,6}\s+\S", re.MULTILINE)
 
 
@@ -253,10 +306,12 @@ def _has_heading_for_backfill(markdown: str) -> bool:
 
 
 def _is_current_schema(conn: sqlite3.Connection) -> bool:
-    """v21 스키마 여부 확인: v20 요건 + node_sentence_mentions(origin) +
-    node_category_mentions 신설 + nodes.status 폐기."""
+    """v22 스키마 여부 확인. v21 까지의 요건에 더해:
+    - posts: input_mode → kind (4값), markdown → source (nullable), title 신설
+    - sentences: post_id NOT NULL 강제, origin 신설 (NULL|'user'|'insight')
+    """
     tables = _get_tables(conn)
-    # v21: node_sentence_mentions + node_category_mentions 필수. node_categories 폐기.
+    # v21~v22 공통: node_sentence_mentions + node_category_mentions 필수.
     for required in ("sentences", "nodes", "node_sentence_mentions",
                      "node_category_mentions",
                      "aliases", "unresolved_tokens", "posts",
@@ -320,10 +375,22 @@ def _is_current_schema(conn: sqlite3.Connection) -> bool:
     # sentences.updated_at 컬럼 필요 (텍스트 변경 시점 추적)
     if "updated_at" not in sent_cols:
         return False
-    # v19: posts.input_mode 컬럼 + CHECK(chat|markdown) 제약
-    if "input_mode" not in _get_cols(conn, "posts"):
+    # v22: posts 컬럼 구조 — kind / title / source. 구 input_mode / markdown 이 남아있으면 False.
+    posts_cols = _get_cols(conn, "posts")
+    for required_col in ("kind", "title", "source"):
+        if required_col not in posts_cols:
+            return False
+    if "input_mode" in posts_cols or "markdown" in posts_cols:
         return False
-    if not _check_posts_input_mode_constraint(conn):
+    # v22: posts.kind CHECK 제약에 4 모드 모두 포함
+    if not _check_posts_kind_constraint(conn):
+        return False
+    # v22: sentences.post_id NOT NULL 강제 + origin 컬럼 + CHECK('insight')
+    if not _is_col_notnull(conn, "sentences", "post_id"):
+        return False
+    if "origin" not in sent_cols:
+        return False
+    if not _check_sentences_origin_constraint(conn):
         return False
     return True
 
@@ -484,11 +551,15 @@ def _migrate_add_sentences_updated_at(db_path: str) -> None:
 
 
 def _can_add_posts_input_mode(conn: sqlite3.Connection) -> bool:
-    """v19: posts 테이블은 있지만 input_mode 컬럼이 없거나 CHECK 제약이 비는 경우."""
+    """v19: posts 테이블은 있지만 input_mode 컬럼이 없거나 CHECK 제약이 비는 경우.
+    v22 가드: posts.kind 가 이미 있으면 v22+ 신규 스키마이므로 마이그레이션 대상 아님."""
     tables = _get_tables(conn)
     if "edges" in tables or "posts" not in tables:
         return False
-    if "input_mode" not in _get_cols(conn, "posts"):
+    posts_cols = _get_cols(conn, "posts")
+    if "kind" in posts_cols:
+        return False
+    if "input_mode" not in posts_cols:
         return True
     return not _check_posts_input_mode_constraint(conn)
 
@@ -622,7 +693,7 @@ def init_db(db_path: str = DB_PATH) -> str:
                 conn = None
                 backup = _backup_db(db_path)
                 os.remove(db_path)
-                print(f"[db] 구 스키마 감지 → 백업({backup}) 후 v20 재생성: {db_path}")
+                print(f"[db] 구 스키마 감지 → 백업({backup}) 후 v22 재생성: {db_path}")
         finally:
             if conn:
                 conn.close()
@@ -654,8 +725,10 @@ def get_stats(db_path: str = DB_PATH) -> dict:
     conn = get_connection(db_path)
     try:
         posts_total           = conn.execute("SELECT COUNT(*) FROM posts").fetchone()[0]
-        posts_chat            = conn.execute("SELECT COUNT(*) FROM posts WHERE input_mode='chat'").fetchone()[0]
-        posts_markdown        = conn.execute("SELECT COUNT(*) FROM posts WHERE input_mode='markdown'").fetchone()[0]
+        posts_chat            = conn.execute("SELECT COUNT(*) FROM posts WHERE kind='chat'").fetchone()[0]
+        posts_markdown        = conn.execute("SELECT COUNT(*) FROM posts WHERE kind='markdown'").fetchone()[0]
+        posts_synapse         = conn.execute("SELECT COUNT(*) FROM posts WHERE kind='synapse'").fetchone()[0]
+        posts_insight         = conn.execute("SELECT COUNT(*) FROM posts WHERE kind='insight'").fetchone()[0]
         nodes_total           = conn.execute("SELECT COUNT(*) FROM nodes").fetchone()[0]
         nsm_total             = conn.execute("SELECT COUNT(*) FROM node_sentence_mentions").fetchone()[0]
         ncm_total             = conn.execute("SELECT COUNT(*) FROM node_category_mentions").fetchone()[0]
@@ -667,6 +740,8 @@ def get_stats(db_path: str = DB_PATH) -> dict:
         sentences_total       = conn.execute("SELECT COUNT(*) FROM sentences").fetchone()[0]
         sentences_user        = conn.execute("SELECT COUNT(*) FROM sentences WHERE role='user'").fetchone()[0]
         sentences_asst        = conn.execute("SELECT COUNT(*) FROM sentences WHERE role='assistant'").fetchone()[0]
+        # v22: 통찰 승격 sentence 카운트 (origin='insight')
+        sentences_insight     = conn.execute("SELECT COUNT(*) FROM sentences WHERE origin='insight'").fetchone()[0]
         unresolved_total      = conn.execute("SELECT COUNT(*) FROM unresolved_tokens").fetchone()[0]
     finally:
         conn.close()
@@ -674,6 +749,8 @@ def get_stats(db_path: str = DB_PATH) -> dict:
         "posts_total":                     posts_total,
         "posts_chat":                      posts_chat,
         "posts_markdown":                  posts_markdown,
+        "posts_synapse":                   posts_synapse,
+        "posts_insight":                   posts_insight,
         "nodes_total":                     nodes_total,
         "node_sentence_mentions_total":    nsm_total,
         "node_category_mentions_total":    ncm_total,
@@ -683,6 +760,7 @@ def get_stats(db_path: str = DB_PATH) -> dict:
         "sentences_total":          sentences_total,
         "sentences_user":           sentences_user,
         "sentences_assistant":      sentences_asst,
+        "sentences_insight":        sentences_insight,
         "unresolved_total":         unresolved_total,
     }
 

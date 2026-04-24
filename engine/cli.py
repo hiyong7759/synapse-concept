@@ -26,7 +26,16 @@ from typing import Optional
 def cmd_stats() -> None:
     stats = get_stats()
     print(f"DB: {DB_PATH}")
-    print(f"  문장 {stats['sentences_total']} (user={stats['sentences_user']}, assistant={stats['sentences_assistant']})")
+    print(
+        f"  post {stats['posts_total']} "
+        f"(chat={stats['posts_chat']}, markdown={stats['posts_markdown']}, "
+        f"synapse={stats['posts_synapse']}, insight={stats['posts_insight']})"
+    )
+    print(
+        f"  문장 {stats['sentences_total']} "
+        f"(user={stats['sentences_user']}, assistant={stats['sentences_assistant']}, "
+        f"insight={stats['sentences_insight']})"
+    )
     print(f"  노드 {stats['nodes_total']}")
     print(f"  노드-문장 언급 {stats['node_sentence_mentions_total']} (node_sentence_mentions)")
     print(f"  노드-카테고리 언급 {stats['node_category_mentions_total']} (node_category_mentions)")
