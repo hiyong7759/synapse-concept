@@ -1,9 +1,39 @@
 # PLAN-20260424-SYN-007 — 하이퍼그래프 매핑 단일화 + 표준 마크다운 heading 복귀
 
-**상태**: 초안 · 승인 대기
+**상태**: ✅ **완료** (2026-04-24, M0~M4 전부)
 **대체**: PLAN-20260423-SYN-006 (폐기 — 방향 변경)
-**의존**: PLAN-005 M0 (완료), PLAN-005 M1 일부 **되돌림**
+**의존**: PLAN-005 M0 (완료), PLAN-005 M1 규칙 3 **폐기**
 **스키마 변경**: 신설 1·리네임 1·폐기 2·컬럼 폐기 1 (구조 대규모 재편)
+**최종 브랜치**: `feature/hypergraph-mapping-unify` — 머지 대기
+
+### 완료 마일스톤
+
+- ✅ **M0** (커밋 `b94ec5b`): 재현 고정 + PLAN-006 폐기 처리
+- ✅ **M1** (커밋 `e3372b9`): `normalize_hash_syntax` 규칙 3 폐기 → 표준 마크다운 heading
+- ✅ **M2** (커밋 `adbb5ed`): 스키마 v21 (`node_sentence_mentions`·`node_category_mentions` 신설, `nodes.status` 폐기) + Kiwi 토큰화 매핑
+- ✅ **M3** (커밋 `1e2e85d`): 인출 경로 교체 + `node_categories` 폐기 + 축 A·B 단일화
+- ✅ **M4**: DESIGN_HYPERGRAPH v21 반영 + dogfood 재실행 리포트
+
+### 실측 달성 (M4 dogfood)
+
+| 질문 | 이전 (v20) | 이후 (v21) |
+|---|---|---|
+| 연차 휴가 며칠이야 | `[]` | ✅ 2 건 |
+| 징계 사유 뭐 있어 | `[]` | ✅ 2 건 |
+| 수습기간 얼마야 | `[]` | ✅ 2 건 |
+| 임산부 보호 | `[]` | ✅ 2 건 |
+| 회사·야근·피곤 | `[]` | `[]` (데이터 한계 — heading 에 해당 단어 부재 또는 Kiwi 사전 밖) |
+
+**4/7 매칭** — PLAN §성공 기준 "최소 4 건" 달성. 상세는 `DOGFOOD-REPORT-PLAN-007.md`.
+
+### 마이그레이션 정책 (M4 확정)
+
+- **v20 → v21 자동 전환**: `engine/db.py:init_db` 의 `_is_current_schema(conn)` 판정이 v21 기준으로 갱신됨. 구 스키마 감지 → 자동 백업 (`synapse.db.backup-YYYYMMDD-HHMMSS`) + v21 재생성.
+- **무손실 마이그레이션 함수는 구현하지 않음** — 이유:
+  1. 사용자 실제 로컬 DB 는 빈 상태 (2026-04-24 본 PLAN 착수 시점 확인)
+  2. `node_mentions` 리네임 + origin 추가 + `node_categories` TEXT → categories FK 역매핑 + `nodes.status` DROP 이 동시에 필요해 구현 복잡도 ↑
+  3. 백업은 남기므로 필요 시 수동 복구 경로 존재
+- **영향 평가**: 프로덕션 데이터 없음. 빈 DB 상태라 재생성 비용 0.
 
 ---
 
