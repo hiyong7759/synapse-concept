@@ -59,11 +59,13 @@ Synapse는 데이터 관리 및 운영 주체가 아니다. 도구 제공자다.
 ## 아키텍처 구조
 
 ```
-개인 앱 (클라이언트)
-  └── 단일 하이퍼그래프 (온디바이스)
-  └── 온디바이스 LLM (MLX — api/mlx_server.py)
-  └── 오프라인 기본값
+개인 앱 (클라이언트 — Flutter, iOS·Android·macOS·Windows)
+  └── 단일 하이퍼그래프 (온디바이스, sqflite)
+  └── 온디바이스 LLM (llamadart 인프로세스 — Gemma 4 E2B 4bit GGUF + LoRA 핫스왑, HTTP 없음)
+  └── 풀 오프라인 기본값
   └── 조직 연결 시: 조직 서버에 조회 요청 → 맥락 인출에 활용
+
+(Python frozen 환경 — 학습·dogfood: MLX 서버 (api/mlx_server.py) 별도 운영. 알고리즘 참조 구현)
 
 조직 서버 (자체 인프라)
   └── 조직 하이퍼그래프만 운영

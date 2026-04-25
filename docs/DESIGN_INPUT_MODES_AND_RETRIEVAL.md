@@ -269,11 +269,13 @@ v22 는 앱 재작성과 병행되며, 다음 이유로 **DB 리셋**이 기본 
 
 `engine/db.py` 의 `_is_current_schema` 가 v22 요건(`posts.kind`·`posts.title`·`posts.source` + `sentences.origin` + `sentences.post_id NOT NULL` + CHECK 확장)을 점검하고, 미일치 시 **자동 백업(`.backup-<timestamp>`) → 파일 삭제 → v22 재생성** 경로를 탄다. 사용자가 별도로 ALTER 를 실행할 필요 없음.
 
-### 호출자 영향 (v22 2차안)
+### 호출자 영향
+
+**Python frozen 환경** (v22 1차안에서 구현·freeze 됨, 학습·dogfood·참조 구현 용도):
 
 | 호출부 | 변경 |
 |---|---|
-| `engine.cli` 대화형 | `kind='note'` (입력은 단일 그릇) |
+| `engine.cli` 대화형 (Python frozen) | `kind='note'` (입력은 단일 그릇) |
 | `api/routes/graph.py` `POST /note` | 새 note post 생성 + 첫 source 저장 |
 | `api/routes/graph.py` `PATCH /posts/{id}` | 자동저장 — `posts.source` 만 갱신 (LLM 호출 없음) |
 | `api/routes/graph.py` `POST /posts/{id}/process` | 의미 처리 — sentences 재계산 + LLM 정정 후보 생성 (사용자 명시 트리거) |
@@ -281,25 +283,53 @@ v22 는 앱 재작성과 병행되며, 다음 이유로 **DB 리셋**이 기본 
 | `api/routes/graph.py` `POST /promote` | `kind='insight'` post 생성. source sentence_id + node_ids 받음 |
 | 테스트 | 각 테스트 의도에 맞는 `kind` 명시 |
 
+**Flutter 환경** (v22 2차안, [`PLAN-20260425-SYN-flutter-rewrite.md`](../deliverables/SYN/20260425/user/PLAN-20260425-SYN-flutter-rewrite.md) F1~F10 에서 신규 구현):
+
+| 호출부 | 동등 동작 |
+|---|---|
+| `synapse_engine.SynapseFlow.noteAutosave` | `posts.source` UPDATE (LLM 미사용, <50ms) |
+| `synapse_engine.SynapseFlow.noteProcess` | sentences 재계산 + LLM 정정 후보 (사용자 명시 트리거, ⌘S / "정리") |
+| `synapse_engine.SynapseFlow.synapseTurn` | `kind='synapse'` post — retrieve + answer + 세션 기록 |
+| `synapse_engine.SynapseFlow.promoteToInsight` | `kind='insight'` post 생성 + retrieve 캐시 노드 일괄 허브 연결 |
+| `synapse_engine.SynapseFlow.listPosts/getPost/...` | post 목록·재진입·삭제 |
+
+엔진 패키지 API 세부는 `DESIGN_ENGINE.md §2`.
+
 ---
 
-## 구현 경계 (PLAN-v22-rewrite 범위)
+## 구현 경계 — 두 PLAN 의 분담
 
-**범위 내**
-- `posts` 스키마 변경 (kind 리네임·3값 enum·title·source 리네임). M3·M3.1 에서 처리
-- `sentences.post_id NOT NULL` 강제 + `origin` 신설. M3 에서 처리
-- `save()` 단일 경로 (mode 인자 폐지). M4·M4.1 에서 처리
+### PLAN-v22-rewrite (v22 1차안, Python — M1~M5 완료, freeze)
+
+**완료된 범위**:
+- `posts` 스키마 변경 (kind 리네임·3값 enum·title·source 리네임). M3·M3.1
+- `sentences.post_id NOT NULL` 강제 + `origin` 신설. M3
+- `save()` 단일 경로 (mode 인자 폐지). M4·M4.1
 - `/note`, `/synapse` 라우트 (`/chat`·`/compose` 통합)
-- 자동저장 vs 의미 처리 두 층 분리 + 정정 후보 생성. M6 에서 처리
-- `/promote` API 및 `promote_to_insight()` 엔진 함수. M4 에서 처리
-- synapse retrieve 결과 노드 캐시 (승격 시 참조). M4 에서 처리
-- 자동저장 상태 + 의미 처리 트리거 + 정정 카드 UI. M8 에서 처리
+- 자동저장 vs 의미 처리 두 층 분리 + 정정 후보 생성. M6
+- `/promote` API 및 `promote_to_insight()` 엔진 함수. M4
+- synapse retrieve 결과 노드 캐시 (승격 시 참조). M4
+- 설계 문서 8 개 v22 2차안 정합. M5
 
-**범위 외 (후속 PLAN)**
-- 하이퍼그래프 뷰 (`/hypergraph`) 재작성
-- `/review` 통찰 삭제 승인 UI
-- 온보딩 재작성
-- 조직 모드 UI
+이 작업은 학습·dogfood·참조 구현 환경으로 freeze. Flutter 측 구현이 알고리즘을 그대로 가져간다.
+
+### PLAN-flutter-rewrite (v22 2차안, Flutter — F0~F10 진행 중)
+
+**범위 내** ([`PLAN-20260425-SYN-flutter-rewrite.md`](../deliverables/SYN/20260425/user/PLAN-20260425-SYN-flutter-rewrite.md) 참조):
+- `synapse_engine` Dart 패키지 신규 (2 계층 API: SynapseFlow / LlmTasks / GraphOps). F1~F5
+- DB 스키마 v22 2차안 (`allowedKinds` 컨스트럭터 유연성). F2
+- llamadart 인프로세스 + LoRA 핫스왑 + Kiwi WASM. F3·F4
+- 시냅스 Flutter 앱 `/note`·`/synapse` (모바일 우선·데스크톱 통합). F6~F8
+- iOS·Android·macOS 통합 검증. F9
+- 설계 정합 + 문서 갱신. F0·F10
+
+**범위 외 (후속 PLAN)**:
+- 갑질 어댑터 6 개 audit · 갑질 v22 엔진 적용
+- 하이퍼그래프 뷰 (`/hypergraph`)
+- `/review` 통찰 삭제 UI
+- 온보딩 / 조직 모드 UI
+- 첫 실행 모델 다운로드 인프라 + 모델 카탈로그 UI
+- 다른 베이스용 어댑터 학습 (Qwen·Phi 등)
 - LLM 정정 프롬프트 정교화 (실측 후 별도 PLAN)
 
 ---
