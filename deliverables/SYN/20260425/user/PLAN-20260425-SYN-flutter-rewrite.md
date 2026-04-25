@@ -3,7 +3,7 @@
 **상태**: 승인 대기
 **브랜치**: `feature/v22-rewrite` (이어서) 또는 `feature/flutter-rewrite` (분기, 결정 필요)
 **작성일**: 2026-04-25
-**선행 PLAN**: [`PLAN-20260424-SYN-v22rewrite.md`](../../20260424/user/PLAN-20260424-SYN-v22rewrite.md) — M1~M5 완료 (설계 정합 + Python 측 v22 1차안 구현)
+**선행 PLAN**: PLAN-20260424-SYN-v22rewrite (M1~M5 완료, Python 측 v22 1차안 구현 — git tracked 외, 로컬 보존)
 
 ---
 

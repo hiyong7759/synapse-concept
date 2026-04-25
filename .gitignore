@@ -36,7 +36,10 @@ runpod_output/
 *.backup-*
 *.bak
 
-# Flutter/Dart build artifacts
-synapse_engine/.dart_tool/
-synapse_engine/.flutter-plugins-dependencies
-synapse_engine/pubspec.lock
+# Flutter/Dart build artifacts (모든 위치)
+**/.dart_tool/
+**/.flutter-plugins-dependencies
+**/pubspec.lock
+
+# 옛 Vite 시도 흔적
+**/.vite/
