@@ -21,7 +21,12 @@ export 'src/llm/inference_backend.dart' show InferenceBackend, LlmError;
 export 'src/llm/tasks.dart' show LlmTasks, ContextSentence, Correction;
 export 'src/prompts/loader.dart' show PromptKey;
 
-// F4~F5 will append:
+// F4 — graph + Kiwi surfaces.
+export 'src/graph/ops.dart' show GraphOps;
+export 'src/kiwi/kiwi_wasm.dart' show KiwiBackend;
+export 'src/kiwi/tokens.dart' show KiwiToken;
+export 'src/models/graph_models.dart'
+    show Node, Sentence, Mention, Alias, TypoCandidate, EngineStats;
+
+// F5 will append:
 //   export 'src/flow/synapse_flow.dart';
-//   export 'src/graph/ops.dart';
-//   export 'src/models/...';

@@ -6,13 +6,13 @@ version: 0.0.1
 publish_to: none
 
 environment:
-  sdk: ">=3.10.7 <4.0.0"
+  sdk: ">=3.11.0 <4.0.0"
   flutter: ">=3.16.0"
 
 # Runtime dependencies are added incrementally per milestone:
 #   F2 (DB):    sqflite, sqflite_common_ffi, path, path_provider   ← active
 #   F3 (LLM):   llamadart                                          ← active
-#   F4 (Kiwi):  kiwi-nlp WASM binding
+#   F4 (Kiwi):  flutter_kiwi_nlp                                   ← active
 # See docs/DESIGN_ENGINE.md §1 for the full stack.
 dependencies:
   flutter:
@@ -22,6 +22,7 @@ dependencies:
   path: ^1.9.0
   path_provider: ^2.1.0
   llamadart: ^0.6.10
+  flutter_kiwi_nlp: ^0.1.3
 
 dev_dependencies:
   flutter_test:
