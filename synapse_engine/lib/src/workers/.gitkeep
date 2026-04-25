@@ -1,0 +1,1 @@
+F-followup — background workers (category classification, Wikidata alias enrichment) triggered by sentence-committed events. See docs/DESIGN_PIPELINE.md.

@@ -1,0 +1,24 @@
+name: synapse_engine
+description: >-
+  On-device hypergraph engine. Two-layer API (SynapseFlow / LlmTasks / GraphOps)
+  for personal knowledge apps. Self-contained, fully offline (sqflite + llamadart + kiwi-nlp).
+version: 0.0.1
+publish_to: none
+
+environment:
+  sdk: ">=3.2.0 <4.0.0"
+  flutter: ">=3.16.0"
+
+# F1 scaffold — runtime dependencies are added incrementally:
+#   F2 (DB):    sqflite, sqflite_common_ffi, path, path_provider
+#   F3 (LLM):   llamadart
+#   F4 (Kiwi):  kiwi-nlp WASM binding
+# See docs/DESIGN_ENGINE.md §1 for the full stack.
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0

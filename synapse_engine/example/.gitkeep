@@ -1,0 +1,1 @@
+F5+ — minimal headless Dart CLI showing the engine in use. Targets gabjil-style reuse: noteAutosave → noteProcess → synapseTurn flow without Flutter UI.

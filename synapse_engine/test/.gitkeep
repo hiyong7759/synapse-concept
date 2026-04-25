@@ -1,0 +1,1 @@
+F2+ — unit/ (db, llm, graph, flow, review) + integration/ (save→retrieve, full pipeline, --no-llm offline) + fixtures/.
