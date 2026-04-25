@@ -1,10 +1,8 @@
 # Synapse 설계 — 카테고리 분류체계
 
-**최종 업데이트**: 2026-04-25 (v22 2차안 — v21 PLAN-007 에서 두 축이 단일 매핑 (`node_category_mentions`) 으로 통합되었음을 본문 전체 반영. 19 대분류 시드는 `categories` 트리의 루트로 살아있고, 노드 ↔ 카테고리 멤버십은 `node_category_mentions` 단일 매핑이 담당. 사용자 heading 계층은 `categories` + `sentence_categories`. v20 의 두 축 분리 표현은 v21 통합 이후 모순이라 폐기. v22 2차안에서는 모바일·데스크톱 Flutter 환경의 `synapse_engine.GraphOps` 가 본 매핑을 노출.)
-
 ## 목적
 
-엣지 테이블 없는 구조에서 노드 간 "의미적 연결" 은 세 경로로 드러난다 (v21 단일 매핑 통합 후):
+엣지 테이블 없는 구조에서 노드 간 "의미적 연결" 은 세 경로로 드러난다:
 
 1. **공출현** — `node_sentence_mentions` (같은 sentence 에 함께 언급된 노드)
 2. **카테고리 공유** — `node_category_mentions` (같은 category 에 묶인 노드 + 인접 맵 한 홉)
@@ -14,11 +12,9 @@
 - **19 대분류 시드 루트** — `CATEGORY_SYSTEMPROMPT.md` 의 약 100 개 고정 카테고리. 마이그레이션 시점에 시드.
 - **사용자 heading 계층** — 마크다운 heading 으로 명시한 경로가 adjacency list 로 누적.
 
-**`node_category_mentions`** (v21 신설, v20 의 `node_categories` 통합)
-노드 ↔ 카테고리 멤버십. `(node_id, category_id, origin)`. AI 워커는 19 대분류 시드 루트로, 사용자 정정·heading Kiwi 토큰화는 임의 카테고리 노드로 매핑. FK 로 연결되어 카테고리 리네임 안전.
+**`node_category_mentions`** — 노드 ↔ 카테고리 단일 매핑. `(node_id, category_id, origin)`. AI 워커는 19 대분류 시드 루트로, 사용자 정정·heading Kiwi 토큰화는 임의 카테고리 노드로 매핑. FK 로 연결되어 카테고리 리네임 안전.
 
-**`sentence_categories`** (v20 신설, 유지)
-문장 ↔ 카테고리. heading 말단 카테고리만 등록. `(sentence_id, category_id, origin)`.
+**`sentence_categories`** — 문장 ↔ 카테고리. heading 말단 카테고리만 등록. `(sentence_id, category_id, origin)`.
 
 ### 카테고리가 하는 세 가지 일
 
@@ -38,7 +34,7 @@
 
 ---
 
-## 저장 방식 (v21 통합 후)
+## 저장 방식
 
 ### `categories` 마스터 + `sentence_categories`
 
@@ -53,7 +49,7 @@
 | `user` | 마크다운 heading 경로 (사용자 명시) | `# 더나은\n## 개발팀` → 문장 → `sentence_categories(sid, 개발팀.id, 'user')` |
 | `system` | 결정론적 엔진 규칙 (doc_mode 계층 등) | 법령 `제12조` 하위 문장 → `(sid, 제12조.id, 'system')` |
 
-### `node_category_mentions` (v21 신설, v20 의 `node_categories` 통합)
+### `node_category_mentions`
 
 - 스키마: `(node_id, category_id, origin, created_at)`, PK `(node_id, category_id)`. FK 로 연결.
 - `category_id` 는 `categories` 의 어떤 행이든 가능 — 19 대분류 시드 루트일 수도, 사용자 heading 노드일 수도 있다.
@@ -74,7 +70,7 @@
 
 ---
 
-## 분류체계 (v2 — 19개 대분류)
+## 분류체계 — 19 대분류
 
 형식: `대분류코드.소분류코드` (영문 소문자)
 예시: `BOD.disease`, `TEC.hw`, `MON.spending`
@@ -296,7 +292,7 @@ BFS 보완 시 같은 대분류 외에 인접 소분류도 추가 조회한다.
 인접 맵 구성 5개 원칙은 **`docs/DESIGN_PRINCIPLES.md §4` 카테고리·인접 맵 원칙** 참고.
 (소분류 레벨 · 크로스 대분류만 · 단방향 정의·양방향 적용 · 약한 연관 제외 · 데이터 기반 검증)
 
-### 인접 맵 (v2 — 소분류 레벨)
+### 인접 맵 — 소분류 레벨
 
 ```
 # BOD (신체·건강)
@@ -617,7 +613,7 @@ ADJACENT_SUBCATEGORIES: dict[str, list[str]] = _build_adjacent_map(_ADJACENT_PAI
 데이터가 쌓이면 카테고리 간 **문장 바구니 공출현 빈도**로 인접 맵을 검증·보완한다.
 
 ```sql
--- 카테고리 간 공출현 빈도 쿼리 (v21 단일 매핑 기준)
+-- 카테고리 간 공출현 빈도 쿼리
 SELECT
     c1.id AS cat_a,
     c2.id AS cat_b,
@@ -645,9 +641,9 @@ ORDER BY cooccur_count DESC;
 
 ## 참조
 
-- 스키마: `docs/DESIGN_HYPERGRAPH.md` — `categories` 마스터 · `sentence_categories` · `node_category_mentions` (v21 단일 매핑)
+- 스키마: `docs/DESIGN_HYPERGRAPH.md` — `categories` 마스터 · `sentence_categories` · `node_category_mentions`
 - 인출 파이프라인: `docs/DESIGN_PIPELINE.md` — 세 경로 BFS (문장 바구니 + 카테고리 공유 + 사용자 heading 서브트리)
 - 카테고리 시스템 프롬프트: `docs/CATEGORY_SYSTEMPROMPT.md` (베이스 모델 주입 — CATEGORY 워커 전용)
 - 구현 (Python frozen): `engine/workers.py`·`engine/retrieve.py`
-- 구현 (Flutter, PLAN F4 신규): `synapse_engine` 의 `lib/src/graph/ops.dart`·`lib/src/graph/bfs.dart` — `addCategoryMention`·`bfsRetrieve` 가 같은 알고리즘 재현
-- PLAN: `deliverables/SYN/20260422/user/PLAN-20260422-SYN-004-category-redesign.md` (v20 시점) · `deliverables/SYN/20260423/user/PLAN-20260423-SYN-007-hyperedge-unify.md` (v21 통합) · [`PLAN-20260425-SYN-flutter-rewrite.md`](../deliverables/SYN/20260425/user/PLAN-20260425-SYN-flutter-rewrite.md) (v22 2차안 Flutter 재시작)
+- 구현 (Flutter): `synapse_engine` 의 `lib/src/graph/ops.dart`·`lib/src/graph/bfs.dart` — `addCategoryMention`·`bfsRetrieve` 가 같은 알고리즘 재현
+- PLAN: [`PLAN-20260425-SYN-flutter-rewrite.md`](../deliverables/SYN/20260425/user/PLAN-20260425-SYN-flutter-rewrite.md)

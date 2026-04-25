@@ -1,6 +1,4 @@
-# synapse_engine — Dart 패키지 설계 (v22 2차안)
-
-**최종 업데이트**: 2026-04-25 (v22 2차안 — Flutter 재시작에 맞춰 **2 계층 API** 로 갈아엎음. 상위 `SynapseFlow` (시냅스 앱 전용 흐름) + 하위 `LlmTasks`·`GraphOps` (도메인 무관 자유 호출). `allowedKinds`/`reservedKinds` 컨스트럭터 유연성으로 시냅스 앱·갑질 등 다른 도메인 앱이 같은 패키지를 공유. Kiwi WASM 통합. 풀 오프라인 (HTTP·MLX 서버 없음). 선행 v15·v16·v17 의 단일 `SynapseEngine` 클래스 + 6 메서드 안은 폐기.)
+# synapse_engine — Dart 패키지 설계
 
 > **연관 PLAN**: [`PLAN-20260425-SYN-flutter-rewrite.md`](../deliverables/SYN/20260425/user/PLAN-20260425-SYN-flutter-rewrite.md) §4 — 본 문서의 2 계층 API 가 PLAN 의 단일 출처.
 
@@ -10,8 +8,8 @@
 - **풀 오프라인** — `sqflite` + `llamadart` (llama.cpp 바인딩) + `kiwi-nlp` (WASM). HTTP 서버·외부 API 일절 없음.
 - **2 계층 API** — 시냅스 흐름(`SynapseFlow`)은 시냅스 앱 전용, 그래프·LLM 원자 작업(`GraphOps`/`LlmTasks`)은 도메인 무관. 갑질은 `SynapseFlow` 를 비활성화하고 하위 두 계층만 쓴다.
 - **kind 유연성** — `posts.kind` CHECK 가 `allowedKinds` 컨스트럭터 인자로 동적 결정. `reservedKinds` 에 `synapse`·`insight` 가 있을 때만 `SynapseFlow` 활성.
-- **저장 두 층 분리 (v22 2차안)** — 자동저장(LLM 미사용) vs 의미 처리(사용자 명시 트리거). 원칙은 `DESIGN_PRINCIPLES.md §1 원칙 9·13·14`, 파이프라인은 `DESIGN_PIPELINE.md`.
-- **archive/synapse_engine_v15/** — v15 시점 Dart 엔진. 데이터 흐름은 폐기, **인프라 코드 (llamadart 통합·LoRA 핫스왑)** 만 참고.
+- **저장 두 층 분리** — 자동저장(LLM 미사용) vs 의미 처리(사용자 명시 트리거). 원칙은 `DESIGN_PRINCIPLES.md §1 원칙 9·13·14`, 파이프라인은 `DESIGN_PIPELINE.md`.
+- **`archive/synapse_engine_v15/`** — 검증된 인프라 코드 (llamadart 통합·LoRA 핫스왑) 참조용 보존.
 
 ---
 
@@ -25,7 +23,7 @@ synapse_engine/                ← Dart 패키지 (private 또는 pub.dev)
 │   │   ├── engine.dart        ← SynapseEngine 컨스트럭터 + DI 컨테이너
 │   │   ├── config.dart        ← EngineConfig + allowedKinds/reservedKinds
 │   │   ├── db/
-│   │   │   ├── schema.dart    ← v22 2차안 DDL (9 테이블 + CHECK 동적)
+│   │   │   ├── schema.dart    ← DDL (9 테이블 + CHECK 동적)
 │   │   │   ├── migrations.dart
 │   │   │   └── seed.dart      ← 19 대분류 시드
 │   │   ├── flow/
@@ -398,12 +396,12 @@ class LlamadartBackend {
 }
 ```
 
-베이스 모델 + LoRA 어댑터는 `archive/synapse_engine_v15/` 의 v15 시점 통합 코드를 그대로 재사용. 데이터 흐름·스키마는 폐기 대상이지만 인프라 (모델 로딩·핫스왑·thinking 블록 제거) 는 검증된 자산이라 복사해서 v22 2차안 위에 얹는다.
+베이스 모델 + LoRA 어댑터는 `archive/synapse_engine_v15/` 의 통합 코드를 인프라 (모델 로딩·핫스왑·thinking 블록 제거) 만 그대로 재사용.
 
-### 어댑터 정책 (v22 2차안 — 단일 모델 고정)
+### 어댑터 정책 — 단일 모델 고정
 
 - **베이스 모델**: Gemma 4 E2B-it 4bit GGUF (~1.2GB). 앱 번들 고정. 모델 카탈로그·다운로드 인프라는 후속 PLAN.
-- **어댑터**: `retrieve-expand` (GGUF, 52MB) 만 번들. `save-pronoun`/`meta-filter`/`typo-normalize`/`synapse-answer`/`retrieve-filter` 는 **베이스 + 시스템 프롬프트** 로 처리 (v18 폐기 정책 연장).
+- **어댑터**: `retrieve-expand` (GGUF, 52MB) 만 번들. `save-pronoun`/`meta-filter`/`typo-normalize`/`synapse-answer`/`retrieve-filter` 는 **베이스 + 시스템 프롬프트** 로 처리.
 - **시스템 프롬프트**: `assets/prompts/` 에 `SAVE_PRONOUN_SYSTEMPROMPT.md`·`META_FILTER_SYSTEMPROMPT.md`·`TYPO_NORMALIZE_SYSTEMPROMPT.md` 등을 번들. `LlmTasks` 가 태스크별로 골라 사용.
 
 ---
@@ -449,7 +447,7 @@ class LlamadartBackend {
 class SynapseEngine {
   Stream<SentenceCommittedEvent> get onSentenceCommitted;
   Stream<NodeCreatedEvent> get onNodeCreated;
-  Stream<InsightPromotedEvent> get onInsightPromoted;  // v22 신설
+  Stream<InsightPromotedEvent> get onInsightPromoted;
 }
 ```
 
@@ -495,17 +493,17 @@ engine.onSentenceCommitted.listen((e) {
 | F2 | §3·DB | sqflite DB 생성 + 9 테이블 + 19 대분류 시드 + `posts.kind` CHECK 가 `allowedKinds` 반영 |
 | F3 | §5 + §2.2 | `LlmTasks` 6 태스크 단위 호출 (베이스 + retrieve-expand 어댑터) |
 | F4 | §4 + §2.3 | Kiwi WASM 토큰화 + `GraphOps` 원자 작업 + BFS 시나리오 (Python `engine/retrieve.py` 와 동등 결과) |
-| F5 | §2.1 + §6·§7 | `SynapseFlow` 4 경로 단위 스모크 (Python 측 v22 1차안 M4 스모크 시나리오와 동등) |
+| F5 | §2.1 + §6·§7 | `SynapseFlow` 4 경로 단위 스모크 (Python 참조 구현의 M4 스모크 시나리오와 동등) |
 
 ---
 
 ## 12. 참고 자산
 
-- `archive/synapse_engine_v15/` — v15 시점 Dart 엔진. **인프라만 참고** (llamadart·LoRA 핫스왑·thinking 블록 제거)
-- `archive/app_react_v21/` — v21 React 웹앱. UX 참고용
-- `engine/`, `api/` (Python) — v22 1차안 frozen. 파이프라인 알고리즘 참조 구현
+- `archive/synapse_engine_v15/` — Dart 엔진 인프라 참고 (llamadart·LoRA 핫스왑·thinking 블록 제거)
+- `archive/app_react_v21/` — React 웹앱 UX 참고
+- `engine/`, `api/` (Python) — 파이프라인 알고리즘 참조 구현 (frozen)
 - `docs/DESIGN_PRINCIPLES.md` — 원칙 9·11·13·14·15 (저장 두 층 분리·지능체 분리·로컬 제약·UI 의무·통찰)
-- `docs/DESIGN_HYPERGRAPH.md` — v22 2차안 스키마 (9 테이블)
+- `docs/DESIGN_HYPERGRAPH.md` — 스키마 (9 테이블)
 - `docs/DESIGN_PIPELINE.md` — 자동저장·의미 처리·인출 파이프라인 세부
 - `docs/DESIGN_INPUT_MODES_AND_RETRIEVAL.md` — note 단일 그릇 + LLM 호출 요약
 - `docs/DESIGN_MOBILE.md` — 디바이스 벤치마크·앱 번들 정책
