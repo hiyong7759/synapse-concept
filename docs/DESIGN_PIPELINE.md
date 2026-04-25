@@ -1,6 +1,6 @@
 # Synapse 설계 — 저장/인출/대화 파이프라인
 
-**최종 업데이트**: 2026-04-25 (v22 반영 — M3 에서 스키마 실 구현 완료. post 가 "세션 그릇" 으로 일반화. `kind ∈ {chat, markdown, synapse, insight}` 4 모드. `synapse` 인출·융합 모드는 질문·답을 역사로만 기록(노드 편입 안 함). `insight` 는 사용자 명시 승격 → 시냅스 세션 retrieve 캐시 노드 전부와 허브 연결. 선행 v21: PLAN-007 `node_mentions` → `node_sentence_mentions`, `node_categories` → `node_category_mentions` 통합. v20: PLAN-004 카테고리 재설계. v19: `posts.input_mode` 신설. v18: 상태 레이어 제거. v17: Kiwi-first + origin `rule→system`)
+**최종 업데이트**: 2026-04-25 (v22 2차안 — 입력 모드 분리 폐지. `kind ∈ {note, synapse, insight}` **3 종**. `note` 단일 축적 그릇으로 chat·markdown 통합. 자동저장(원본만, LLM 미사용) vs 의미 처리(사용자 명시 트리거, LLM 정정 후보) **두 층 분리**. `synapse` 인출·융합은 질문·답을 역사로만 기록. `insight` 는 사용자 명시 승격 → 시냅스 세션 retrieve 캐시 노드 전부와 허브 연결. 선행 v22 1차안: 4 모드 안. v21: PLAN-007 `node_mentions` → `node_sentence_mentions`, `node_categories` → `node_category_mentions` 통합. v20: 카테고리 재설계. v19: `posts.input_mode` 신설. v18: 상태 레이어 제거. v17: Kiwi-first + origin `rule→system`)
 
 ## 근본 목표
 
@@ -11,7 +11,7 @@
 ## DB 스키마 (v22)
 
 ```sql
-posts:                  id, kind('chat'|'markdown'|'synapse'|'insight'), title, source, created_at, updated_at
+posts:                  id, kind('note'|'synapse'|'insight'), title, source, created_at, updated_at
 sentences:              id, post_id NOT NULL, position, text, role('user'|'assistant'), origin(NULL|'user'|'insight'), created_at, updated_at
 nodes:                  id, name, created_at, updated_at
 node_sentence_mentions: node_id, sentence_id, origin('user'|'ai'|'system'|'external'), created_at  — PK(node_id, sentence_id)
@@ -22,8 +22,8 @@ aliases:                alias TEXT PRIMARY KEY, node_id, origin('user'|'ai'|'sys
 unresolved_tokens:      sentence_id, token, created_at                                             — PK(sentence_id, token)
 ```
 
-**v22 변경점** (M3 에서 `engine/db.py` 실 구현 완료): post 를 "세션 그릇" 으로 일반화.
-- **`posts.kind`** — `input_mode` 리네임 + 값 확장. 4 모드 (`chat`/`markdown`/`synapse`/`insight`).
+**v22 변경점** (M3 에서 `engine/db.py` 실 구현 완료, M3.1 에서 v22 2차안 미세 조정): post 를 "세션 그릇" 으로 일반화.
+- **`posts.kind`** — `input_mode` 리네임. **v22 2차안 최종**: 3 값 (`note`/`synapse`/`insight`). 입력 모드 분리 폐지로 chat·markdown 통합 → `note` 단일 축적 그릇.
 - **`posts.title`** — 목록 표시용. 첫 행 자동, 사용자 편집 가능. NULL 허용.
 - **`posts.source`** — `markdown` 리네임. 세션 전체 원본 누적 저장 (모드별 포맷 다름). NULL 허용.
 - **`sentences.post_id NOT NULL`** — "미아 sentence 없음". assistant 응답도 그 대화 post 에 귀속.
@@ -61,27 +61,54 @@ unresolved_tokens:      sentence_id, token, created_at                          
 
 모든 하이퍼그래프 변경은 **자동 저장**된다. `sentence_categories`(사용자 heading 축) · `node_categories`(19 대분류 축) · `aliases` 모두 저장 시점에 `origin`을 부여받아 즉시 DB에 들어간다. 사용자는 `/review`의 AI·규칙 목록 뷰에서 잘못된 항목을 삭제할 수 있다. 유일한 예외는 `unresolved_tokens`(치환 실패 지시어) + 파괴적 작업(`merge_nodes`, 아카이브)이다.
 
-### 입력 모드 (v22 — 4 모드)
+### 세션 그릇 (v22 2차안 — 3 종)
 
-**모드는 UI 라우트 선택으로 결정**한다. `save()` · `retrieve()` 호출자는 `kind` 를 **필수** 지정. 자동 판정 없음. 결정된 모드는 `posts.kind` 에 그대로 저장된다.
+**세션 그릇은 사용자 액션으로 결정**된다. 자동 판정 없음. `posts.kind` 에 그대로 저장.
 
-| 모드 | 라우트 | save 파이프라인 | 노드 편입 | 용도 |
-|---|---|---|---|---|
-| **chat** | `/chat` | save-pronoun ✓, 메타 필터 전체, Kiwi 노드 추출 | ✓ | 메신저 스타일 평문 축적 |
-| **markdown** | `/compose` | save-pronoun ✗ (공문서 원형 보존), 메타 필터 자유문장·list, parse_markdown heading 경로 상속 | ✓ | 구조화된 글 축적 |
-| **synapse** | `/synapse` | save-pronoun ✗, 메타 필터 ✗, retrieve 후 답 생성, 질문·답 sentence 로 기록 | **✗ (역사만)** | 인출·융합 세션 |
-| **insight** | 승격 전용 | 시냅스 세션의 retrieve 노드 전부와 `node_sentence_mentions` 일괄 INSERT | ✓ (허브) | 사용자 승격 통찰 1 본체 |
+| kind | 라우트 | 생성 시점 | save 파이프라인 (의미 처리) | 노드 편입 | 용도 |
+|---|---|---|---|---|---|
+| **note** | `/note` | 사용자가 `/note` 화면에서 입력 시 자동 생성 | save-pronoun ✓, 메타 필터 (자유문장·list 한정), `parse_markdown` heading 경로 상속, Kiwi 노드 추출 | ✓ | **모든 지식 축적** (한 줄 메모도 긴 마크다운도) |
+| **synapse** | `/synapse` | 사용자가 `/synapse` 화면에서 질문 시 자동 생성 | retrieve 후 답 생성, 질문·답 sentence 로 기록 | **✗ (역사만)** | 인출·융합 세션 |
+| **insight** | 승격 전용 | 시냅스 세션 메시지의 사용자 [⬆ 승격] 클릭 | 시냅스 세션의 retrieve 캐시 노드 전부와 `node_sentence_mentions` 일괄 INSERT | ✓ (허브) | 사용자 승격 통찰 1 본체 |
 
-**모드 차이의 근거** (원칙 13 참조):
-- `chat` vs `markdown` — save-pronoun 차이는 **문서 성격** (일상 대화 vs 공식 문서). heading 경로 차이는 **입력 문법의 유무**. Kiwi 노드 추출 + 19 대분류 태깅은 두 모드 동일.
-- `synapse` — 저장이 아니라 **인출·조합** 이므로 파이프라인이 다르게 탄다. 질문·답은 `sentences` 에 `role='user'`/`'assistant'` 로 기록되지만 `node_sentence_mentions` 편입 없음 (원칙 15-1).
-- `insight` — 시냅스 세션 메시지의 사용자 승격으로만 생성. 본체 1 sentence, 시냅스 세션의 retrieve 캐시 노드 전부와 자동 허브 연결 (Hebbian — 원칙 15-2).
+**v22 2차안 변경 — 입력 모드 분리 폐지의 근거** (원칙 13 참조):
+- v22 1차안에선 `chat`/`markdown` 두 축적 그릇이었으나, 사용자가 입력 형식을 선택하는 부담이 정신모델("메모장에 적는다") 과 어긋남.
+- 입력 형식 차이(평문 vs heading + list)는 **LLM 의미 처리 단계가 흡수** — `parse_markdown` 이 heading 있으면 카테고리 등록, 없으면 free 처리. 사용자에겐 단일 입력 영역으로 보임.
+- save-pronoun, 메타 필터, Kiwi 추출은 단일 경로로 일관 적용 (chat/markdown 분기 폐지).
+
+**`synapse`** — 저장이 아니라 **인출·조합** 이므로 파이프라인이 다르게 탄다. 질문·답은 `sentences` 에 `role='user'`/`'assistant'` 로 기록되지만 `node_sentence_mentions` 편입 없음 (원칙 15-1).
+
+**`insight`** — 시냅스 세션 메시지의 사용자 승격으로만 생성. 본체 1 sentence, 시냅스 세션의 retrieve 캐시 노드 전부와 자동 허브 연결 (Hebbian — 원칙 15-2).
 
 전체 명세는 **`docs/DESIGN_INPUT_MODES_AND_RETRIEVAL.md`**.
 
-**`structure-suggest` 폐기 (v17)** — 기존 v16 까지는 평문 입력 시 LLM 이 heading 초안을 강제로 달아 마크다운 모드로 재진입시켰으나, 2026-04-21 dogfood 에서 14건 중 6건이 같은 날짜 heading 으로 뭉쳐 "카테고리 공유 = 연결" 원칙을 무력화. 평문은 평문인 채로 저장하는 것이 원칙 4·원칙 9 와 일치. v19 의 사용자 명시 모드 분리, v22 의 4 모드 확장은 이 방향의 연장 — 저장 시점에 모델/규칙이 구조를 판정하지 않는다.
+### 자동저장 vs 의미 처리 — 두 층 분리 (v22 2차안 신설)
 
-**자연어 → 마크다운 핫키 (v22)** — `markdown` 모드 에디터 전용. 사용자가 STT 로 자연어 입력 → 핫키(`⌘⇧M` 등) → LLM 이 현재 에디터 내용을 마크다운 문법으로 정제 → in-place 치환 → 사용자 추가 편집 후 저장. 채팅 모드엔 제공하지 않는다 (모드 경계 흐리지 않기 — 원칙 14 참조).
+`/note` 의 저장은 **두 층** 으로 갈라진다. 모바일 배터리·발열을 보호하면서 LLM 정정의 가치는 살리기 위함.
+
+| 동작 | 트리거 | 갱신 대상 | LLM | 응답 시간 | 모바일 부담 |
+|---|---|---|---|---|---|
+| **자동저장** | 입력 1.5초 디바운스 + 페이지 이탈 (`pagehide`/`visibilitychange`) | `posts.source` 만 | ❌ | <50ms | 거의 없음 |
+| **의미 처리** | 사용자 명시 트리거 (⌘S / "정리" 버튼 / 재진입 시 제안) | `sentences` 재계산 + Kiwi 노드 + `node_sentence_mentions` + LLM 정정 후보 | ✅ | 0.5~3초 (로컬 MLX) | 사용자 자발적 호출만 |
+
+**자동저장**은 "사용자가 친 원문 손실 방지" 단일 목적. SQL UPDATE 한 줄. 페이지 이탈 시 `sendBeacon` 으로 마지막 변경분 백업.
+
+**의미 처리** 호출 흐름 (`POST /posts/{id}/process`):
+1. `posts.source` UPDATE (자동저장 미발화분 함께 flush)
+2. 기존 `sentences` 모두 DELETE (post_id CASCADE)
+3. `parse_markdown(source)` → heading / key_value / list / free 분기
+4. 단일 경로 파이프라인 ① save-pronoun → ② ISO 날짜 정규화 → ③ unresolved 감지 → ④ sentence INSERT → ⑤ Kiwi 노드 추출 → ⑥ 날짜 분할 → ⑦ `node_sentence_mentions` + `sentence_categories`
+5. **LLM 정정 후보 생성** (v22 2차안 신설) — 본문 토큰 중 `aliases` 미등록 + 자모 거리 1~2 의심 쌍을 LLM 에 검증 요청 → 후보 목록 반환 (적용 안 함)
+6. 응답에 `correction_candidates: [{from, to, confidence, reason}]` 포함
+
+**LLM 정정 후보 정책**:
+- **별칭 보호**: `aliases` 등록된 토큰(`스벅` 등) 은 후보에서 제외. 사용자 의도 정감 보존
+- **자모 거리 사전 필터**: 클라이언트가 의심 쌍 1차 추림 → LLM 부담 감소
+- **변경분만**: 직전 의미 처리 이후 새로 등장한 토큰만 검증
+- **결과 캐싱**: `(토큰, 주변 5단어)` 키 — 같은 의심 쌍 재호출 안 함
+- **자동 적용 금지**: 사용자가 카드의 [적용] 클릭 시에만 source/sentences 갱신 + alias 등록
+
+**`structure-suggest` 폐기 (v17)** — 기존 v16 까지는 평문 입력 시 LLM 이 heading 초안을 강제로 달아 마크다운 모드로 재진입시켰으나, 2026-04-21 dogfood 에서 14건 중 6건이 같은 날짜 heading 으로 뭉쳐 "카테고리 공유 = 연결" 원칙을 무력화. 평문은 평문인 채로 저장하는 것이 원칙 4·원칙 9 와 일치. v19 의 사용자 명시 모드 분리, v22 의 그릇 일반화, **v22 2차안의 입력 모드 분리 폐지** 는 모두 이 방향의 연장 — 저장 시점에 모델/규칙이 구조를 판정하지 않는다.
 
 ### 마크다운 모드 예시
 
@@ -98,17 +125,19 @@ unresolved_tokens:      sentence_id, token, created_at                          
 - `- 프론트엔드 김민수` → list, 일반 sentence
 - 자유 문장 → free, 메타 필터 대상
 
-### 파이프라인 흐름 (v19 계획 · v17~18 현재 · Kiwi-first)
+### 의미 처리 파이프라인 (v22 2차안 · 단일 경로 · Kiwi-first)
 
-> 아래 흐름은 **chat 모드** 기준. markdown 모드는 ① save-pronoun 전체 skip 이고 메타 필터가 자유 문장·list 한정이며, `parse_markdown` 이 kind(heading/key_value/list/free) 별로 분기한다. 모드별 전체 비교는 `docs/DESIGN_INPUT_MODES_AND_RETRIEVAL.md` "저장 파이프라인 — 모드별 비교" 표.
+> 아래 흐름은 `/note` 의 **의미 처리** (`POST /posts/{id}/process`) 트리거 시점 기준. 입력 모드 분리 폐지로 단일 경로 — `parse_markdown` 이 heading / key_value / list / free 를 자동 분기. heading 이 있으면 카테고리 경로 등록, 없으면 free 처리.
 
 ```
-사용자 입력 (mode='chat' or 'markdown')
-  ↓ posts INSERT (kind=mode, source=원문, title=첫 행 자동)
-  ↓ parse_markdown(text) — heading/list/평문 분리 (markdown), 전부 (None,'free',text) (chat)
+사용자 명시 트리거 (⌘S / "정리" 버튼)
+  ↓ POST /posts/{id}/process { source: "<최신 source>" }
+  ↓ posts.source UPDATE (자동저장 미발화분 함께 flush)
+  ↓ 기존 sentences DELETE (post_id CASCADE 로 mentions·sentence_categories 동반)
+  ↓ parse_markdown(source) — heading/list/key_value/free 분리
   ↓
   [메타 필터 — 게시물 단위 1회]                                     ← NEW (v17)
-    chat: 모든 줄 대상 / markdown: 자유 문장·list 만 대상 (heading·key_value 제외)
+    자유 문장·list 만 대상 (heading·key_value 제외 — 메타 대화 가능성 없음)
     (b) 규칙 사전필터: Kiwi 명사 0개 + '?' 종결 → 즉시 메타 확정
     (a) 나머지 줄을 한 번에 LLM 배치 호출
         프롬프트: docs/META_FILTER_SYSTEMPROMPT.md
@@ -116,9 +145,9 @@ unresolved_tokens:      sentence_id, token, created_at                          
         출력: {"meta": [idx, ...]}  — 저장 제외할 줄 idx
     MLX 서버 다운 시 → 필터 skip (모든 문장 저장 진행, 과포함은 UI 삭제로 해소)
   ↓
-문장별로 (메타 idx 제외):
+문장별로 (메타 idx 제외, kind 별 분기):
   ↓
-  ① [save-pronoun — 베이스 모델]  temp=0, max_tokens=256     ← chat 모드 전용 (markdown 전체 skip)
+  ① [save-pronoun — 베이스 모델]  temp=0, max_tokens=256     ← list/free 만 호출 (heading/key_value skip)
       프롬프트: docs/SAVE_PRONOUN_SYSTEMPROMPT.md
       세션리스 — 직전 대화 context 주입 없음
       모호 케이스(`{"question": "..."}` 반환) → 저장 중단
@@ -335,7 +364,7 @@ background_tasks.add_task(alias_worker, new_node_ids)
   ↓ [시간 순 정렬 (v18)]
     통과한 sentence 들을 sentences.created_at 오름차순으로 정렬.
     각 줄 앞에 `[YYYY-MM-DD]` 날짜 힌트를 붙여 LLM 프롬프트 컨텍스트 구성.
-  ↓ [synapse/chat]  temperature=0.3, max_tokens=4096
+  ↓ [synapse]  temperature=0.3, max_tokens=4096
     인출 sentences를 컨텍스트로 자연어 답변.
     프롬프트 규칙: "충돌 시 최근 사실 우선", "'지금 어때?' 는 최신 기록 근거",
     "과거 사실도 유지 — 시점 구분해 설명".
