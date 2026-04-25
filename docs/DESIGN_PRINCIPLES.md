@@ -115,7 +115,7 @@
 
 ## 4. 카테고리·인접 맵 원칙
 
-v20: 카테고리는 두 축(`categories`+`sentence_categories` 사용자 heading / `node_categories.major_category` 19 대분류) 으로 분리. 인접 맵은 **축 B(19 대분류 코드) 전용** — 축 A 는 `categories.parent_id` 재귀 CTE 로 서브트리 확장이 구조적으로 해결되어 인접 맵이 불필요. 상세: `docs/DESIGN_CATEGORY.md`
+v21 PLAN-007 통합 후: `categories` 마스터가 19 대분류 시드 루트 + 사용자 heading 계층을 동시에 담고, `node_category_mentions` 단일 매핑이 노드 ↔ 카테고리 멤버십을 처리. `sentence_categories` 는 사용자 heading 계층 문장 매핑. 인접 맵은 **19 대분류 시드 카테고리 간 관계 전용** — 사용자 heading 계층은 `categories.parent_id` 재귀 CTE 로 서브트리 확장이 구조적으로 해결되어 인접 맵이 불필요. 상세: `docs/DESIGN_CATEGORY.md`
 
 1. **소분류 레벨** — 대분류 레벨 연결은 범위가 너무 넓어 노이즈 증가. 소분류로 좁혀 정밀도 확보.
 2. **크로스 대분류만** — 같은 대분류 내 소분류 간 연결은 기존 BFS 보완(대분류 전체 조회)으로 이미 처리됨.

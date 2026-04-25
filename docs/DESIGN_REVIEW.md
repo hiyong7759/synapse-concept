@@ -37,11 +37,13 @@ CREATE INDEX idx_unresolved_sentence ON unresolved_tokens(sentence_id);
 
 치환 실패는 **저장 시점에만 발생하는 이벤트**다. 사용자가 "요즘 허리 아파"를 입력하면 `_preprocess`가 "요즘"을 치환 시도하고 실패한다. 이 시점이 지나면 `sentences` 테이블에는 원문 그대로 남고, 그 "요즘"이 아직 해소 대기 중인지 사용자가 이미 닫은 건지는 어디에도 흔적이 남지 않는다. 즉 **런타임 재생성 불가** → 별도 저장 필수.
 
-AI·규칙 생성물은 이미 `node_categories / aliases`에 `origin`과 함께 저장되어 있으므로 "대기 테이블"이 필요 없다. 조회만 하면 된다.
+AI·규칙 생성물은 이미 `node_category_mentions / aliases`에 `origin`과 함께 저장되어 있으므로 "대기 테이블"이 필요 없다. 조회만 하면 된다.
 
 ---
 
-## 섹션별 도출기 (engine/suggestions.py)
+## 섹션별 도출기
+
+알고리즘 명세는 환경 무관. Python frozen 환경의 단일 출처는 `engine/suggestions.py`, Flutter 환경 (v22 2차안 후속 PLAN) 의 단일 출처는 `synapse_engine` 의 `lib/src/review/suggestions.dart` 가 같은 알고리즘을 재현. 호출 인터페이스만 환경별로 노출.
 
 ### unresolved — 미해결 지시어 (승인 대기 해소)
 
@@ -62,7 +64,8 @@ def unresolved() -> list[Suggestion]:
 def ai_generated(kind: str, limit: int) -> list[Suggestion]:
     # kind = 'category' (v15에선 ai 출처는 카테고리만. aliases는 external로 이전)
     # origin = 'ai'인 최근 생성물 목록
-    # node_categories: SELECT * FROM node_categories WHERE origin='ai' ...
+    # node_category_mentions: SELECT * FROM node_category_mentions WHERE origin='ai' ...
+    #   (v21 통합: 이전 node_categories 테이블이 node_category_mentions 로 흡수됨)
     #
     # 각 항목에 원문 sentence·노드 컨텍스트를 함께 반환 (사용자가 판단 가능하도록)
 ```
@@ -88,6 +91,7 @@ def external_generated(kind: str, limit: int) -> list[Suggestion]:
 def system_generated(kind: str, limit: int) -> list[Suggestion]:
     # kind in ('category', 'alias')
     # origin = 'system'인 생성물 목록  (v17: 이전 origin='rule' 을 리네이밍)
+    # node_category_mentions/aliases WHERE origin='system' (v21 통합 후)
     # 사용자가 "잘못 분류됐네" 발견 시 해당 엔진 규칙을 이후 수정하기 위한 추적 경로
 ```
 
@@ -189,7 +193,9 @@ def gaps() -> list[Suggestion]:
 
 ---
 
-## API (api/routes/graph.py)
+## API
+
+Python frozen 환경: `api/routes/graph.py` (FastAPI) — REST 인터페이스. v22 2차안 Flutter 환경: `synapse_engine` 의 동등 메서드 (`getReview()`·`applyReview(...)` 등). 두 환경의 응답 스키마는 동일.
 
 ### GET /review
 
@@ -252,12 +258,13 @@ GET /review?sections=ai_generated&kind=category&limit=20
 
 | type | params | 동작 |
 |------|--------|------|
-| `token` | `{sentence_id, token, value}` | `nodes` upsert + `node_mentions` INSERT + `unresolved_tokens` DELETE |
+| `token` | `{sentence_id, token, value}` | `nodes` upsert + `node_sentence_mentions` INSERT + `unresolved_tokens` DELETE |
 | `token_dismiss` | `{sentence_id, token}` | `unresolved_tokens` DELETE (하이퍼그래프 변경 없음) |
-| `merge` | `{keep_id, remove_id}` | `merge_nodes` 호출 (파괴적) |
-| `archive` | `{node_id}` | `nodes.status='inactive'` |
-| `category` (수동 추가) | `{node_id, category}` | `node_categories` INSERT, origin='user' |
+| `merge` | `{keep_id, remove_id}` | `merge_nodes` 호출 (파괴적, 물리 DELETE) |
+| `archive` | `{node_id}` | `nodes` 물리 DELETE (v21: `nodes.status` 폐기로 soft-delete 마커 없음. FK CASCADE) |
+| `category` (수동 추가) | `{node_id, category_id}` | `node_category_mentions` INSERT, origin='user' (v21 통합 후 FK 기반) |
 | `alias` (수동 추가) | `{node_id, alias}` | `aliases` INSERT, origin='user' |
+| `insight_delete` (v22 신설) | `{post_id}` | `posts` 행 DELETE → FK CASCADE 로 본체 sentence + `node_sentence_mentions` 자동 정리 |
 
 ### DELETE — 자동 저장물 제거
 
@@ -265,20 +272,25 @@ GET /review?sections=ai_generated&kind=category&limit=20
 
 | 엔드포인트 | 동작 |
 |-----------|------|
-| `DELETE /nodes/{id}/categories/{category}` | 카테고리 제거 |
+| `DELETE /nodes/{id}/categories/{category_id}` | 카테고리 멤버십 제거 (`node_category_mentions` 한 행) |
 | `DELETE /aliases/{alias}` | 별칭 제거 |
 
-이전 v13의 "승인 후 편집" API와 동일 방향. v14~v15에서는 **제거가 주 액션**(추가는 이미 자동).
+이전 v13의 "승인 후 편집" API와 동일 방향. v14~v15에서는 **제거가 주 액션**(추가는 이미 자동). v22 2차안 Flutter 환경에서는 같은 동작이 `synapse_engine.GraphOps` 의 `removeAlias` · `removeCategoryMention` 으로 노출.
 
 ---
 
-## 프론트 (app/src/pages/ReviewPage.tsx)
+## 프론트
 
+**v22 2차안 (Flutter, 후속 PLAN)**: `/review` 라우트 신규 구현은 [`PLAN-20260425-SYN-flutter-rewrite.md`](../deliverables/SYN/20260425/user/PLAN-20260425-SYN-flutter-rewrite.md) §2 "범위 외 (후속 PLAN)" 의 `/review` 통찰 삭제 UI 항목으로 분리되어 있다. 본 섹션의 동작 사양은 Flutter 측 신규 구현의 단일 출처.
+
+**v22 1차안 React 환경 (frozen, 참조 구현)**: `app/src/pages/ReviewPage.tsx`
+
+공통 동작 사양:
 - 페이지 로드 시 `GET /review` 호출 → 섹션별 리스트 렌더
 - **`ai_generated` 섹션**: 기본 확장, 각 항목에 `[삭제]` 버튼 + 원문 컨텍스트 툴팁
 - **`system_generated` 섹션**: 기본 접힘, 사용자가 펼쳐서 훑어볼 때만 부하 발생
 - **`unresolved` 섹션**: 질문형 카드. 옵션 선택 시 `POST /review/apply type=token`
-- **`suspected_typos` / `stale_nodes`**: 파괴적이므로 확인 모달 포함
+- **`suspected_typos` / `stale_nodes` / `insight_delete`**: 파괴적이므로 확인 모달 포함
 - 사이드바 배지: `GET /review/count`로 섹션별 카운트 표시. `ai_generated` 배지는 "검수 대기 건수"로 기능
 - 삭제 직후 목록에서 해당 항목 제거 (optimistic update)
 

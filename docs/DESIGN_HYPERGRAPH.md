@@ -246,48 +246,48 @@ BFS("스타벅스") → 같은 sentence 하이퍼엣지 안의 멤버 탐색
 
 ---
 
-## 하이퍼엣지 ②: 카테고리 바구니 (두 축 — v20)
+## 하이퍼엣지 ②: 카테고리 바구니 (v21 단일 매핑)
 
-v20 에서 카테고리 바구니는 **두 축**으로 분리된다. 과거(v19 이하) 단일 `node_categories` 가 혼용하던 역할을 쪼갠 결과.
+카테고리 바구니는 v21 PLAN-007 에서 두 축이 단일 매핑 (`node_category_mentions`) 으로 통합됐다. `categories` 마스터가 19 대분류 시드 루트 + 사용자 heading 계층을 동시에 담는다.
 
-### 축 A — 사용자 heading 계층 (`categories` + `sentence_categories`)
+### `categories` + `sentence_categories` (사용자 heading 계층)
 
 사용자가 마크다운 heading 으로 명시한 경로. adjacency list 마스터(`categories`) + 문장 주 매핑(`sentence_categories`).
 
 - 저장 대상: **문장 단위**. heading **말단 카테고리**만 `sentence_categories` 에 들어간다.
-- 예: `# 더나은\n## 개발팀\n- 민지가 프로젝트 맡음` → `categories` upsert `(더나은, NULL)=1`·`(개발팀, 1)=2`, `sentence_categories` INSERT `(sentence_id, 2, 'user')`. 노드(`민지`·`프로젝트`)는 등록되지 않음.
+- 예: `# 더나은\n## 개발팀\n- 민지가 프로젝트 맡음` → `categories` upsert `(더나은, NULL)=1`·`(개발팀, 1)=2`, `sentence_categories` INSERT `(sentence_id, 2, 'user')`. 노드(`민지`·`프로젝트`)는 `node_sentence_mentions` 에 별도 등록.
 - 계층 확장: "더나은 전체" 질의는 `categories` 재귀 CTE 로 하위 id 를 한꺼번에 수집 → `sentence_categories` JOIN.
 - origin: `sentence_categories` 는 `user|ai|system|external`. `categories` 마스터엔 origin 없음 (삭제 경로 부재).
 
 | 생성 경로 | 저장 주체 | origin |
 |---|---|---|
-| 마크다운 heading 경로 | `save.py` | `user` |
-| 규칙 기반 자동 분류 (향후) | 엔진 규칙 | `system` |
+| 마크다운 heading 경로 | `save.py` (Python frozen) / `synapse_engine` `lib/src/markdown/parser.dart` (Flutter) | `user` |
+| 규칙 기반 자동 분류 (doc_mode 등) | 엔진 규칙 | `system` |
 
-### 축 B — 19 대분류 의미 태깅 (`node_categories`)
+### `node_category_mentions` (노드 ↔ 카테고리 멤버십, v21 통합)
 
-노드 의미를 19 대분류 코드(`CATEGORY_SYSTEMPROMPT.md`, 약 100 개 고정)로 태깅. 저장은 **노드 단위**, 생성은 **CATEGORY 백그라운드 워커 전용**.
+노드 ↔ 카테고리 단일 매핑. `(node_id, category_id, origin)`. AI 워커는 19 대분류 시드 루트로, heading Kiwi 토큰화·사용자 수동 교정은 임의 카테고리로 매핑.
 
-- 저장 대상: **노드 단위**. `major_category TEXT`.
-- 예: 위 문장 저장 직후 워커가 `민지 → PER.individual`, `프로젝트 → WRK.role` 등록.
-- heading 경로 문자열(`"건강.2026-04-10"`) 은 저장 금지 — 축 A 로 분리됐다.
-- origin: `ai`(워커) 기본. 사용자 수동 교정은 `user`, 규칙 기반은 `system`.
+- 저장 대상: **노드 단위**. `category_id` 는 `categories` 의 어떤 행이든 가능 — 19 대분류 시드 루트일 수도, 사용자 heading 노드일 수도 있다.
+- 예: CATEGORY 워커가 `민지 → PER.individual` 시드 카테고리 id, `프로젝트 → WRK.role` 시드 카테고리 id 등록 (`origin='ai'`). heading Kiwi 토큰화는 `(민지, 개발팀.id, 'system')` 자동 매핑.
+- origin: `ai`(워커) · `system`(Kiwi heading 토큰화·날짜 분할) · `user`(수동 교정).
 
 | 생성 경로 | 저장 주체 | origin |
 |---|---|---|
-| CATEGORY 워커 LLM 분류 | `engine/workers.py` | `ai` |
+| CATEGORY 워커 LLM 분류 | `engine/workers.py` (Python frozen) / `synapse_engine` 의 워커 (Flutter, PLAN F4) | `ai` |
+| Kiwi heading 토큰화 자동 매핑 | 저장 파이프라인 | `system` |
 | 사용자 수동 교정 | `/review` UI | `user` |
 | 결정론적 규칙 (예: 날짜 노드 → `TIM.*`) | 엔진 규칙 | `system` |
 
-### 두 축의 협력
+### 두 매핑의 협력
 
-질의 `"건강 관련 병원 언제?"` 처리 시 두 축이 병렬로 시드 확장에 쓰인다:
-- 축 B: 후보 `병원` 노드 → `node_categories.major_category='BOD.medical'` 확인 → `BOD.medical` 전체 노드를 시드로 `node_mentions` BFS.
-- 축 A: `건강` 이 사용자 `categories` 루트와 일치하면 서브트리 수집 → `sentence_categories` 로 sentences 확장.
+질의 `"건강 관련 병원 언제?"` 처리 시 두 매핑이 병렬로 시드 확장에 쓰인다:
+- `node_category_mentions`: 후보 `병원` 노드 → `BOD.medical` 시드 카테고리 id 확인 → `BOD.medical` 에 매핑된 모든 노드를 시드로 `node_sentence_mentions` BFS.
+- `sentence_categories` + `categories` 재귀 CTE: `건강` 이 사용자 `categories` 루트와 일치하면 서브트리 수집 → `sentence_categories` JOIN 으로 sentences 확장.
 
 **용도**: ① 문장 바구니 공출현을 뛰어넘는 개념적 연결, ② 사용자 계층 전체 스캔(`더나은 전체 보여줘`), ③ 인접 맵 기반 한 홉 확장(`BOD.medical ↔ MON.insurance` 등). 잘못된 분류·자동 등록 카테고리는 `/review` 의 AI·시스템 목록 뷰에서 즉시 제거.
 
-분류체계 전체 · 인접 맵 · 두 축 상세 → `docs/DESIGN_CATEGORY.md` 참고
+분류체계 전체 · 인접 맵 · 단일 매핑 상세 → `docs/DESIGN_CATEGORY.md` 참고
 
 ---
 
@@ -366,7 +366,7 @@ DOC_PATTERN = re.compile(
 )
 ```
 
-doc_mode=True이면 조항 식별자(`제N조`, `제N항`, `N호`)를 노드로 두고, 같은 sentence 내 `node_mentions`로 본문 노드와 연결. 계층은 마크다운 heading 경로와 동일하게 축 A(`categories` + `sentence_categories`, origin='system')로 표현한다 — v20 전환으로 `node_categories` 에는 들어가지 않는다.
+doc_mode=True 이면 조항 식별자(`제N조`, `제N항`, `N호`)를 노드로 두고, 같은 sentence 내 `node_sentence_mentions` 로 본문 노드와 연결. 계층은 마크다운 heading 경로와 동일하게 사용자 heading 계층 (`categories` + `sentence_categories`, origin='system')로 표현한다.
 
 상세 흐름 → `docs/DESIGN_ORG.md` / `docs/DESIGN_PIPELINE.md`
 
@@ -391,7 +391,7 @@ doc_mode=True이면 조항 식별자(`제N조`, `제N항`, `N호`)를 노드로 
 
 ## 파이프라인 요약
 
-모든 테이블 자동 저장. `sentence_categories` / `node_categories` / `aliases`는 `origin` 컬럼으로 출처(user/ai/system/external)가 식별됨 (`categories` 마스터는 origin 없음 — 삭제 경로 부재). `/review`는 (1) `unresolved_tokens`(애매한 지시어) 해소 + (2) AI·시스템·외부 생성물 목록 검수 + (3) 파괴적 작업(노드 병합) 승인 세 가지만 담당.
+모든 테이블 자동 저장. `sentence_categories` / `node_category_mentions` / `aliases`는 `origin` 컬럼으로 출처(user/ai/system/external)가 식별됨 (`categories` 마스터는 origin 없음 — 삭제 경로 부재). `/review`는 (1) `unresolved_tokens`(애매한 지시어) 해소 + (2) AI·시스템·외부 생성물 목록 검수 + (3) 파괴적 작업(노드 병합·통찰 삭제) 승인 세 가지만 담당.
 
 저장·인출·검토 상세는:
 - `docs/DESIGN_PIPELINE.md` — 저장/인출/응답 파이프라인 세부
