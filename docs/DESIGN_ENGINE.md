@@ -140,13 +140,10 @@ class SynapseFlow {
 
 ### 2.2 하위 — `LlmTasks`
 
-llamadart 호출의 단위 단위. 모든 앱이 자유 호출. 베이스 모델 + 어댑터 핫스왑은 내부에서 알아서.
+llamadart 호출의 단위 단위. 모든 앱이 자유 호출. 시냅스 앱 자체는 어댑터를 사용하지 않으며 (어댑터 정책 §5 참고) 모든 태스크가 베이스 모델 + 시스템 프롬프트로 동작. 어댑터 핫스왑 시그니처는 재사용 앱용으로 보존.
 
 ```dart
 class LlmTasks {
-  // 지시어/대명사 치환 — "거기" → "스타벅스 강남점".
-  Future<String> savePronoun(String text, {String? context});
-
   // 메타 대화 사전 필터 — "방금 그거 다시" 같은 메타 발화 식별.
   Future<List<bool>> metaFilter(List<String> texts);
 
@@ -169,10 +166,13 @@ class LlmTasks {
     required Set<String> protectedAliases,
   });
 
-  // 어댑터 핫스왑 (내부 자동, 명시 호출도 가능)
-  Future<void> swapAdapter(String adapterName);
+  // 어댑터 핫스왑 — 시냅스 앱은 어댑터 0개로 호출 안 함.
+  // 재사용 앱(예: gabjil-extract) 이 자기 도메인 어댑터를 명시 호출.
+  Future<void> swapAdapter(String? adapterName);
 }
 ```
+
+`savePronoun` 항목은 폐기됐다. 노트 단일 그릇 컨셉에서 ① 자연어 날짜 부사는 결정론적 `DateNormalizer` (`lib/src/internal/date_normalize.dart`) 가 더 빠르고 안전하게 처리하고, ② 지시어 치환은 세션리스 환경에선 LLM 도 같이 모르므로 `unresolved_tokens` 만으로 충분하다. 이전 시스템 프롬프트는 `docs/archive/v22_retired/SAVE_PRONOUN_SYSTEMPROMPT.md` 에 보존.
 
 ### 2.3 하위 — `GraphOps`
 
@@ -397,11 +397,11 @@ class LlamadartBackend {
 
 베이스 모델 + LoRA 어댑터는 `archive/synapse_engine_v15/` 의 통합 코드를 인프라 (모델 로딩·핫스왑·thinking 블록 제거) 만 그대로 재사용.
 
-### 어댑터 정책 — 단일 모델 고정
+### 어댑터 정책 — 어댑터 미사용
 
 - **베이스 모델**: Gemma 4 E2B-it Q4_K_M GGUF (~3.1GB). 앱 번들 고정. 모델 카탈로그·다운로드 인프라는 후속 PLAN.
-- **어댑터**: `retrieve-expand` (GGUF, 52MB) 만 번들. `save-pronoun`/`meta-filter`/`typo-normalize`/`synapse-answer`/`retrieve-filter` 는 **베이스 + 시스템 프롬프트** 로 처리.
-- **시스템 프롬프트**: `assets/prompts/` 에 `SAVE_PRONOUN_SYSTEMPROMPT.md`·`META_FILTER_SYSTEMPROMPT.md`·`TYPO_NORMALIZE_SYSTEMPROMPT.md` 등을 번들. `LlmTasks` 가 태스크별로 골라 사용.
+- **어댑터**: **시냅스 앱은 어댑터 0 개 번들**. `retrieve-expand` 어댑터는 2026-04-26 PoC 에서 v3 시스템 프롬프트 + 베이스 모델이 동등 또는 우수함을 입증해 폐기됐다 (산출: `deliverables/SYN/20260426/user/REPORT-20260426-SYN-adapter-removal-h1.md`). `meta-filter`·`retrieve-filter`·`retrieve-expand`·`synapse-answer` 모두 **베이스 + 시스템 프롬프트** 로 처리. 어댑터 핫스왑 인프라(`LlamadartInferenceBackend`)는 보존 — **재사용 앱**(예: 갑질의 `gabjil-extract`) 이 도메인 어댑터를 drop-in 으로 사용할 수 있게.
+- **시스템 프롬프트**: `assets/prompts/` 에 5 종 (`CATEGORY`·`META_FILTER`·`RETRIEVE_EXPAND`·`RETRIEVE_FILTER`·`SYNAPSE_ANSWER`) 번들. `LlmTasks` 가 태스크별로 골라 사용. (`SAVE_PRONOUN` 은 `DateNormalizer` 결정론 모듈로 흡수돼 폐기 — `docs/archive/v22_retired/SAVE_PRONOUN_SYSTEMPROMPT.md` 보존.)
 
 ---
 

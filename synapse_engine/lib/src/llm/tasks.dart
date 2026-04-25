@@ -8,11 +8,22 @@ import 'inference_backend.dart';
 /// any consumer (synapse app, gabjil, etc.). Single source: docs/DESIGN_ENGINE.md §2.2.
 ///
 /// Adapter policy (DESIGN_ENGINE §5):
-///   - retrieveExpand → activates the bundled `retrieve-expand` adapter.
-///   - All others    → base model + system prompt only.
+///   - All tasks   → base model + system prompt only. No LoRA adapter is
+///                   currently bundled. The retired `retrieve-expand`
+///                   adapter underperformed the v3 system prompt on the
+///                   45-case evaluation set (PoC: REPORT-20260426-SYN-
+///                   adapter-removal-h1.md). The hot-swap infrastructure
+///                   in `LlamadartInferenceBackend` is kept so reuse apps
+///                   (e.g. gabjil) can ship their own domain adapters.
 ///   - typoNormalize → F3 stub (UnimplementedError). Lands in a follow-up
-///                     milestone alongside the alias-protection / jamo-distance
-///                     pre-filter design.
+///                     milestone alongside the alias-protection /
+///                     jamo-distance pre-filter design.
+///
+/// Note: an earlier draft included a `savePronoun` task. Dropped — the
+/// note-only v22 input pattern doesn't hit pronoun-resolution territory
+/// often, and the date-adverb half is faster + safer in the deterministic
+/// `DateNormalizer` (lib/src/internal/date_normalize.dart). Demonstrative
+/// gaps are caught by the existing `unresolved_tokens` mechanism instead.
 class LlmTasks {
   LlmTasks({required this.backend, required this.prompts});
 
@@ -20,31 +31,6 @@ class LlmTasks {
   final PromptLoader prompts;
 
   String? _activeAdapter;
-
-  // ── savePronoun ──────────────────────────────────────────
-
-  /// Resolves pronouns and date references in [text]. Returns either
-  /// `{"text": "...", "tokens": [...]}` (success) or `{"question": "..."}`
-  /// (model wants clarification). Falls back to the original text on parse
-  /// failure so saving never blocks.
-  Future<Map<String, Object?>> savePronoun(
-    String text, {
-    String? context,
-    String? today,
-  }) async {
-    await _switchTo(null);
-    final system = await prompts.load(PromptKey.savePronoun);
-    final parts = <String>[];
-    if (today != null && today.isNotEmpty) parts.add('날짜: $today');
-    if (context != null && context.isNotEmpty) parts.add('직전 대화 - $context');
-    parts.add('입력: $text');
-    final raw = stripThinking(await backend.generate(
-      systemPrompt: system,
-      userPrompt: parts.join('\n'),
-      maxTokens: 256,
-    ));
-    return _parseJsonObject(raw, fallback: {'text': text});
-  }
 
   // ── metaFilter ───────────────────────────────────────────
 
@@ -67,11 +53,16 @@ class LlmTasks {
 
   // ── retrieveExpand ───────────────────────────────────────
 
-  /// Expands a question into BFS seed phrases. Activates the
-  /// `retrieve-expand` adapter for this call. Falls back to whitespace-split
-  /// of the question on parse failure (matches v15 behaviour).
+  /// Expands a question into BFS seed phrases. Falls back to whitespace-split
+  /// of the question on parse failure.
+  ///
+  /// The `retrieve-expand` LoRA adapter that earlier drafts hot-swapped here
+  /// has been retired — the v3 system prompt + base Gemma 4 E2B matched or
+  /// outperformed the adapter on the 45-case evaluation set (PoC report:
+  /// `deliverables/SYN/20260426/user/REPORT-20260426-SYN-adapter-removal-h1.md`).
+  /// All tasks now run on the base model with their system prompt only.
   Future<List<String>> retrieveExpand(String question) async {
-    await _switchTo('retrieve-expand');
+    await _switchTo(null);
     final system = await prompts.load(PromptKey.retrieveExpand);
     final raw = stripThinking(await backend.generate(
       systemPrompt: system,
@@ -157,19 +148,6 @@ class LlmTasks {
     if (_activeAdapter == name) return;
     await backend.switchAdapter(name);
     _activeAdapter = name;
-  }
-
-  Map<String, Object?> _parseJsonObject(
-    String raw, {
-    required Map<String, Object?> fallback,
-  }) {
-    final match = RegExp(r'\{.*\}', dotAll: true).firstMatch(raw);
-    if (match == null) return fallback;
-    try {
-      return jsonDecode(match.group(0)!) as Map<String, Object?>;
-    } on FormatException {
-      return fallback;
-    }
   }
 
   bool _yesIsh(String raw) {

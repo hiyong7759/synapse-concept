@@ -9,7 +9,6 @@ import 'package:synapse_engine/synapse_engine.dart';
 
 /// Real-model integration test. Skipped unless the environment supplies:
 ///   - SYNAPSE_TEST_MODEL  → absolute path to a Gemma 4 E2B GGUF
-///   - SYNAPSE_TEST_RETRIEVE_EXPAND_ADAPTER (optional) → adapter GGUF
 ///   - SYNAPSE_TEST_PROMPT_DIR (optional, defaults to ../docs) → directory
 ///     holding {*}_SYSTEMPROMPT.md files. Used as `promptOverrides` to
 ///     bypass `rootBundle` (which requires a Flutter binding/asset manifest
@@ -17,12 +16,13 @@ import 'package:synapse_engine/synapse_engine.dart';
 ///
 /// Run with:
 ///   SYNAPSE_TEST_MODEL=/Volumes/macex/models/gemma-4-E2B-it-Q4_K_M.gguf \
-///   SYNAPSE_TEST_RETRIEVE_EXPAND_ADAPTER=...retrieve-expand.gguf \
 ///   flutter test test/llm/tasks_integration_test.dart --tags integration
+///
+/// No adapter is loaded — the retrieve-expand LoRA was retired after the
+/// 2026-04-26 PoC showed the v3 system prompt + base model matched or
+/// outperformed it.
 void main() {
   final modelPath = Platform.environment['SYNAPSE_TEST_MODEL'];
-  final adapterPath =
-      Platform.environment['SYNAPSE_TEST_RETRIEVE_EXPAND_ADAPTER'];
   final promptDir =
       Platform.environment['SYNAPSE_TEST_PROMPT_DIR'] ?? '../docs';
   final skipReason = modelPath == null
@@ -48,7 +48,6 @@ void main() {
       final overrides = <String, String>{
         for (final entry in const {
           'category': 'CATEGORY_SYSTEMPROMPT.md',
-          'savePronoun': 'SAVE_PRONOUN_SYSTEMPROMPT.md',
           'metaFilter': 'META_FILTER_SYSTEMPROMPT.md',
           'retrieveExpand': 'RETRIEVE_EXPAND_SYSTEMPROMPT.md',
           'retrieveFilter': 'RETRIEVE_FILTER_SYSTEMPROMPT.md',
@@ -65,10 +64,6 @@ void main() {
           dbPath: inMemoryDatabasePath,
           categorySeed: CategorySeed.synapse19(),
           modelPath: modelPath,
-          adapters: [
-            if (adapterPath != null)
-              AdapterSpec(name: 'retrieve-expand', path: adapterPath),
-          ],
           promptOverrides: overrides,
         ),
       );
@@ -78,20 +73,6 @@ void main() {
       if (modelPath == null) return;
       await engine.dispose();
     });
-
-    test('savePronoun runs end-to-end', () async {
-      final result = await engine.llm!.savePronoun(
-        '거기 또 갔어',
-        context: '나 어제 스타벅스 다녀옴',
-        today: '2026-04-25',
-      );
-      // Either {"text": "..."} or {"question": "..."} — both are valid
-      // outcomes. We only assert the contract.
-      expect(
-        result.containsKey('text') || result.containsKey('question'),
-        isTrue,
-      );
-    }, skip: skipReason);
 
     test('retrieveExpand returns a non-empty list', () async {
       final result = await engine.llm!.retrieveExpand('허리 아픈데 어디 가야?');

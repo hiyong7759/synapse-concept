@@ -6,13 +6,13 @@ void main() {
     test('returns the override when present (no asset read)', () async {
       var asks = 0;
       final loader = PromptLoader(
-        overrides: {'savePronoun': '<override>'},
+        overrides: {'metaFilter': '<override>'},
         readAsset: (_) async {
           asks++;
           return '<asset>';
         },
       );
-      expect(await loader.load(PromptKey.savePronoun), '<override>');
+      expect(await loader.load(PromptKey.metaFilter), '<override>');
       expect(asks, 0);
     });
 
@@ -28,12 +28,11 @@ void main() {
       expect(calls, 1, reason: 'second load should hit cache');
     });
 
-    test('asset paths cover all six system prompts with package prefix',
+    test('asset paths cover all five system prompts with package prefix',
         () {
       final names = PromptKey.values.map((k) => k.fileName).toList();
       expect(names, [
         'CATEGORY_SYSTEMPROMPT.md',
-        'SAVE_PRONOUN_SYSTEMPROMPT.md',
         'META_FILTER_SYSTEMPROMPT.md',
         'RETRIEVE_EXPAND_SYSTEMPROMPT.md',
         'RETRIEVE_FILTER_SYSTEMPROMPT.md',

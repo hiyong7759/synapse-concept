@@ -4,7 +4,6 @@ import 'package:flutter/services.dart' show rootBundle;
 /// One enum value per system-prompt file in `assets/prompts/`.
 enum PromptKey {
   category('CATEGORY_SYSTEMPROMPT.md'),
-  savePronoun('SAVE_PRONOUN_SYSTEMPROMPT.md'),
   metaFilter('META_FILTER_SYSTEMPROMPT.md'),
   retrieveExpand('RETRIEVE_EXPAND_SYSTEMPROMPT.md'),
   retrieveFilter('RETRIEVE_FILTER_SYSTEMPROMPT.md'),

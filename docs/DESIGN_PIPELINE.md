@@ -51,11 +51,11 @@ unresolved_tokens:      sentence_id, token, created_at                          
 
 | kind | 라우트 | 생성 시점 | save 파이프라인 (의미 처리) | 노드 편입 | 용도 |
 |---|---|---|---|---|---|
-| **note** | `/note` | 사용자가 `/note` 화면에서 입력 시 자동 생성 | save-pronoun ✓, 메타 필터 (자유문장·list 한정), `parse_markdown` heading 경로 상속, Kiwi 노드 추출 | ✓ | **모든 지식 축적** (한 줄 메모도 긴 마크다운도) |
+| **note** | `/note` | 사용자가 `/note` 화면에서 입력 시 자동 생성 | DateNormalizer (자연어 날짜 부사·ISO 날짜 결정론 정규화) ✓, 메타 필터 (자유문장·list 한정), `parse_markdown` heading 경로 상속, Kiwi 노드 추출 | ✓ | **모든 지식 축적** (한 줄 메모도 긴 마크다운도) |
 | **synapse** | `/synapse` | 사용자가 `/synapse` 화면에서 질문 시 자동 생성 | retrieve 후 답 생성, 질문·답 sentence 로 기록 | **✗ (역사만)** | 인출·융합 세션 |
 | **insight** | 승격 전용 | 시냅스 세션 메시지의 사용자 [⬆ 승격] 클릭 | 시냅스 세션의 retrieve 캐시 노드 전부와 `node_sentence_mentions` 일괄 INSERT | ✓ (허브) | 사용자 승격 통찰 1 본체 |
 
-사용자는 입력 형식(평문 vs heading + list)을 인지·선택하지 않는다. 입력 형식 차이는 **LLM 의미 처리 단계가 흡수** — `parse_markdown` 이 heading 있으면 카테고리 등록, 없으면 free 처리. 사용자에겐 단일 입력 영역으로 보임. save-pronoun, 메타 필터, Kiwi 추출은 단일 경로로 일관 적용.
+사용자는 입력 형식(평문 vs heading + list)을 인지·선택하지 않는다. 입력 형식 차이는 **의미 처리 단계가 흡수** — `parse_markdown` 이 heading 있으면 카테고리 등록, 없으면 free 처리. 사용자에겐 단일 입력 영역으로 보임. DateNormalizer, 메타 필터, Kiwi 추출은 단일 경로로 일관 적용.
 
 **`synapse`** — 저장이 아니라 **인출·조합** 이므로 파이프라인이 다르게 탄다. 질문·답은 `sentences` 에 `role='user'`/`'assistant'` 로 기록되지만 `node_sentence_mentions` 편입 없음 (원칙 15-1).
 
@@ -78,7 +78,7 @@ unresolved_tokens:      sentence_id, token, created_at                          
 1. `posts.source` UPDATE (자동저장 미발화분 함께 flush)
 2. 기존 `sentences` 모두 DELETE (post_id CASCADE)
 3. `parse_markdown(source)` → heading / key_value / list / free 분기
-4. 단일 경로 파이프라인 ① save-pronoun → ② ISO 날짜 정규화 → ③ unresolved 감지 → ④ sentence INSERT → ⑤ Kiwi 노드 추출 → ⑥ 날짜 분할 → ⑦ `node_sentence_mentions` + `sentence_categories`
+4. 단일 경로 파이프라인 ① DateNormalizer (자연어 날짜 부사 + ISO 날짜 결정론 정규화 + 반복 표현 보존) → ② unresolved 감지 → ③ sentence INSERT → ④ Kiwi 노드 추출 → ⑤ 날짜 분할 → ⑥ `node_sentence_mentions` + `sentence_categories`
 5. **LLM 정정 후보 생성** — 본문 토큰 중 `aliases` 미등록 + 자모 거리 1~2 의심 쌍을 LLM 에 검증 요청 → 후보 목록 반환 (적용 안 함)
 6. 응답에 `correction_candidates: [{from, to, confidence, reason}]` 포함
 
@@ -102,7 +102,7 @@ unresolved_tokens:      sentence_id, token, created_at                          
 ```
 
 - heading 경로(`더나은.개발팀`) → `categories` 재귀 upsert + `sentence_categories`(heading 말단, origin='user')
-- `- 팀장:: 박지수` → key_value 로 파싱, sentence 통째 저장(`text="팀장:: 박지수"`), save-pronoun skip
+- `- 팀장:: 박지수` → key_value 로 파싱, sentence 통째 저장(`text="팀장:: 박지수"`)
 - `- 프론트엔드 김민수` → list, 일반 sentence
 - 자유 문장 → free, 메타 필터 대상
 
@@ -128,23 +128,23 @@ unresolved_tokens:      sentence_id, token, created_at                          
   ↓
 문장별로 (메타 idx 제외, kind 별 분기):
   ↓
-  ① [save-pronoun — 베이스 모델]  temp=0, max_tokens=256     ← list/free 만 호출 (heading/key_value skip)
-      프롬프트: docs/SAVE_PRONOUN_SYSTEMPROMPT.md
-      세션리스 — 직전 대화 context 주입 없음
-      모호 케이스(`{"question": "..."}` 반환) → 저장 중단
-      실패·로컬 LLM 사용 불가 시 → 원문 그대로 진행 (skip)
+  ① [DateNormalizer — 결정론적 날짜 정규화]  Kiwi tokenize 1회
+      자연어 날짜 부사: 그저께·어제·오늘·내일·모레·글피·그글피 → 절대 한국어 표기
+                       (오늘 기준 산술 — 2026-04-26 reference 면 "어제" → "2026년 4월 25일")
+      상대 요일: "이번/지난/다음 주 X요일" → ISO 주의 절대 일자
+      ISO 날짜: 2026-04-18 / 2026.04.18 / 2026/04/18 / 2026-04 → 한국어 표기
+      반복 표현 보존: "매주 금요일"·"격주"·"항상" 등 반복 마커 있는 절은 치환 스킵
+                     절 분리 = Kiwi 의 EF/EC + 강한 연결 부사 ("그리고/하지만/...")
+      LLM 호출 없음 — 빠르고 결정론적. save-pronoun LLM 폐기됨.
+      구현: `synapse_engine/lib/src/internal/date_normalize.dart`
   ↓
-  ② [규칙 — ISO 날짜 → 한국어 정규화]
-      '2026-04-18' → '2026년 4월 18일'
-      이 단계 이후 본문은 항상 한국어 표기
-  ↓
-  ③ [규칙 — unresolved 감지]
+  ② [규칙 — unresolved 감지]
       지시대명사/지시부사/시간 모호 부사/장소부사 정규식 스캔
       매칭된 토큰 → (sentence_id, token) 로 unresolved_tokens INSERT
   ↓
-  ④ sentences INSERT (정규화된 text, role='user', post_id, position)
+  ③ sentences INSERT (정규화된 text, role='user', post_id, position)
   ↓
-  ⑤ [Kiwi 형태소 분석 — 저장 기본 경로]
+  ④ [Kiwi 형태소 분석 — 저장 기본 경로]
       서버(조직): kiwipiepy (C++ 네이티브)
       모바일·데스크톱·웹(개인): kiwi-nlp (WASM)
       추출: NNG/NNP/NP 명사 + VV/VA lemma + MAG(안/못)
@@ -153,12 +153,12 @@ unresolved_tokens:      sentence_id, token, created_at                          
         · 외래어·복합명사 → Kiwi 가 쪼갠 조각 그대로 수용
           ("React Native" → "React", "Native" 두 노드. 같은 sentence 공출현으로 연결 창발)
   ↓
-  ⑥ [규칙 — 날짜 노드 분할]
-      '2026년 4월 18일' → ['2026년', '4월', '18일'] 노드 후보 추가
-      한 sentence 안의 모든 단위(년·월·일) 같은 sentence_id 에 mention 연결
-      식별 조건: '년/월/일' 키워드 또는 ISO 구분자 '-' 있을 때만
+  ⑤ [규칙 — 날짜 노드 분할]
+      DateNormalizer 가 ① 단계에서 split-node 후보까지 함께 반환:
+        '2026년 4월 18일' → ['2026년', '4월', '18일', '2026년 4월 18일']
+      한 sentence 안의 모든 단위(년·월·일) 같은 sentence_id 에 mention 연결.
       분할된 날짜 노드는 node_category_mentions 에 시드 카테고리 (TIM.year/TIM.month/TIM.day) id 로 origin='system' 자동 등록 (결정론적 예외)
-  ⑦ DB 저장 (동기 — 즉시 반영):
+  ⑥ DB 저장 (동기 — 즉시 반영):
       nodes upsert — 같은 이름은 기존 id 재사용
       node_sentence_mentions INSERT OR IGNORE (node_id, sentence_id)
 
@@ -303,7 +303,7 @@ altLabel 목록 (ko, en 언어)
 
 - 카테고리 분류 워커: LLM 호출 불가 → 아예 실행 안 됨. `origin='system'`(Kiwi 자동 매핑·날짜 분할 등)·`'user'` 매핑만 DB 에 쌓임.
 - Wikidata 별칭 워커: LLM과 무관하게 동작. 인터넷 없으면 스킵.
-- 저장 파이프라인: 메타 필터 skip(모든 문장 저장 진행), save-pronoun skip(원문 그대로). Kiwi 경로는 LLM 과 무관하게 항상 동작.
+- 저장 파이프라인: 메타 필터 skip(모든 문장 저장 진행). DateNormalizer·Kiwi 경로는 LLM 과 무관하게 항상 동작.
 
 ---
 
@@ -311,12 +311,13 @@ altLabel 목록 (ko, en 언어)
 
 ```
 질문
-  ↓ [synapse/retrieve-expand 어댑터]  temperature=0, max_tokens=256
+  ↓ [retrieve-expand — 베이스 모델 + RETRIEVE_EXPAND_SYSTEMPROMPT.md]  temperature=0, max_tokens=256
     질문 의도 해석 → 노드 후보 키워드
+    어댑터 미사용 (2026-04-26 PoC 에서 v3 시스템 프롬프트가 어댑터 동등 또는 우수 입증)
   ↓ [Kiwi 명사·용언 추출]
     질문 → NNG/NNP/NP 명사 + VV/VA lemma 로 후보 보강
     "커피가 맛있었나?" → ['커피', '맛', '맛있'] 후보 추가
-    → 조사·어미 붙은 표현도 매칭 가능, 어댑터 실패 시 폴백 역할
+    → 조사·어미 붙은 표현도 매칭 가능, 시스템 프롬프트 출력 실패 시 폴백 역할
     keywords = retrieve-expand 결과 ∪ Kiwi 결과
   ↓ [DB 매칭]
     aliases 정확 매칭 우선 → name 정확 매칭 → name substring 매칭
@@ -469,19 +470,20 @@ Python frozen:   앱 → HTTP → MLX 서버 (localhost:8765) → gemma-4-E2B-it
 
 ## 태스크 처리 방식
 
-베이스 모델 + 시스템 프롬프트로 충분한 태스크는 어댑터 없이, 규칙 추출·패턴 매칭이 필수적인 태스크만 파인튜닝 어댑터로 운영.
+시냅스 v22 본체는 어댑터를 사용하지 않는다. 모든 LLM 태스크가 베이스 모델 + 시스템 프롬프트로 동작.
 
-| 태스크 | 처리 방식 | 프롬프트 파일 / 어댑터 경로 |
+| 태스크 | 처리 방식 | 프롬프트 파일 |
 |--------|-----------|------|
 | meta-filter | 베이스 모델 | `docs/META_FILTER_SYSTEMPROMPT.md` |
-| save-pronoun | 베이스 모델 | `docs/SAVE_PRONOUN_SYSTEMPROMPT.md` |
-| typo-normalize | 베이스 모델 | `docs/TYPO_NORMALIZE_SYSTEMPROMPT.md` — 별칭 보호 + 자모 거리 사전 필터 통과 토큰 검증 |
+| typo-normalize | 베이스 모델 | (별칭 보호 + 자모 거리 사전 필터 통과 토큰 검증 — 후속 마일스톤) |
 | retrieve-filter | 베이스 모델 | `docs/RETRIEVE_FILTER_SYSTEMPROMPT.md` |
-| retrieve-expand | 어댑터 | `synapse/retrieve-expand` (모바일·데스크톱 번들 1 종) |
+| retrieve-expand | 베이스 모델 | `docs/RETRIEVE_EXPAND_SYSTEMPROMPT.md` v3 (어댑터는 2026-04-26 PoC 후 폐기) |
 | category (백그라운드) | 베이스 모델 | `docs/CATEGORY_SYSTEMPROMPT.md` |
 | synapse-answer | 베이스 모델 | `docs/SYNAPSE_ANSWER_SYSTEMPROMPT.md` |
 
-시스템 프롬프트 파일 로더는 환경별로 갈라진다 — Python frozen: `engine/prompts.py` / Flutter: `synapse_engine` 의 `lib/src/llm/prompts/` assets 로더. 권한 판단(security-access 등)은 결정론적 백엔드 로직 소관이라 LLM 태스크에서 제외.
+자연어 날짜 부사 처리 (이전 save-pronoun 영역) 는 LLM 호출 없이 결정론적 `DateNormalizer` 가 담당 — 자세한 단어 풀과 절 분리 알고리즘은 위 §의미 처리 파이프라인 ① 참조.
+
+시스템 프롬프트 파일 로더는 환경별로 갈라진다 — Python frozen: `engine/prompts.py` / Flutter: `synapse_engine` 의 `lib/src/prompts/loader.dart`. 권한 판단(security-access 등)은 결정론적 백엔드 로직 소관이라 LLM 태스크에서 제외.
 
 ---
 
@@ -489,11 +491,11 @@ Python frozen:   앱 → HTTP → MLX 서버 (localhost:8765) → gemma-4-E2B-it
 
 | 단계 | 처리 방식 | temperature | max_tokens |
 |------|-----------|-------------|------------|
+| 날짜 정규화 (저장 진입부) | DateNormalizer (결정론, LLM X) | — | — |
 | 메타 필터 (저장 진입부) | 베이스 + META_FILTER_SYSTEMPROMPT.md | 0 | 2048 |
-| 전처리 치환 (save-pronoun) | 베이스 + SAVE_PRONOUN_SYSTEMPROMPT.md | 0 | 256 |
-| 정정 후보 (typo-normalize) | 베이스 + TYPO_NORMALIZE_SYSTEMPROMPT.md | 0 | 256 |
+| 정정 후보 (typo-normalize) | 베이스 + (후속 마일스톤) | 0 | 256 |
 | 카테고리 분류 (백그라운드) | 베이스 + CATEGORY_SYSTEMPROMPT.md | 0 | 512 |
-| 인출 확장 (retrieve-expand) | synapse/retrieve-expand 어댑터 | 0 | 256 |
+| 인출 확장 (retrieve-expand) | 베이스 + RETRIEVE_EXPAND_SYSTEMPROMPT.md | 0 | 256 |
 | 인출 필터 (retrieve-filter) | 베이스 + RETRIEVE_FILTER_SYSTEMPROMPT.md | 0 | 8 |
 | 시냅스 답변 (synapse-answer) | 베이스 + SYNAPSE_ANSWER_SYSTEMPROMPT.md | 0.3 | 4096 |
 
@@ -504,7 +506,7 @@ Python frozen:   앱 → HTTP → MLX 서버 (localhost:8765) → gemma-4-E2B-it
 시냅스는 LLM 없이도 기본 동작을 보장한다 (원칙 11).
 
 - 자동저장: 항상 동작 (sqflite UPDATE 한 줄, LLM 호출 없음)
-- 의미 처리: Kiwi 형태소 분석으로 노드 추출 + 규칙 기반 날짜 분할·unresolved 감지. 메타 필터·save-pronoun·typo-normalize 는 skip. 평문 저장 자체는 완결됨 (정정 카드만 생성 안 됨)
+- 의미 처리: DateNormalizer (결정론) + Kiwi 형태소 분석 + 규칙 기반 날짜 분할·unresolved 감지. 메타 필터·typo-normalize 는 skip. 평문 저장 자체는 완결됨 (정정 카드만 생성 안 됨)
 - 백그라운드 워커: 카테고리 분류 워커는 LLM 호출 불가로 비활성 (`origin='ai'` 카테고리 발생 안 함). Wikidata 별칭 워커는 **인터넷만 있으면 동작** (LLM과 무관)
-- 인출: `retrieve-expand`·`retrieve-filter` 생략하고 Kiwi 키워드 매칭 + BFS만
+- 인출: `retrieve-expand`·`retrieve-filter` LLM 호출 생략하고 Kiwi 키워드 매칭 + BFS만
 - `/review`: `unresolved`, `ai_generated`(빈 결과), `external_generated`, `system_generated`, `suspected_typos`, `stale_nodes`, `insight_delete`, `daily`, `gaps` 모두 쿼리만으로 동작

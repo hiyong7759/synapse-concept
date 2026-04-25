@@ -21,53 +21,21 @@ void main() {
     setUp(() async {
       backend = StubInferenceBackend();
       await backend.loadModel('');
-      await backend.registerAdapter(
-        'retrieve-expand',
-        '/fake/retrieve-expand.gguf',
-      );
       tasks = LlmTasks(backend: backend, prompts: _seededLoader());
     });
 
-    test('savePronoun parses {"text":...} and uses the right system prompt',
+    test('retrieveExpand parses [] and runs on base model (no adapter)',
         () async {
-      backend.canned['::입력: 거기 갔어'] = '{"text": "스타벅스 갔어", "tokens": ["스타벅스"]}';
-      final result = await tasks.savePronoun('거기 갔어');
-      expect(result['text'], '스타벅스 갔어');
-      expect(backend.lastSystemPrompt, '<system:savePronoun>');
-      expect(backend.activeAdapter, isNull,
-          reason: 'savePronoun must run on base model only');
-    });
-
-    test('savePronoun falls back when output is unparseable', () async {
-      backend.canned['::입력: hello'] = 'gibberish';
-      final result = await tasks.savePronoun('hello');
-      expect(result['text'], 'hello');
-    });
-
-    test('savePronoun threads context and date into the user prompt',
-        () async {
-      await tasks.savePronoun(
-        '거기 또 갔어',
-        context: '나 어제 스타벅스 갔어',
-        today: '2026-04-25',
-      );
-      expect(backend.lastUserPrompt, contains('날짜: 2026-04-25'));
-      expect(backend.lastUserPrompt, contains('직전 대화 - 나 어제 스타벅스 갔어'));
-      expect(backend.lastUserPrompt, contains('입력: 거기 또 갔어'));
-    });
-
-    test('retrieveExpand activates the retrieve-expand adapter and parses []',
-        () async {
-      backend.canned['retrieve-expand::질문: 허리 어때?'] =
-          '["허리", "디스크", "통증"]';
+      backend.canned['::질문: 허리 어때?'] = '["허리", "디스크", "통증"]';
       final result = await tasks.retrieveExpand('허리 어때?');
       expect(result, ['허리', '디스크', '통증']);
-      expect(backend.activeAdapter, 'retrieve-expand');
+      expect(backend.activeAdapter, isNull,
+          reason: 'retrieve-expand adapter retired — base model only');
     });
 
     test('retrieveExpand falls back to whitespace split on parse failure',
         () async {
-      backend.canned['retrieve-expand::질문: 허리 어때?'] = 'no json';
+      backend.canned['::질문: 허리 어때?'] = 'no json';
       final result = await tasks.retrieveExpand('허리 어때?');
       expect(result, ['허리', '어때?']);
     });
@@ -121,14 +89,17 @@ void main() {
       );
     });
 
-    test('swapAdapter is a no-op when already on the requested adapter',
-        () async {
-      await tasks.retrieveExpand('q1');
-      final before = backend.activeAdapter;
-      // Adapter was switched once for retrieveExpand. Calling swapAdapter
-      // with the same name should not trigger another backend switch.
-      await tasks.swapAdapter('retrieve-expand');
-      expect(backend.activeAdapter, before);
+    test('swapAdapter still works for reuse-app domain adapters', () async {
+      // retrieve-expand adapter is retired but the swap infrastructure
+      // is preserved for reuse apps (e.g. gabjil-extract). Register and
+      // swap to a fictional one.
+      await backend.registerAdapter('gabjil-extract', '/fake/g.gguf');
+      await tasks.swapAdapter('gabjil-extract');
+      expect(backend.activeAdapter, 'gabjil-extract');
+      // Calling again with the same name is a no-op at the LlmTasks
+      // layer (cached), regardless of what the backend would do.
+      await tasks.swapAdapter('gabjil-extract');
+      expect(backend.activeAdapter, 'gabjil-extract');
     });
   });
 }
