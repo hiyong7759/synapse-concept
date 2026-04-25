@@ -1,9 +1,18 @@
-// 19 대분류 + 114 소분류 시드 + 인접 맵 페어.
-// Single source: docs/DESIGN_CATEGORY.md §분류체계 + §인접 맵.
+// 19 대분류 + 114 소분류 시드 + 인접 맵 페어 + 인칭대명사 11 별칭.
+// Single source: docs/DESIGN_CATEGORY.md §분류체계 + §인접 맵 + DESIGN_PIPELINE.md
+// §자동 시드 예외 (`_FIRST_PERSON_ALIASES`).
 //
 // Seed roots and their subcategories are inserted into `categories` at v1
 // migration time. Subcategory codes (e.g. "BOD.disease") are assembled by the
 // application layer; the table itself only stores `(name, parent_id)`.
+
+/// First-person aliases auto-seeded onto a `"나"` node at migration time so
+/// "내가/저는/제가/..." all collapse onto the same node via `aliases`
+/// lookup. Mirrors `engine/save.py:_FIRST_PERSON_ALIASES` (deduped to 11).
+const List<String> firstPersonAliases = [
+  '내', '저', '제', '나의', '저의', '제가',
+  '나는', '저는', '내가', '나한테', '저한테',
+];
 
 /// One macro category root with its subcategory leaves.
 class CategorySeedRoot {

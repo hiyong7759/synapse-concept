@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'config.dart';
 import 'db/migrations.dart';
 import 'db/schema.dart';
+import 'flow/synapse_flow.dart';
 import 'graph/ops.dart';
 import 'kiwi/kiwi_wasm.dart';
 import 'llm/inference_backend.dart';
@@ -13,13 +14,13 @@ import 'prompts/loader.dart';
 /// SynapseEngine — DI container + lifecycle.
 /// See docs/DESIGN_ENGINE.md §2 (two-layer API) and §3 (EngineConfig).
 ///
-/// As of F4 the engine owns:
+/// As of F5a the engine owns:
 ///   - `db`    — sqflite Database (always present)
 ///   - `llm`   — LlmTasks, when `modelPath` is configured
-///   - `graph` — GraphOps, when a [KiwiBackend] is available (default
-///               `FlutterKiwiBackend`, or test-supplied via `kiwiOverride`)
-///
-/// `flow` (SynapseFlow) lands in F5.
+///   - `graph` — GraphOps, when a [KiwiBackend] is supplied via [kiwiOverride]
+///   - `flow`  — SynapseFlow (note autosave/process + post management),
+///               attached when `reservedKinds` includes both 'synapse' and
+///               'insight' AND `graph` is available.
 ///
 /// Platform note: callers must initialise the sqflite factory before invoking
 /// [create] (mobile uses `package:sqflite/sqflite.dart`; desktop and tests
@@ -31,6 +32,7 @@ class SynapseEngine {
     required this.db,
     required this.llm,
     required this.graph,
+    required this.flow,
     required InferenceBackend? backend,
     required KiwiBackend? kiwi,
   })  : _backend = backend,
@@ -44,10 +46,13 @@ class SynapseEngine {
   /// useful without a model loaded).
   final LlmTasks? llm;
 
-  /// Graph + Kiwi surface. `null` only when [SynapseEngine.create] is asked
-  /// to skip Kiwi setup (for DB-only smoke paths). Default behaviour wires
-  /// up [FlutterKiwiBackend] using bundled assets.
+  /// Graph + Kiwi surface. `null` when no [KiwiBackend] was supplied —
+  /// callers can still use `db` directly for DB-only paths.
   final GraphOps? graph;
+
+  /// Synapse-app high-level flow. `null` for reuse apps that don't activate
+  /// the synapse/insight kinds.
+  final SynapseFlow? flow;
 
   final InferenceBackend? _backend;
   final KiwiBackend? _kiwi;
@@ -83,6 +88,7 @@ class SynapseEngine {
             db,
             allowedKinds: config.allowedKinds,
             seedRoots: config.categorySeed.roots,
+            seedFirstPersonAliases: config.isSynapseFlowEnabled,
           );
         },
         onUpgrade: (db, oldVersion, newVersion) async {
@@ -124,11 +130,18 @@ class SynapseEngine {
       );
     }
 
+    // ── SynapseFlow (synapse-app activation) ───────────
+    SynapseFlow? flow;
+    if (config.isSynapseFlowEnabled && graph != null && kiwi != null) {
+      flow = SynapseFlow(db: db, graph: graph, kiwi: kiwi, llm: tasks);
+    }
+
     return SynapseEngine._(
       config: config,
       db: db,
       llm: tasks,
       graph: graph,
+      flow: flow,
       backend: backend,
       kiwi: kiwi,
     );

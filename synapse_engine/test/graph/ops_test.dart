@@ -150,8 +150,11 @@ void main() {
       final stats = await ops.getStats();
       expect(stats.postCount, 1);
       expect(stats.sentenceCount, 1);
-      expect(stats.nodeCount, 2);
+      // 1 first-person seed ("나") + a + b = 3.
+      expect(stats.nodeCount, 3);
       expect(stats.categoryCount, 133);
+      // 11 first-person aliases auto-seeded at migration.
+      expect(stats.aliasCount, 11);
     });
 
     test('splitNode is a stub in F4', () async {

@@ -28,5 +28,7 @@ export 'src/kiwi/tokens.dart' show KiwiToken;
 export 'src/models/graph_models.dart'
     show Node, Sentence, Mention, Alias, TypoCandidate, EngineStats;
 
-// F5 will append:
-//   export 'src/flow/synapse_flow.dart';
+// F5a — synapse flow (note autosave/process + post management).
+export 'src/flow/results.dart' show NoteProcessResult;
+export 'src/flow/synapse_flow.dart'
+    show SynapseFlow, PostMeta, PostDetail, SentenceRow;
