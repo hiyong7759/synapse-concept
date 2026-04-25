@@ -1,6 +1,6 @@
 # Synapse 설계 원칙
 
-**최종 업데이트**: 2026-04-24 (v22 계획 — 앱 재작성에 앞선 원칙 통합·확장. ① 원칙 9 재정의: post = "세션 그릇", 4 모드(`chat`/`markdown`/`synapse`/`insight`) 사용자 명시. ② 원칙 13 신설: 로컬 모델 제약 → 사용자 명시 우선. ③ 원칙 14 신설: UI 의 핵심 의무는 규칙을 쉽게 지키게 돕는 것. ④ 원칙 15 신설: 시냅스는 축적된 지식 사이에 새 연결이 발화하는 장이며, 그 산물은 허브가 되어 다음 발화의 중력이 된다. 선행 v21: 엣지 테이블 폐기 완성(`node_mentions`→`node_sentence_mentions` 리네임, `node_categories`→`node_category_mentions`로 통합). v20: 카테고리 두 축 분리. v19: `posts.input_mode` 명시화. v18: 상태 레이어 제거. v17: Kiwi-first + origin `rule→system`)
+**최종 업데이트**: 2026-04-25 (v22 반영 — M3 에서 스키마 실 구현 완료. 앱 재작성에 앞선 원칙 통합·확장. ① 원칙 9 재정의: post = "세션 그릇", 4 모드(`chat`/`markdown`/`synapse`/`insight`) 사용자 명시. ② 원칙 13 신설: 로컬 모델 제약 → 사용자 명시 우선. ③ 원칙 14 신설: UI 의 핵심 의무는 규칙을 쉽게 지키게 돕는 것. ④ 원칙 15 신설: 시냅스는 축적된 지식 사이에 새 연결이 발화하는 장이며, 그 산물은 허브가 되어 다음 발화의 중력이 된다. 선행 v21: 엣지 테이블 폐기 완성(`node_mentions`→`node_sentence_mentions` 리네임, `node_categories`→`node_category_mentions`로 통합). v20: 카테고리 두 축 분리. v19: `posts.input_mode` 명시화. v18: 상태 레이어 제거. v17: Kiwi-first + origin `rule→system`)
 
 시냅스 프로젝트의 **모든 원칙을 한 곳에 모은 문서**. 각 설계 문서는 이 문서의 해당 섹션을 참조한다. 원칙이 여러 문서에 중복되면 이 문서가 **유일한 출처(source of truth)**.
 

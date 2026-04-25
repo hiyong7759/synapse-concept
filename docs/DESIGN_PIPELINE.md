@@ -1,6 +1,6 @@
 # Synapse 설계 — 저장/인출/대화 파이프라인
 
-**최종 업데이트**: 2026-04-24 (v22 계획 — post 가 "세션 그릇" 으로 일반화. `kind ∈ {chat, markdown, synapse, insight}` 4 모드. `synapse` 인출·융합 모드는 질문·답을 역사로만 기록(노드 편입 안 함). `insight` 는 사용자 명시 승격 → 시냅스 세션 retrieve 캐시 노드 전부와 허브 연결. 선행 v21: PLAN-007 `node_mentions` → `node_sentence_mentions`, `node_categories` → `node_category_mentions` 통합. v20: PLAN-004 카테고리 재설계. v19: `posts.input_mode` 신설. v18: 상태 레이어 제거. v17: Kiwi-first + origin `rule→system`)
+**최종 업데이트**: 2026-04-25 (v22 반영 — M3 에서 스키마 실 구현 완료. post 가 "세션 그릇" 으로 일반화. `kind ∈ {chat, markdown, synapse, insight}` 4 모드. `synapse` 인출·융합 모드는 질문·답을 역사로만 기록(노드 편입 안 함). `insight` 는 사용자 명시 승격 → 시냅스 세션 retrieve 캐시 노드 전부와 허브 연결. 선행 v21: PLAN-007 `node_mentions` → `node_sentence_mentions`, `node_categories` → `node_category_mentions` 통합. v20: PLAN-004 카테고리 재설계. v19: `posts.input_mode` 신설. v18: 상태 레이어 제거. v17: Kiwi-first + origin `rule→system`)
 
 ## 근본 목표
 
@@ -8,7 +8,7 @@
 
 ---
 
-## DB 스키마 (v22 계획)
+## DB 스키마 (v22)
 
 ```sql
 posts:                  id, kind('chat'|'markdown'|'synapse'|'insight'), title, source, created_at, updated_at
@@ -22,7 +22,7 @@ aliases:                alias TEXT PRIMARY KEY, node_id, origin('user'|'ai'|'sys
 unresolved_tokens:      sentence_id, token, created_at                                             — PK(sentence_id, token)
 ```
 
-**v22 계획 변경점**: post 를 "세션 그릇" 으로 일반화.
+**v22 변경점** (M3 에서 `engine/db.py` 실 구현 완료): post 를 "세션 그릇" 으로 일반화.
 - **`posts.kind`** — `input_mode` 리네임 + 값 확장. 4 모드 (`chat`/`markdown`/`synapse`/`insight`).
 - **`posts.title`** — 목록 표시용. 첫 행 자동, 사용자 편집 가능. NULL 허용.
 - **`posts.source`** — `markdown` 리네임. 세션 전체 원본 누적 저장 (모드별 포맷 다름). NULL 허용.
@@ -61,7 +61,7 @@ unresolved_tokens:      sentence_id, token, created_at                          
 
 모든 하이퍼그래프 변경은 **자동 저장**된다. `sentence_categories`(사용자 heading 축) · `node_categories`(19 대분류 축) · `aliases` 모두 저장 시점에 `origin`을 부여받아 즉시 DB에 들어간다. 사용자는 `/review`의 AI·규칙 목록 뷰에서 잘못된 항목을 삭제할 수 있다. 유일한 예외는 `unresolved_tokens`(치환 실패 지시어) + 파괴적 작업(`merge_nodes`, 아카이브)이다.
 
-### 입력 모드 (v22 계획 — 4 모드)
+### 입력 모드 (v22 — 4 모드)
 
 **모드는 UI 라우트 선택으로 결정**한다. `save()` · `retrieve()` 호출자는 `kind` 를 **필수** 지정. 자동 판정 없음. 결정된 모드는 `posts.kind` 에 그대로 저장된다.
 
@@ -104,7 +104,7 @@ unresolved_tokens:      sentence_id, token, created_at                          
 
 ```
 사용자 입력 (mode='chat' or 'markdown')
-  ↓ posts INSERT (markdown=원문, input_mode=mode)
+  ↓ posts INSERT (kind=mode, source=원문, title=첫 행 자동)
   ↓ parse_markdown(text) — heading/list/평문 분리 (markdown), 전부 (None,'free',text) (chat)
   ↓
   [메타 필터 — 게시물 단위 1회]                                     ← NEW (v17)

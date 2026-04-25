@@ -1,6 +1,6 @@
 # Synapse 설계 — /review 검토 편입
 
-**최종 업데이트**: 2026-04-24 (v22 계획 — **통찰 삭제 섹션 신설** (`insight_delete` — `origin='insight'` sentence 는 편집 불가·삭제는 승인). 선행 v21 리네임 반영. v18: 상태 레이어 제거. v17: origin `rule→system`)
+**최종 업데이트**: 2026-04-25 (v22 반영 — M3 스키마 실 구현 완료. **통찰 삭제 섹션 신설** (`insight_delete` — `origin='insight'` sentence 는 편집 불가·삭제는 승인). 선행 v21 리네임 반영. v18: 상태 레이어 제거. v17: origin `rule→system`)
 
 ## 배경
 

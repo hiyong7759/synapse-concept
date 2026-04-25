@@ -1,6 +1,6 @@
 # Synapse 설계 — 하이퍼그래프 모델
 
-**최종 업데이트**: 2026-04-24 (v22 계획 — 앱 재작성에 맞춰 post 를 "세션 그릇" 으로 일반화. `posts.input_mode`→`kind` 리네임 + 값 확장 (`synapse`·`insight` 추가), `posts.title` 신설, `posts.markdown`→`source` 리네임 (4 모드 공통 누적 원본), `sentences.post_id NOT NULL` 강제, `sentences.origin` 신설 (`insight` 표식). 선행 v21: PLAN-007 "하이퍼엣지 매핑 단일화" — `node_mentions`→`node_sentence_mentions`, `node_categories`→`node_category_mentions` 통합. v20: PLAN-004 카테고리 재설계. v19: `posts.input_mode` 신설. v18: 상태 레이어 제거. v17: Kiwi-first + 메타 필터 + origin `rule→system`)
+**최종 업데이트**: 2026-04-25 (v22 반영 — M3 에서 `engine/db.py` 스키마 실 구현 완료. 앱 재작성에 맞춰 post 를 "세션 그릇" 으로 일반화. `posts.input_mode`→`kind` 리네임 + 값 확장 (`synapse`·`insight` 추가), `posts.title` 신설, `posts.markdown`→`source` 리네임 (4 모드 공통 누적 원본), `sentences.post_id NOT NULL` 강제, `sentences.origin` 신설 (`insight` 표식). 선행 v21: PLAN-007 "하이퍼엣지 매핑 단일화" — `node_mentions`→`node_sentence_mentions`, `node_categories`→`node_category_mentions` 통합. v20: PLAN-004 카테고리 재설계. v19: `posts.input_mode` 신설. v18: 상태 레이어 제거. v17: Kiwi-first + 메타 필터 + origin `rule→system`)
 
 ## 핵심 설계 원칙
 
@@ -26,9 +26,9 @@
 
 ---
 
-## 스키마 (v22 계획)
+## 스키마 (v22)
 
-> v21 → v22 변경 (앱 재작성 동반): **post 의 의미 확장 = "세션 그릇"**. 채팅·마크다운뿐 아니라 시냅스(인출·융합)·통찰(승격)까지 4 모드 통용. 세부는 아래.
+> v21 → v22 변경 (앱 재작성 동반, M3 에서 `engine/db.py` 실 구현 완료): **post 의 의미 확장 = "세션 그릇"**. 채팅·마크다운뿐 아니라 시냅스(인출·융합)·통찰(승격)까지 4 모드 통용. 세부는 아래.
 > - **리네임 `input_mode` → `kind`** — "입력" 뉘앙스가 `synapse`·`insight` 와 어긋남. `kind ∈ {'chat','markdown','synapse','insight'}`.
 > - **리네임 `markdown` → `source`** — 모드마다 의미가 다름 (markdown 은 원본 마크다운, chat 은 세션 대화 로그, synapse 는 Q/A 로그, insight 는 본체 한 줄). nullable. 모든 모드에서 **세션 전체 원본**을 누적 보관.
 > - **신설 `title`** — 목록 표시용 제목. 기본값은 첫 sentence 의 첫 행 자동 세팅, 사용자 편집 가능. NULL 허용.
