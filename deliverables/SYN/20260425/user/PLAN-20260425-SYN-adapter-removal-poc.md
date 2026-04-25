@@ -81,16 +81,14 @@
 - 출력 비교 + 정성 평가 (눈으로 합격/불합격)
 - 산출: `/tmp/retrieve_expand_poc_45.csv` (질문·base_list·adapter_list·judgement)
 
-### M4 — LIKE 매칭 인출 PoC
+### M4 — LIKE 매칭 인출 PoC (보류 — 후속 PLAN 으로 분리)
 
-- 기존 `_narrow_by_like` / `_extract_original_phrase_tokens` ([engine/retrieve.py:327-370](engine/retrieve.py#L327-L370)) 그대로 재사용
-- 현재 동작: "원문 질문 토큰으로 BFS 결과 좁힘"(post-filter)
-- 변경: "LLM 출력 phrase 를 시드 단계에 LIKE 매칭"(pre-seed) — 호출 지점만 추가, 함수 자체는 인자 일반화(질문 대신 phrase 리스트 수용) 수준의 미세 조정 또는 그대로 호출
-- **검증 항목**:
-  - LIKE 매칭 시드 개수 (질문당 평균)
-  - retrieve-filter 통과율 (어댑터 대비)
-  - synapse-answer 품질 정성 평가 (3~5건 dogfood)
-- 산출: `engine/retrieve.py` LIKE 호출 경로 추가 + `/tmp/retrieve_expand_like_poc.csv`
+**보류 사유**: M4 검증의 핵심(LIKE 매칭 시드 개수·retrieve-filter 통과율·synapse-answer dogfood)은 모두 사용자 그래프 데이터에 종속. 현재 v22 마이그레이션으로 DB 비어 있고, 인위적 시드는 사용자 도메인을 모방 못해 검증 신뢰도 낮음. 어댑터 제거 결정의 본질은 "LLM 출력 자체가 충분한가" 인데 M3 에서 이미 입증.
+
+**후속 PLAN 으로 미루는 작업**:
+- 기존 `_narrow_by_like` 재사용해서 LLM phrase 를 BFS 시드 단계에 LIKE 매칭 추가
+- 사용자 실데이터 적재 후 시드 개수·retrieve-filter 통과율·dogfood 측정
+- 트리거: v22 Flutter 통합 + 사용자 사용 시작
 
 ### M5 — 모델 교차 검증 (모바일 제약 반영)
 
@@ -112,6 +110,7 @@ v22 Flutter 전환으로 핸드폰에서도 추론이 돌아야 하므로, 4bit 
 - 합격 시:
   - retrieve-expand 어댑터 제거 PR (`engine/llm.py` 어댑터 호출 경로 제거, `data/finetune/models/tasks/retrieve-expand` 정리)
   - 모델 카탈로그 UI 설계 트리거 (사용자가 모델 선택·전환 가능)
+  - LIKE 매칭 인출 통합 PoC (M4 보류분) 후속 PLAN 시작
   - 학습 데이터 `task4_retrieval_expand.jsonl` 은 **보존** (회귀 시 복구용)
 - 불합격 시:
   - 폴백: 어댑터 유지
@@ -128,8 +127,6 @@ v22 Flutter 전환으로 핸드폰에서도 추론이 돌아야 하므로, 4bit 
 | C(차별화) 구간 의미 다리 잡힘 비율 | ≥ 80% (15건 중 12건) |
 | 노이즈(단음절·단일 일반어 단독 출력 — 방법·것·정도 등) | ≤ 5% (45건 중 2건) |
 | 모델 일관성 | 3 모델 중 2 모델 이상에서 위 두 기준 동시 충족 |
-| LIKE 매칭 retrieve-filter 통과율 | 어댑터 대비 -10%p 이내 |
-| synapse-answer 정성 평가 | dogfood 5건 중 4건 이상 "어댑터 대비 동등 또는 우수" |
 
 **모바일 (Mac M4 대리 측정)**
 
