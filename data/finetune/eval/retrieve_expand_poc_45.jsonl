@@ -1,0 +1,45 @@
+{"bucket": "A_in_distribution", "question": "외장하드 용량 얼마야?"}
+{"bucket": "A_in_distribution", "question": "도커 써본 적 있어?"}
+{"bucket": "A_in_distribution", "question": "석사나 대학원 생각 있어?"}
+{"bucket": "A_in_distribution", "question": "업무 스트레스 많이 받아?"}
+{"bucket": "A_in_distribution", "question": "깃허브 쓸 줄 알아?"}
+{"bucket": "B_general", "question": "오늘 점심 뭐 먹지?"}
+{"bucket": "B_general", "question": "주말에 뭐 할까"}
+{"bucket": "B_general", "question": "스트레스 풀고 싶어"}
+{"bucket": "B_general", "question": "여행 가고 싶다"}
+{"bucket": "B_general", "question": "심심해 죽겠다"}
+{"bucket": "C_ood_mixed", "question": "이가 시려서 그러는데 치과 어디가 좋아"}
+{"bucket": "C_ood_mixed", "question": "퇴직금 중간정산 받을 수 있는 조건이 뭐야"}
+{"bucket": "C_ood_mixed", "question": "마라톤 풀코스 처음 뛰는데 페이스 조절 어떻게 해"}
+{"bucket": "C_ood_mixed", "question": "양자컴퓨터 공부 시작하려는데 뭐부터 봐야 해"}
+{"bucket": "C_ood_mixed", "question": "회사 결산이 안 맞는데 어디부터 봐야 해"}
+{"bucket": "D_medical", "question": "두통이 너무 심한데 어떻게 해야 해"}
+{"bucket": "D_medical", "question": "무릎이 자주 아픈데 어디 가야 해"}
+{"bucket": "D_medical", "question": "위염인 것 같은데 뭐 먹으면 안 돼"}
+{"bucket": "D_medical", "question": "알레르기 비염 약 뭐가 좋을까"}
+{"bucket": "D_medical", "question": "어깨가 결리는데 운동으로 풀 수 있나"}
+{"bucket": "E_legal_tax", "question": "연차 휴가 못 쓰면 어떻게 돼"}
+{"bucket": "E_legal_tax", "question": "부동산 양도세 계산 어떻게 하지"}
+{"bucket": "E_legal_tax", "question": "종합소득세 신고 안 하면 가산세 얼마야"}
+{"bucket": "E_legal_tax", "question": "임대차 계약 갱신 청구 거절 사유가 뭐야"}
+{"bucket": "E_legal_tax", "question": "상속세 면제 한도가 얼마야"}
+{"bucket": "F_finance", "question": "주택담보대출 한도 어떻게 정해져"}
+{"bucket": "F_finance", "question": "ETF 와 펀드 차이가 뭐야"}
+{"bucket": "F_finance", "question": "신용점수 올리려면 뭐부터 해야 해"}
+{"bucket": "F_finance", "question": "환율 오를 때 외화 통장 들어둬도 돼"}
+{"bucket": "F_finance", "question": "법인 부가세 신고 어떻게 해"}
+{"bucket": "G_fitness", "question": "헬스 처음인데 3대 운동부터 해야 해"}
+{"bucket": "G_fitness", "question": "단백질 하루 얼마나 먹어야 근육 붙어"}
+{"bucket": "G_fitness", "question": "인터벌 트레이닝 효과 진짜 있어"}
+{"bucket": "G_fitness", "question": "케토 식단 부작용 뭐 있어"}
+{"bucket": "G_fitness", "question": "러닝화 어떤 거 신어야 해"}
+{"bucket": "H_study_career", "question": "정보처리기사 따려면 뭐부터 봐야 해"}
+{"bucket": "H_study_career", "question": "이직 면접에서 연봉 협상 어떻게 시작해"}
+{"bucket": "H_study_career", "question": "박사 학위 미국 가는 게 나을까 한국이 나을까"}
+{"bucket": "H_study_career", "question": "AWS 자격증 어떤 거부터 따야 해"}
+{"bucket": "H_study_career", "question": "영어 회화 공부 하루 얼마나 해야 늘어"}
+{"bucket": "I_daily_travel", "question": "부모님 환갑 선물 뭐가 좋을까"}
+{"bucket": "I_daily_travel", "question": "처음 가는 출장에 챙길 거 뭐야"}
+{"bucket": "I_daily_travel", "question": "일본 오사카 여행 며칠 잡는 게 적당해"}
+{"bucket": "I_daily_travel", "question": "친구 결혼식 축의금 얼마 해야 해"}
+{"bucket": "I_daily_travel", "question": "강아지 처음 키우는데 준비물 뭐 있어"}
