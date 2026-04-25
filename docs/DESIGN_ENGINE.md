@@ -399,7 +399,7 @@ class LlamadartBackend {
 
 ### 어댑터 정책 — 단일 모델 고정
 
-- **베이스 모델**: Gemma 4 E2B-it 4bit GGUF (~1.2GB). 앱 번들 고정. 모델 카탈로그·다운로드 인프라는 후속 PLAN.
+- **베이스 모델**: Gemma 4 E2B-it Q4_K_M GGUF (~3.1GB). 앱 번들 고정. 모델 카탈로그·다운로드 인프라는 후속 PLAN.
 - **어댑터**: `retrieve-expand` (GGUF, 52MB) 만 번들. `save-pronoun`/`meta-filter`/`typo-normalize`/`synapse-answer`/`retrieve-filter` 는 **베이스 + 시스템 프롬프트** 로 처리.
 - **시스템 프롬프트**: `assets/prompts/` 에 `SAVE_PRONOUN_SYSTEMPROMPT.md`·`META_FILTER_SYSTEMPROMPT.md`·`TYPO_NORMALIZE_SYSTEMPROMPT.md` 등을 번들. `LlmTasks` 가 태스크별로 골라 사용.
 

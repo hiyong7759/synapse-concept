@@ -441,7 +441,7 @@ sentence_id
 
 | 환경 | 런타임 | 베이스 모델 | 호출 방식 |
 |---|---|---|---|
-| **모바일·데스크톱** (프로덕션) | `llamadart` (llama.cpp 바인딩) — `synapse_engine` 패키지 내부 | Gemma 4 E2B-it 4bit GGUF (~1.2GB, 앱 번들) | **인프로세스 직접 호출** (HTTP 없음, 레이턴시 0) |
+| **모바일·데스크톱** (프로덕션) | `llamadart` (llama.cpp 바인딩) — `synapse_engine` 패키지 내부 | Gemma 4 E2B-it Q4_K_M GGUF (~3.1GB, 앱 번들) | **인프로세스 직접 호출** (HTTP 없음, 레이턴시 0) |
 | **Python frozen** (서버·dogfood·학습 검증) | MLX 서버 (`api/mlx_server.py`, OpenAI 호환) | `unsloth/gemma-4-E2B-it-UD-MLX-4bit` (~3.6GB) | HTTP `localhost:8765` |
 
 베이스 모델은 동일한 Google Gemma 4 2B (Early Access). 양자화·런타임만 환경별로 갈라진다. 컨텍스트 윈도우: 양자화 32K / 원본 128K.
