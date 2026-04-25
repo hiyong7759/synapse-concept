@@ -1,4 +1,12 @@
-"""Synapse FastAPI 서버."""
+"""Synapse FastAPI 서버.
+
+Status: **frozen at v22 1차안** (2026-04-25). v22 2차안 라우트(`/note`,
+`POST /posts/{id}/process`, `/synapse/turn`, `/promote`) 는 Flutter 측이
+`synapse_engine` 을 직접 호출 — Python HTTP 서버는 더 이상 갱신되지 않는다.
+
+이 서버는 학습·dogfood·gabjil 실험의 백엔드로 보존된다.
+신규 클라이언트는 Flutter `synapse_engine` 패키지를 임베드하여 사용.
+"""
 
 import os
 from pathlib import Path
