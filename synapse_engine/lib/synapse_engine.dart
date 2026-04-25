@@ -16,8 +16,12 @@ export 'src/config.dart' show EngineConfig, AdapterSpec, CategorySeed;
 export 'src/db/category_seed.dart' show CategorySeedRoot;
 export 'src/engine.dart' show SynapseEngine;
 
-// F3~F5 will append:
+// F3 — LLM task surfaces.
+export 'src/llm/inference_backend.dart' show InferenceBackend, LlmError;
+export 'src/llm/tasks.dart' show LlmTasks, ContextSentence, Correction;
+export 'src/prompts/loader.dart' show PromptKey;
+
+// F4~F5 will append:
 //   export 'src/flow/synapse_flow.dart';
-//   export 'src/llm/tasks.dart';
 //   export 'src/graph/ops.dart';
 //   export 'src/models/...';
