@@ -23,9 +23,8 @@ synapse_engine/                ← Dart 패키지 (private 또는 pub.dev)
 │   │   ├── engine.dart        ← SynapseEngine 컨스트럭터 + DI 컨테이너
 │   │   ├── config.dart        ← EngineConfig + allowedKinds/reservedKinds
 │   │   ├── db/
-│   │   │   ├── schema.dart    ← DDL (9 테이블 + CHECK 동적)
-│   │   │   ├── migrations.dart
-│   │   │   └── seed.dart      ← 19 대분류 시드
+│   │   │   ├── schema.dart    ← DDL (9 테이블 + CHECK 동적, `categories` 19 대분류 시드 INSERT 포함)
+│   │   │   └── migrations.dart
 │   │   ├── flow/
 │   │   │   └── synapse_flow.dart  ← 상위 API (시냅스 앱 전용)
 │   │   ├── llm/
@@ -506,7 +505,7 @@ engine.onSentenceCommitted.listen((e) {
 - `docs/DESIGN_HYPERGRAPH.md` — 스키마 (9 테이블)
 - `docs/DESIGN_PIPELINE.md` — 자동저장·의미 처리·인출 파이프라인 세부
 - `docs/DESIGN_INPUT_MODES_AND_RETRIEVAL.md` — note 단일 그릇 + LLM 호출 요약
-- `docs/DESIGN_MOBILE.md` — 디바이스 벤치마크·앱 번들 정책
+- `docs/DESIGN_APP.md` — 비서 앱 + Flutter 기술 스택·디바이스 벤치마크·파이프라인 최적화·리스크
 - `docs/DESIGN_CATEGORY.md` — 19 대분류 + 인접 맵
 - `docs/DESIGN_REVIEW.md` — 통찰 삭제 (`insight_delete`) 승인 흐름
 - `docs/CATEGORY_SYSTEMPROMPT.md`·`SAVE_PRONOUN_SYSTEMPROMPT.md`·`META_FILTER_SYSTEMPROMPT.md`·`RETRIEVE_EXPAND_SYSTEMPROMPT.md`·`RETRIEVE_FILTER_SYSTEMPROMPT.md` — assets 번들 후보
