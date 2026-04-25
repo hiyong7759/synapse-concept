@@ -11,9 +11,12 @@
 /// See `docs/DESIGN_ENGINE.md` §2 for the full surface.
 library synapse_engine;
 
-// F2~F5 will populate exports here:
-//   export 'src/engine.dart';
-//   export 'src/config.dart';
+// F2 — DB layer surfaces.
+export 'src/config.dart' show EngineConfig, AdapterSpec, CategorySeed;
+export 'src/db/category_seed.dart' show CategorySeedRoot;
+export 'src/engine.dart' show SynapseEngine;
+
+// F3~F5 will append:
 //   export 'src/flow/synapse_flow.dart';
 //   export 'src/llm/tasks.dart';
 //   export 'src/graph/ops.dart';
