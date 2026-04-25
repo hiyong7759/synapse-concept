@@ -120,10 +120,34 @@ def _fire_post_save_hooks(result: "SaveResult", db_path: str) -> None:
 
 # ─── DB 헬퍼 ──────────────────────────────────────────────
 
-def _insert_post(conn, markdown: str, input_mode: str) -> int:
+def _first_line_as_title(source: str, max_len: int = 80) -> Optional[str]:
+    """post.title 기본값: source 의 첫 non-empty 행을 마크다운 heading 기호(`#`) 벗긴
+    형태로 추출. 너무 길면 max_len 으로 자름. 빈 source 는 None."""
+    if not source:
+        return None
+    for raw in source.splitlines():
+        stripped = raw.strip()
+        if not stripped:
+            continue
+        cleaned = stripped.lstrip("#").strip()
+        if not cleaned:
+            cleaned = stripped
+        return cleaned[:max_len]
+    return None
+
+
+def _insert_post(
+    conn,
+    *,
+    kind: str,
+    title: Optional[str],
+    source: Optional[str],
+) -> int:
+    """v22: posts 세션 그릇 INSERT. kind ∈ {chat, markdown, synapse, insight}.
+    title·source 는 nullable. 호출자가 모드별 규칙대로 산출해 전달."""
     cur = conn.execute(
-        "INSERT INTO posts (markdown, input_mode) VALUES (?,?)",
-        (markdown, input_mode),
+        "INSERT INTO posts (kind, title, source) VALUES (?,?,?)",
+        (kind, title, source),
     )
     return cur.lastrowid
 
@@ -131,15 +155,36 @@ def _insert_post(conn, markdown: str, input_mode: str) -> int:
 def _insert_sentence(
     conn,
     text: str,
-    post_id: Optional[int] = None,
+    *,
+    post_id: int,
     position: int = 0,
     role: str = "user",
+    origin: Optional[str] = None,
 ) -> int:
+    """v22: post_id 필수. origin ∈ {None, 'user', 'insight'}.
+    'insight' 는 승격된 통찰 본체 — UI·API 레벨에서 본문 편집 불가로 보호."""
     cur = conn.execute(
-        "INSERT INTO sentences (post_id, position, text, role) VALUES (?,?,?,?)",
-        (post_id, position, text, role),
+        "INSERT INTO sentences (post_id, position, text, role, origin) "
+        "VALUES (?,?,?,?,?)",
+        (post_id, position, text, role, origin),
     )
     return cur.lastrowid
+
+
+def _touch_post_updated_at(conn, post_id: int) -> None:
+    """post 의 updated_at 을 현재 시각으로 갱신 (메시지 append·편집 시 호출)."""
+    conn.execute(
+        "UPDATE posts SET updated_at = datetime('now') WHERE id = ?", (post_id,)
+    )
+
+
+def _next_position(conn, post_id: int) -> int:
+    """post 내 sentences 의 다음 position (현재 최대 + 1, 비면 0)."""
+    row = conn.execute(
+        "SELECT COALESCE(MAX(position), -1) + 1 AS n FROM sentences WHERE post_id = ?",
+        (post_id,),
+    ).fetchone()
+    return int(row["n"]) if row else 0
 
 
 def _upsert_node(conn, name: str) -> tuple[int, bool]:
@@ -658,8 +703,14 @@ def save(
             conn.commit()
             return result
 
-        # posts 1건 INSERT (정규화된 마크다운 + input_mode 보관)
-        post_id = _insert_post(conn, text, input_mode=mode)
+        # v22: posts 세션 그릇 1 건 INSERT — kind=mode, source=정규화 원문,
+        # title=첫 행 자동 (사용자가 나중에 편집 가능).
+        post_id = _insert_post(
+            conn,
+            kind=mode,
+            title=_first_line_as_title(text),
+            source=text,
+        )
         result.post_id = post_id
 
         # 모드별 파이프라인 스위치
@@ -719,6 +770,195 @@ def save(
     _fire_post_save_hooks(result, db_path)
 
     return result
+
+
+# ─── v22: 시냅스 세션 · 통찰 승격 ─────────────────────────
+
+def _format_chat_log_append(existing: Optional[str], role: str, text: str) -> str:
+    """posts.source 에 시냅스·대화 세션 로그를 누적하는 공통 포맷.
+    사람이 다시 읽어 복원 가능한 형태 — 역할 태그 + 본문 + 빈 줄."""
+    prefix = "Q" if role == "user" else "A"
+    block = f"[{prefix}] {text}"
+    if existing is None or existing == "":
+        return block
+    return f"{existing}\n\n{block}"
+
+
+def synapse_turn(
+    question: str,
+    *,
+    post_id: Optional[int] = None,
+    db_path: str = DB_PATH,
+    use_llm: bool = True,
+    history: Optional[list[dict]] = None,
+) -> dict:
+    """v22: `/synapse` 세션의 한 턴. 질문을 받아 인출·융합 → 답변 생성 → 같은
+    post 에 Q/A 두 sentence 로 append. 첫 호출이면 새 posts(kind='synapse') 생성.
+
+    반환:
+      {
+        "post_id":            int,             # 이어 쓰기 용 세션 id
+        "q_sentence_id":      int,             # 방금 쓴 user Q sentence
+        "a_sentence_id":      int,             # 방금 쓴 assistant A sentence
+        "retrieved_node_ids": list[int],       # 이 턴의 retrieve 캐시 (승격 시 허브 연결에 사용)
+        "answer":             str,             # LLM 답변 (또는 --no-llm 경로 원문 묶음)
+        "context_sentences":  list[tuple[int,str]],  # UI 참조 표시용
+      }
+
+    원칙:
+    - synapse 모드는 **질문·답을 역사로만 기록**. 노드 편입·별칭 추출 안 함
+      (원칙 15-1: 축적은 chat/markdown 전담, synapse 는 발화 장).
+    - retrieve 로 당겨낸 노드 id 는 세션 밖(UI)에서 보관 → 승격 시 다시 전달.
+    - post_id=None 이면 새 세션 시작, 이어 호출 시 UI 가 직전 post_id 를 넘긴다.
+    """
+    # v22 (PLAN-v22-rewrite M4): 순환 import 방지를 위해 함수 내부에서 import.
+    from .retrieve import retrieve as _retrieve
+
+    r = _retrieve(question, db_path=db_path, use_llm=use_llm, history=history)
+    answer = r.answer or ""
+
+    conn = get_connection(db_path)
+    try:
+        if post_id is None:
+            # 새 시냅스 세션 시작
+            post_id = _insert_post(
+                conn,
+                kind="synapse",
+                title=_first_line_as_title(question),
+                source=_format_chat_log_append(None, "user", question),
+            )
+        else:
+            # 기존 세션에 Q 이어 쓰기 — source 누적
+            row = conn.execute(
+                "SELECT kind, source FROM posts WHERE id = ?", (post_id,)
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"post_id={post_id} 에 해당하는 posts 행이 없습니다.")
+            if row["kind"] != "synapse":
+                raise ValueError(
+                    f"post_id={post_id} 는 kind={row['kind']!r} — synapse_turn 은 "
+                    f"kind='synapse' post 에서만 이어쓸 수 있습니다."
+                )
+            conn.execute(
+                "UPDATE posts SET source = ? WHERE id = ?",
+                (_format_chat_log_append(row["source"], "user", question), post_id),
+            )
+
+        q_pos = _next_position(conn, post_id)
+        q_sid = _insert_sentence(
+            conn, question, post_id=post_id, position=q_pos, role="user"
+        )
+        a_pos = q_pos + 1
+        a_sid = _insert_sentence(
+            conn, answer, post_id=post_id, position=a_pos, role="assistant"
+        )
+
+        # A 를 source 에 누적 + updated_at 갱신
+        row = conn.execute(
+            "SELECT source FROM posts WHERE id = ?", (post_id,)
+        ).fetchone()
+        conn.execute(
+            "UPDATE posts SET source = ?, updated_at = datetime('now') WHERE id = ?",
+            (_format_chat_log_append(row["source"], "assistant", answer), post_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {
+        "post_id": post_id,
+        "q_sentence_id": q_sid,
+        "a_sentence_id": a_sid,
+        "retrieved_node_ids": list(r.retrieved_node_ids),
+        "answer": answer,
+        "context_sentences": list(r.context_sentences),
+    }
+
+
+def promote_to_insight(
+    source_sentence_id: int,
+    node_ids: list[int],
+    *,
+    db_path: str = DB_PATH,
+) -> dict:
+    """v22: 시냅스 세션의 한 답변(sentence) 을 통찰로 승격.
+
+    동작:
+      ① source_sentence_id 의 text 를 읽어
+      ② 새 posts(kind='insight', title=첫 행, source=본체) INSERT
+      ③ 본체 sentence 복제 INSERT (role='user', origin='insight', position=0)
+         — role 은 '사용자가 고른 발화'라는 의미로 user 유지.
+      ④ 전달받은 node_ids (= 해당 synapse 세션의 retrieve 캐시) 를
+         node_sentence_mentions 에 일괄 INSERT OR IGNORE (origin='ai'.
+         AI/규칙이 엮은 허브 연결이라는 의미).
+      ⑤ Kiwi 로 본체 text 에서 뽑은 노드도 동일 sentence 에 편입 (UNIQUE 스킵).
+
+    반환: {post_id, sentence_id, node_ids_hubbed: int}.
+    원칙 15-2: 본체 sentence 는 이후 편집 불가 (update_sentence 가드).
+    삭제는 /review 의 insight_delete 경로 (파괴적 작업, 원칙 8).
+    """
+    conn = get_connection(db_path)
+    try:
+        row = conn.execute(
+            "SELECT text FROM sentences WHERE id = ?", (source_sentence_id,)
+        ).fetchone()
+        if row is None:
+            raise ValueError(
+                f"source_sentence_id={source_sentence_id} 에 해당하는 sentence 가 없습니다."
+            )
+        text = row["text"] or ""
+
+        # ① 새 insight post
+        new_post_id = _insert_post(
+            conn,
+            kind="insight",
+            title=_first_line_as_title(text),
+            source=text,
+        )
+
+        # ② 본체 sentence 복제 — origin='insight' 로 표식
+        new_sid = _insert_sentence(
+            conn,
+            text,
+            post_id=new_post_id,
+            position=0,
+            role="user",
+            origin="insight",
+        )
+
+        hubbed = 0
+        # ③ 전달받은 retrieve 캐시 노드 일괄 편입 (origin='ai' — AI/규칙이 엮은 연결)
+        for nid in node_ids:
+            cur = conn.execute(
+                "INSERT OR IGNORE INTO node_sentence_mentions "
+                "(node_id, sentence_id, origin) VALUES (?,?,?)",
+                (nid, new_sid, "ai"),
+            )
+            if cur.rowcount > 0:
+                hubbed += 1
+
+        # ④ Kiwi 로 본체 토큰 → 노드 upsert + mention (중복은 UNIQUE 로 스킵)
+        try:
+            tokens = kiwi_extract_for_save(text)
+        except Exception:
+            tokens = {"nouns": []}
+        nouns = tokens.get("nouns", []) if isinstance(tokens, dict) else []
+        for name in _dedup_names(nouns):
+            if not name or not name.strip():
+                continue
+            node_id, _ = _upsert_node(conn, name.strip())
+            if _add_mention(conn, node_id, new_sid):
+                hubbed += 1
+
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {
+        "post_id": new_post_id,
+        "sentence_id": new_sid,
+        "node_ids_hubbed": hubbed,
+    }
 
 
 # ─── 문장/노드 관리 ───────────────────────────────────────
@@ -912,11 +1152,17 @@ def find_suspected_typos(db_path: str = DB_PATH) -> list[dict]:
     return suspects
 
 
-def save_response(text: str, db_path: str = DB_PATH) -> int:
-    """assistant 응답 저장. post_id 없음 (대화 기록 전용)."""
+def save_response(text: str, *, post_id: int, db_path: str = DB_PATH) -> int:
+    """v22: assistant 응답을 해당 대화 post 에 귀속하여 append 저장.
+    원칙: "미아 sentence 없음" — 모든 sentence 는 post_id 필수.
+    position 은 post 내 현재 최대 + 1 로 자동 배치. posts.updated_at 갱신."""
     conn = get_connection(db_path)
     try:
-        sid = _insert_sentence(conn, text, post_id=None, position=0, role="assistant")
+        pos = _next_position(conn, post_id)
+        sid = _insert_sentence(
+            conn, text, post_id=post_id, position=pos, role="assistant"
+        )
+        _touch_post_updated_at(conn, post_id)
         conn.commit()
     finally:
         conn.close()
@@ -1016,9 +1262,20 @@ def update_sentence(
     db_path: str = DB_PATH,
 ) -> SaveResult:
     """문장 수정: 기존 mentions 끊고 텍스트 갱신. 새 mentions는 즉시 재추출하지 않음
-    (게시물 단위 재저장은 post 수정 API를 통해). Phase 2에서는 최소 인터페이스만."""
+    (게시물 단위 재저장은 post 수정 API를 통해). Phase 2에서는 최소 인터페이스만.
+
+    v22 가드 (원칙 15-2): sentences.origin='insight' 는 승격된 통찰 본체라 본문
+    편집 불가. 삭제는 /review 승인 경로. 여기서 ValueError 로 거부한다."""
     conn = get_connection(db_path)
     try:
+        row = conn.execute(
+            "SELECT origin FROM sentences WHERE id = ?", (sentence_id,)
+        ).fetchone()
+        if row and row["origin"] == "insight":
+            raise ValueError(
+                f"sentence {sentence_id}: 통찰(origin='insight') 본문은 편집 불가 "
+                f"(원칙 15-2). 삭제는 /review 승인 경로를 통해서만 가능합니다."
+            )
         conn.execute("DELETE FROM node_sentence_mentions WHERE sentence_id = ?", (sentence_id,))
         conn.execute(
             "UPDATE sentences SET text = ?, updated_at = datetime('now') WHERE id = ?",

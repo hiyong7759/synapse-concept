@@ -75,6 +75,10 @@ class RetrieveResult:
     like_tokens_used: list[str] = field(default_factory=list)  # 좁히기에 쓰인 토큰
     pre_narrow_count: int = 0             # narrowing 직전 문장 개수
     post_narrow_count: int = 0            # narrowing 후 문장 개수
+    # v22 — synapse 세션 retrieve 캐시.
+    # BFS 로 방문한 모든 노드 id (시드 + 확장 모두). promote_to_insight 시
+    # 이 목록을 그대로 node_sentence_mentions 일괄 INSERT 로 넘겨 허브 연결에 쓴다.
+    retrieved_node_ids: list[int] = field(default_factory=list)
 
 
 # ─── DB 헬퍼 ──────────────────────────────────────────────
@@ -546,6 +550,15 @@ def retrieve(
                     all_mentions.extend(fm)
                     for m in fm:
                         visited_sentence_ids.add(m.sentence_id)
+
+        # v22: BFS 가 방문한 모든 노드 id 를 synapse 세션 캐시로 내보낸다.
+        # all_mentions 에는 축 A 시드 + BFS 레이어 + 카테고리 보완까지 포함되므로
+        # 여기에 있는 node_id 전부 + visited_node_ids 합집합으로 최종 노드 집합.
+        all_visited = set(visited_node_ids)
+        for m in all_mentions:
+            if m.node_id > 0:
+                all_visited.add(m.node_id)
+        result.retrieved_node_ids = sorted(all_visited)
 
         # 4. 결과 정리: sentence 단위 dedup
         seen_sids: set[int] = set()
