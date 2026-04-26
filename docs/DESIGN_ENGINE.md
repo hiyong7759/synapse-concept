@@ -118,10 +118,13 @@ class SynapseFlow {
     int? postId,  // 같은 시냅스 세션 이어쓰기 시
   });
 
-  // /promote — 시냅스 메시지를 통찰로 승격 (Hebbian 일괄 연결).
+  // /promote — 임의의 본문을 통찰 post 로 승격 (Hebbian 일괄 연결).
+  // body 는 한 줄(시냅스 답·노트 한 줄)·여러 줄 블럭(노트 heading 아래)·
+  // 자유 편집본 모두 가능. snapshotNodeIds 가 비면 본문 Kiwi 추출 노드만 연결.
   Future<InsightResult> promoteToInsight({
-    required int sourceSentenceId,  // 승격할 synapse 메시지
-    required List<int> snapshotNodeIds,  // 직전 retrieve 캐시 스냅샷
+    required String body,                 // 통찰 본문 (마크다운 가능)
+    required List<int> snapshotNodeIds,   // 직전 retrieve 캐시 스냅샷 (없으면 [])
+    String? title,                        // null = 본문 첫 줄 자동
   });
 
   // post 목록·재진입·삭제 (시냅스 앱 사이드바 데이터 소스)
@@ -424,15 +427,24 @@ class LlamadartBackend {
 
 원칙 15-2 (Hebbian 허브 형성) 의 구현. PLAN §4 의 SynapseFlow 4 경로 중 하나.
 
+입력은 **본문 텍스트 한 덩어리** + **스냅샷 노드 id 목록**. 결과는 항상 새 post 1 개 (`kind='insight'`). UI 는 다음 시나리오를 모두 같은 API 로 통일:
+
+| 시나리오 | UI 가 만드는 `body` | `snapshotNodeIds` |
+|---|---|---|
+| 시냅스 답 승격 | `SynapseTurnResult.answer` 텍스트 | `SynapseTurnResult.retrievedNodeIds` |
+| 시냅스 질문 승격 | 사용자 질문 텍스트 | 같은 턴의 `retrievedNodeIds` |
+| 노트 한 줄 승격 | sentence 텍스트 한 줄 | `[]` |
+| 노트 블럭 승격 | heading 아래 여러 줄 마크다운 | `[]` |
+| 자유 편집 승격 | 사용자가 답을 보고 다시 쓴 글 | `retrievedNodeIds` (있으면) |
+
 흐름:
-1. UI 가 시냅스 세션의 메시지 하나에 `[⬆ 통찰로 승격]` 액션을 노출
-2. 사용자 확인 → `engine.flow!.promoteToInsight(sourceSentenceId, snapshotNodeIds)` 호출
-3. 엔진이 다음을 트랜잭션으로 처리:
-   - 새 `posts` 행 (`kind='insight'`, `title=본문 첫 행`, `source=본문`)
-   - 새 `sentences` 행 (`post_id=새 insight post`, `role='user'`, `origin='insight'`)
-   - `snapshotNodeIds` 의 모든 노드와 `node_sentence_mentions` 일괄 INSERT
-   - Kiwi 가 본체에서 추출한 노드도 같이 편입 (UNIQUE 충돌은 스킵)
-4. `InsightResult` 반환 (새 post id + 연결된 노드 수)
+1. UI 가 적절한 액션 (`[⬆ 통찰로 승격]` 등) 에서 본문을 모아 `engine.flow!.promoteToInsight(body: ..., snapshotNodeIds: ..., title: ...)` 호출
+2. 엔진이 다음을 트랜잭션으로 처리:
+   - 새 `posts` 행 (`kind='insight'`, `title = title ?? 본문 첫 줄`, `source=body`)
+   - 본문을 마크다운 파서로 쪼개 sentences 여러 행 INSERT (모두 `role='user'`, `origin='insight'`, `post_id=새 insight post`)
+   - 모든 새 sentence 와 `snapshotNodeIds` 의 노드를 `node_sentence_mentions` 일괄 INSERT
+   - Kiwi 가 본문에서 추출한 노드도 같은 sentences 에 편입 (UNIQUE 충돌은 스킵)
+3. `InsightResult` 반환 (새 post id + 새 sentence id 목록 + 연결된 노드 수)
 
 `origin='insight'` sentence 는 `updateSentence` 가 거부 (API 레벨 강제). 삭제는 `/review` 승인 경로 (`DESIGN_REVIEW.md` insight_delete 섹션).
 

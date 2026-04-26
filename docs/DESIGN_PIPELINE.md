@@ -321,17 +321,23 @@ altLabel 목록 (ko, en 언어)
     keywords = retrieve-expand 결과 ∪ Kiwi 결과
   ↓ [DB 매칭]
     aliases 정확 매칭 우선 → name 정확 매칭 → name substring 매칭
-  ↓ [BFS 루프]  max_layers=5
+  ↓ [BFS 루프]  정지: 수집 sentence 수 ≥ maxSentences (기본 50) 또는 새 노드 없음
     현재 노드·카테고리 집합마다 세 경로를 합쳐 다음 레이어 구성:
       ① 문장 바구니 (node_sentence_mentions JOIN sentences) → 같은 sentence에 함께 언급된 노드
-      ② 카테고리 공유 (node_category_mentions JOIN node_category_mentions) → 같은 시드 카테고리 + 인접 맵 한 홉
+      ② 카테고리 공유 (node_category_mentions JOIN node_category_mentions) → 같은 시드 카테고리 한 홉
       ③ 사용자 heading 계층 (categories 재귀 CTE + sentence_categories)
          → 질의 키워드가 사용자 categories 와 매칭되면 서브트리 전체를 시드 sentence 로 수집
+    [노드 폭증 억제] — 다음 레이어 후보 필터:
+      (1) 빈도 stopword: mention 횟수 ≥ stopwordThreshold (기본 50) 노드는 BFS 확장에서 제외
+      (2) 카테고리 교집합: 출발 노드의 카테고리 집합과 후보 노드의 카테고리 집합이 겹치는 경우만 통과
+                           (출발 노드에 카테고리가 없으면 자동 무효 — 필터 적용 안 함)
+      두 필터는 함께 적용. (1)·(2) 모두 EngineConfig 옵션으로 조절 가능.
     [synapse/retrieve-filter]  temperature=0, max_tokens=8
       ①은 sentence 단위로, ②·③은 카테고리 경로 + 대표 sentence로
       관련성 판단 (pass/reject). 불확실하면 pass
+      구현 메모 — 현재는 sentence 한 개씩 호출. batch (o/x 마커) 전환은 후속 마일스톤.
     통과한 항목의 새 노드·카테고리 → 다음 레이어
-    모든 경로에서 새 항목 없으면 종료
+    수집 sentence 수가 maxSentences 도달 또는 새 노드 없으면 종료
   ↓ [시간 순 정렬]
     통과한 sentence 들을 sentences.created_at 오름차순으로 정렬.
     각 줄 앞에 `[YYYY-MM-DD]` 날짜 힌트를 붙여 LLM 프롬프트 컨텍스트 구성.
