@@ -3,25 +3,57 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../layout/responsive.dart';
+import '../state/autosave.dart';
 import '../state/note_state.dart';
 import '../theme/tokens.dart';
 import '../widgets/graph_panel_placeholder.dart';
 import '../widgets/note_editor.dart';
 import '../widgets/post_sidebar.dart';
+import '../widgets/save_status_bar.dart';
 
-/// `/note` page — DESIGN_UI §/note. Desktop renders all three panes
-/// inline; mobile shows just the editor and lets the user swing the
-/// sidebar / graph in via the AppBar toggles.
-class NotePage extends ConsumerWidget {
+/// `/note` page — DESIGN_UI §/note. Owns the autosave-flush lifecycle for
+/// the editor (page disposal, app lifecycle) so the editor widget itself
+/// stays narrowly focused on its TextEditingController.
+class NotePage extends ConsumerStatefulWidget {
   const NotePage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Block the page until the engine is ready — `engineProvider` opens
-    // the DB and runs migrations, and the sidebar / editor both depend
-    // on it being live.
-    final engineAsync = ref.watch(engineProvider);
+  ConsumerState<NotePage> createState() => _NotePageState();
+}
 
+class _NotePageState extends ConsumerState<NotePage>
+    with WidgetsBindingObserver {
+  // Cache the controller in initState so `dispose` doesn't have to touch
+  // `ref` (Riverpod marks the ConsumerState ref as disposed before our
+  // own dispose runs, which would throw on `ref.read`).
+  AutosaveController? _autosave;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _autosave = ref.read(autosaveProvider.notifier);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    // Fire-and-forget — sqflite finishes the write on the same isolate.
+    _autosave?.flush();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _autosave?.flush();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final engineAsync = ref.watch(engineProvider);
     return engineAsync.when(
       data: (_) => const _NoteScaffold(),
       loading: () => const _BootScreen(label: '엔진 준비 중...'),
@@ -59,7 +91,14 @@ class _DesktopLayout extends StatelessWidget {
         children: const [
           PostSidebar(),
           VerticalDivider(width: 1),
-          Expanded(child: NoteEditor()),
+          Expanded(
+            child: Column(
+              children: [
+                SaveStatusBar(),
+                Expanded(child: NoteEditor()),
+              ],
+            ),
+          ),
           VerticalDivider(width: 1),
           GraphPanelPlaceholder(),
         ],
@@ -102,20 +141,34 @@ class _MobileLayoutState extends State<_MobileLayout> {
         ],
       ),
       drawer: const Drawer(child: PostSidebar()),
-      body: _showGraph ? const GraphPanelPlaceholder() : const NoteEditor(),
+      body: _showGraph
+          ? const GraphPanelPlaceholder()
+          : const Column(
+              children: [
+                SaveStatusBar(),
+                Expanded(child: NoteEditor()),
+              ],
+            ),
     );
   }
 }
 
 // ── Shared ───────────────────────────────────────────────
 
-class _RouteSwitcher extends StatelessWidget {
+class _RouteSwitcher extends ConsumerWidget {
   const _RouteSwitcher();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return TextButton(
-      onPressed: () => context.go('/synapse'),
+      onPressed: () async {
+        // Persist before leaving — go_router won't dispose the page
+        // until after navigation completes, and we'd rather the save
+        // commit before the new page mounts.
+        await flushAutosave(ref);
+        if (!context.mounted) return;
+        context.go('/synapse');
+      },
       child: const Text('Synapse →'),
     );
   }
