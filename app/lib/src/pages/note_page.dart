@@ -95,8 +95,7 @@ class _DesktopLayout extends StatelessWidget {
           Expanded(
             child: Column(
               children: [
-                TitleEditor(),
-                SaveStatusBar(),
+                _TitleRow(),
                 Expanded(child: NoteEditor()),
               ],
             ),
@@ -147,11 +146,38 @@ class _MobileLayoutState extends State<_MobileLayout> {
           ? const GraphPanelPlaceholder()
           : const Column(
               children: [
-                TitleEditor(),
-                SaveStatusBar(),
+                _TitleRow(),
                 Expanded(child: NoteEditor()),
               ],
             ),
+    );
+  }
+}
+
+// ── Shared title row ─────────────────────────────────────
+
+/// Header row above the editor body — title field on the left, autosave
+/// status on the right. Same layout on desktop and mobile.
+class _TitleRow extends StatelessWidget {
+  const _TitleRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.fromLTRB(
+        SynapseTokens.spaceL,
+        SynapseTokens.spaceL,
+        SynapseTokens.spaceL,
+        SynapseTokens.spaceS,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(child: TitleEditor()),
+          SizedBox(width: SynapseTokens.spaceM),
+          SaveStatusBar(),
+        ],
+      ),
     );
   }
 }

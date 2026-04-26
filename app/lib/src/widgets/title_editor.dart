@@ -54,35 +54,27 @@ class _TitleEditorState extends ConsumerState<TitleEditor> {
 
     if (selectedId == null) return const SizedBox.shrink();
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        SynapseTokens.spaceL,
-        SynapseTokens.spaceL,
-        SynapseTokens.spaceL,
-        SynapseTokens.spaceS,
-      ),
-      child: TextField(
-        controller: _controller,
-        style: SynapseTokens.display.copyWith(fontSize: 24),
-        maxLines: 1,
-        decoration: const InputDecoration(
-          border: InputBorder.none,
-          isCollapsed: true,
-          hintText: '제목',
-          hintStyle: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.w600,
-            color: SynapseTokens.onSurfaceMuted,
-          ),
+    return TextField(
+      controller: _controller,
+      style: SynapseTokens.display.copyWith(fontSize: 24),
+      maxLines: 1,
+      decoration: const InputDecoration(
+        border: InputBorder.none,
+        isCollapsed: true,
+        hintText: '제목',
+        hintStyle: TextStyle(
+          fontSize: 24,
+          fontWeight: FontWeight.w600,
+          color: SynapseTokens.onSurfaceMuted,
         ),
-        onChanged: (value) {
-          ref.read(titleDraftProvider.notifier).state = value;
-          ref.read(autosaveProvider.notifier).schedule(
-                postId: selectedId,
-                title: value,
-              );
-        },
       ),
+      onChanged: (value) {
+        ref.read(titleDraftProvider.notifier).state = value;
+        ref.read(autosaveProvider.notifier).schedule(
+              postId: selectedId,
+              title: value,
+            );
+      },
     );
   }
 }

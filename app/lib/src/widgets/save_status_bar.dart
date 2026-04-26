@@ -48,7 +48,7 @@ class _SaveStatusBarState extends ConsumerState<SaveStatusBar> {
 
     if (selectedId == null) {
       _stopDots();
-      return const SizedBox(height: 0);
+      return const SizedBox.shrink();
     }
 
     if (state.status == AutosaveStatus.dirty) {
@@ -65,21 +65,9 @@ class _SaveStatusBarState extends ConsumerState<SaveStatusBar> {
         ? Colors.red
         : SynapseTokens.onSurfaceMuted;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: SynapseTokens.spaceM,
-        vertical: SynapseTokens.spaceXs,
-      ),
-      decoration: const BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: SynapseTokens.background),
-        ),
-      ),
-      child: Text(
-        label,
-        style: SynapseTokens.caption.copyWith(color: color),
-      ),
+    return Text(
+      label,
+      style: SynapseTokens.caption.copyWith(color: color),
     );
   }
 }

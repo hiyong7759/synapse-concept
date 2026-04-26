@@ -65,13 +65,17 @@ class AutosaveController extends StateNotifier<AutosaveState> {
   /// Queue an autosave for [postId]. Either or both of [source] / [title]
   /// can be supplied. Resets the debounce window if a save was already
   /// pending.
+  ///
+  /// If [source] is omitted (e.g. the user is only editing the title),
+  /// we fall back to the latest [editorDraftProvider] value so the DB
+  /// always sees a consistent (source, title) pair.
   void schedule({
     required int postId,
     String? source,
     String? title,
   }) {
     _pendingPostId = postId;
-    if (source != null) _pendingSource = source;
+    _pendingSource = source ?? _ref.read(editorDraftProvider);
     if (title != null) {
       _pendingTitle = title;
       _titleIncluded = true;
