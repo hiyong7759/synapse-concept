@@ -13,11 +13,11 @@ import '../theme/tokens.dart';
 ///   - idle (no save) → 빈
 ///   - error   → "저장 실패 — 다시 시도 중" (빨강)
 ///
-/// 80px 고정 폭 + 우측 정렬이라 라벨 글자 폭이 바뀌어도 위치 흔들림 없음.
+/// Stack 이 Text 의 intrinsic 폭을 그대로 받아 sweep overlay 도 라벨 글자
+/// 영역만 정확히 cover. 라벨이 바뀌면 폭은 변하지만 우측 정렬 위치라
+/// 좌측 가장자리만 살짝 이동.
 class SaveStatusBar extends ConsumerWidget {
   const SaveStatusBar({super.key});
-
-  static const double _width = 80;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -26,23 +26,19 @@ class SaveStatusBar extends ConsumerWidget {
 
     final state = ref.watch(autosaveProvider);
     final label = autosaveStatusLabel(state);
+    if (label.isEmpty) return const SizedBox.shrink();
+
     final color = state.error != null
         ? Colors.red
         : SynapseTokens.onSurfaceMuted;
     final style = SynapseTokens.caption.copyWith(color: color);
 
-    return SizedBox(
-      width: _width,
-      child: Stack(
-        children: [
-          Align(
-            alignment: Alignment.centerRight,
-            child: Text(label, style: style),
-          ),
-          if (state.status == AutosaveStatus.dirty)
-            const Positioned.fill(child: _SweepOverlay()),
-        ],
-      ),
+    return Stack(
+      children: [
+        Text(label, style: style),
+        if (state.status == AutosaveStatus.dirty)
+          const Positioned.fill(child: _SweepOverlay()),
+      ],
     );
   }
 }
