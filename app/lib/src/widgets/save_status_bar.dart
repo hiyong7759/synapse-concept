@@ -5,21 +5,19 @@ import '../state/autosave.dart';
 import '../state/note_state.dart';
 import '../theme/tokens.dart';
 
-/// Tiny visual signal for autosave activity — a 60×2 indicator that
-/// peripheral vision can register without you having to look at it.
+/// Tiny status label in the title row, right-aligned.
 ///
-///   - dirty / saving → 흰색 세로 막대가 좌→우 linear sweep (shimmer)
-///   - saved          → 정적 accent 막대
-///   - idle (저장 있음) → accent 40% opacity 정적 막대
-///   - idle (저장 없음) → 빈 rail
-///   - error          → 빨간 막대
+///   - dirty   → "입력 중" 텍스트 위로 흰 세로 막대가 좌→우 linear sweep
+///   - saving  → "저장 중..." 텍스트만
+///   - saved / idle (저장 있음) → "저장됨" 텍스트만
+///   - idle (no save) → 빈
+///   - error   → "저장 실패 — 다시 시도 중" (빨강)
 ///
-/// 60px 고정 폭 — 우측 정렬해도 라벨 글자 폭 차이로 흔들림 없음.
+/// 80px 고정 폭 + 우측 정렬이라 라벨 글자 폭이 바뀌어도 위치 흔들림 없음.
 class SaveStatusBar extends ConsumerWidget {
   const SaveStatusBar({super.key});
 
-  static const double _width = 60;
-  static const double _height = 2;
+  static const double _width = 80;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -27,45 +25,40 @@ class SaveStatusBar extends ConsumerWidget {
     if (selectedId == null) return const SizedBox.shrink();
 
     final state = ref.watch(autosaveProvider);
+    final label = autosaveStatusLabel(state);
+    final color = state.error != null
+        ? Colors.red
+        : SynapseTokens.onSurfaceMuted;
+    final style = SynapseTokens.caption.copyWith(color: color);
+
     return SizedBox(
       width: _width,
-      height: _height,
-      child: _indicator(state),
+      child: Stack(
+        children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(label, style: style),
+          ),
+          if (state.status == AutosaveStatus.dirty)
+            const Positioned.fill(child: _SweepOverlay()),
+        ],
+      ),
     );
   }
-
-  Widget _indicator(AutosaveState state) {
-    if (state.error != null) {
-      return _staticBar(Colors.red.shade400);
-    }
-    switch (state.status) {
-      case AutosaveStatus.dirty:
-      case AutosaveStatus.saving:
-        return const _SweepBar();
-      case AutosaveStatus.saved:
-        return _staticBar(SynapseTokens.accent);
-      case AutosaveStatus.idle:
-        return state.lastSavedAt == null
-            ? _staticBar(SynapseTokens.background)
-            : _staticBar(SynapseTokens.accent.withValues(alpha: 0.4));
-    }
-  }
-
-  Widget _staticBar(Color color) =>
-      Container(decoration: BoxDecoration(color: color));
 }
 
-/// 좌→우 한 방향 linear sweep — 회색 배경 위로 흰 막대가 흘러갔다가
-/// 우측 끝에 닿으면 다시 좌측에서 출발. Material 기본
-/// LinearProgressIndicator 의 양방향 oscillation 과 다름.
-class _SweepBar extends StatefulWidget {
-  const _SweepBar();
+/// Opaque white vertical bar that travels left → right across the parent
+/// in a single direction, then loops back from the left. Sits as a Stack
+/// overlay above the dirty-state label so the label briefly disappears
+/// behind the bar as it passes — same pattern as skeleton shimmer.
+class _SweepOverlay extends StatefulWidget {
+  const _SweepOverlay();
 
   @override
-  State<_SweepBar> createState() => _SweepBarState();
+  State<_SweepOverlay> createState() => _SweepOverlayState();
 }
 
-class _SweepBarState extends State<_SweepBar>
+class _SweepOverlayState extends State<_SweepOverlay>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
 
@@ -86,9 +79,7 @@ class _SweepBarState extends State<_SweepBar>
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _SweepPainter(progress: _ctrl),
-    );
+    return CustomPaint(painter: _SweepPainter(progress: _ctrl));
   }
 }
 
@@ -97,24 +88,18 @@ class _SweepPainter extends CustomPainter {
 
   final Animation<double> progress;
 
-  static const double _barWidth = 12;
-  static final Color _track = SynapseTokens.accent.withValues(alpha: 0.18);
-  static const Color _bar = Colors.white;
+  static const double _barWidth = 8;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final track = Paint()..color = _track;
-    canvas.drawRect(Offset.zero & size, track);
-
-    // Slide x from -_barWidth (off-screen left) to size.width (off-screen
-    // right) so the leading edge appears from the left and the trailing
-    // edge fully exits on the right before the next loop starts.
+    // No background — overlay sits over the existing label so the rest of
+    // the row stays transparent.
     final span = size.width + _barWidth;
     final x = span * progress.value - _barWidth;
-    final bar = Paint()..color = _bar;
+    final paint = Paint()..color = Colors.white;
     canvas.drawRect(
       Rect.fromLTWH(x, 0, _barWidth, size.height),
-      bar,
+      paint,
     );
   }
 
