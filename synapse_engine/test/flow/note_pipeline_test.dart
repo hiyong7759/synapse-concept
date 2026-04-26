@@ -79,6 +79,53 @@ void main() {
         await s.engine.dispose();
       }
     });
+
+    test('seeds posts.title from first non-blank line when title is NULL',
+        () async {
+      final s = await setup();
+      try {
+        await s.pipeline.autosave(
+          postId: s.postId,
+          source: '\n# 허리 치료 시작\n\n오늘 진료 받음',
+        );
+        final row = (await s.engine.db.query(
+          'posts',
+          columns: ['title'],
+          where: 'id = ?',
+          whereArgs: [s.postId],
+        )).single;
+        expect(row['title'], '허리 치료 시작');
+      } finally {
+        await s.engine.dispose();
+      }
+    });
+
+    test('preserves an existing title — autosave never overwrites it',
+        () async {
+      final s = await setup();
+      try {
+        // User-set title already on the row.
+        await s.engine.db.update(
+          'posts',
+          {'title': '내가 정한 제목'},
+          where: 'id = ?',
+          whereArgs: [s.postId],
+        );
+        await s.pipeline.autosave(
+          postId: s.postId,
+          source: '본문 첫 줄이 다른 내용',
+        );
+        final row = (await s.engine.db.query(
+          'posts',
+          columns: ['title'],
+          where: 'id = ?',
+          whereArgs: [s.postId],
+        )).single;
+        expect(row['title'], '내가 정한 제목');
+      } finally {
+        await s.engine.dispose();
+      }
+    });
   });
 
   group('process — simple paths', () {

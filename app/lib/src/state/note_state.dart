@@ -95,6 +95,25 @@ Future<int> createNote(WidgetRef ref) async {
   return id;
 }
 
+/// Renames [postId] and refreshes the sidebar.
+Future<void> renameNote(WidgetRef ref, int postId, String newTitle) async {
+  final engine = await ref.read(engineProvider.future);
+  final flow = engine.flow;
+  if (flow == null) {
+    throw StateError('SynapseFlow not enabled — note rename unavailable');
+  }
+  await flow.updatePostTitle(postId, newTitle);
+  ref.invalidate(postListProvider);
+}
+
+/// `posts.created_at` / `updated_at` come back as space-delimited UTC
+/// strings (`YYYY-MM-DD HH:MM:SS`). sqflite's `datetime('now')` does not
+/// add the trailing `Z`, so we suffix it before parsing and then convert
+/// to local time for display.
+DateTime parsePostTimestamp(String raw) {
+  return DateTime.parse('${raw}Z').toLocal();
+}
+
 /// Deletes [postId] and refreshes the sidebar. If the deleted post was
 /// the active selection, clears it back to "no post selected".
 Future<void> deleteNote(WidgetRef ref, int postId) async {

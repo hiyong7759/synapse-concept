@@ -41,13 +41,49 @@ class NotePipeline {
 
   /// Updates `posts.source` (and `updated_at`). No LLM, no Kiwi. Single
   /// SQL UPDATE — meant for the 1.5 s debounce + page-leave path.
+  ///
+  /// If `posts.title` is currently NULL we also auto-fill it with the
+  /// first non-blank line of [source] so the sidebar has something to
+  /// show right after the user starts typing. The title is only seeded
+  /// once — once a title exists (auto or user-edited), autosave never
+  /// touches it again. Body changes that no longer match the title are
+  /// the user's deliberate divergence, not a re-derivation trigger.
   Future<void> autosave({required int postId, required String source}) async {
+    final updates = <String, Object?>{
+      'source': source,
+      'updated_at': _isoNow(),
+    };
+
+    final row = await db.query(
+      'posts',
+      columns: ['title'],
+      where: 'id = ?',
+      whereArgs: [postId],
+      limit: 1,
+    );
+    if (row.isNotEmpty && row.first['title'] == null) {
+      final firstLine = _firstNonBlankLine(source);
+      if (firstLine != null) updates['title'] = firstLine;
+    }
+
     await db.update(
       'posts',
-      {'source': source, 'updated_at': _isoNow()},
+      updates,
       where: 'id = ?',
       whereArgs: [postId],
     );
+  }
+
+  String? _firstNonBlankLine(String source) {
+    for (final raw in source.split('\n')) {
+      final line = raw.trim();
+      if (line.isEmpty) continue;
+      // Strip leading markdown noise so the title reads cleanly.
+      return line
+          .replaceFirst(RegExp(r'^#+\s*'), '')
+          .replaceFirst(RegExp(r'^[-*]\s+'), '');
+    }
+    return null;
   }
 
   // ── process ──────────────────────────────────────────────
