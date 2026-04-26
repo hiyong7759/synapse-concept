@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,78 +5,58 @@ import '../state/autosave.dart';
 import '../state/note_state.dart';
 import '../theme/tokens.dart';
 
-/// Slim status strip above the editor. Shows the three transient phases
-/// (입력 중 / 저장 중 / 저장됨); the absolute "when" lives in the sidebar
-/// so the editor header stays calm and stable across idle windows.
-class SaveStatusBar extends ConsumerStatefulWidget {
+/// Tiny visual signal for autosave activity — a 60×2 indicator that
+/// peripheral vision can register without you having to look at it.
+///
+///   - dirty / saving → indeterminate sweep (좌→우 흐르는 막대)
+///   - saved          → static accent-coloured bar
+///   - idle (no save) → empty rail
+///   - error          → red bar
+///
+/// No text — the indicator's width never changes, so right-aligning it in
+/// the title row doesn't shift surrounding glyphs.
+class SaveStatusBar extends ConsumerWidget {
   const SaveStatusBar({super.key});
 
-  @override
-  ConsumerState<SaveStatusBar> createState() => _SaveStatusBarState();
-}
-
-class _SaveStatusBarState extends ConsumerState<SaveStatusBar> {
-  Timer? _dotTimer;
-  int _dots = 1;
-
-  void _startDots() {
-    _dotTimer ??=
-        Timer.periodic(const Duration(milliseconds: 400), (_) {
-      if (!mounted) return;
-      setState(() => _dots = _dots == 3 ? 1 : _dots + 1);
-    });
-  }
-
-  void _stopDots() {
-    _dotTimer?.cancel();
-    _dotTimer = null;
-    _dots = 1;
-  }
+  static const double _width = 60;
+  static const double _height = 2;
 
   @override
-  void dispose() {
-    _dotTimer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final selectedId = ref.watch(selectedPostIdProvider);
+    if (selectedId == null) return const SizedBox.shrink();
+
     final state = ref.watch(autosaveProvider);
-
-    if (selectedId == null) {
-      _stopDots();
-      return const SizedBox.shrink();
-    }
-
-    if (state.status == AutosaveStatus.dirty) {
-      _startDots();
-    } else {
-      _stopDots();
-    }
-
-    final label = autosaveStatusLabel(state);
-    final color = state.error != null
-        ? Colors.red
-        : SynapseTokens.onSurfaceMuted;
-    final style = SynapseTokens.caption.copyWith(color: color);
-
-    if (state.status == AutosaveStatus.dirty) {
-      // "입력 중" stays put and only the dots animate inside a fixed
-      // 16-pixel slot — the row is right-aligned, so any width change
-      // would jiggle the whole label.
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(label, style: style),
-          SizedBox(
-            width: 16,
-            child: Text('.' * _dots, style: style),
-          ),
-        ],
-      );
-    }
-
-    return Text(label, style: style);
+    return SizedBox(
+      width: _width,
+      height: _height,
+      child: _indicator(state),
+    );
   }
+
+  Widget _indicator(AutosaveState state) {
+    if (state.error != null) {
+      return _staticBar(Colors.red.shade400);
+    }
+    switch (state.status) {
+      case AutosaveStatus.dirty:
+      case AutosaveStatus.saving:
+        return LinearProgressIndicator(
+          minHeight: _height,
+          backgroundColor: SynapseTokens.background,
+          valueColor: const AlwaysStoppedAnimation<Color>(
+            SynapseTokens.accent,
+          ),
+        );
+      case AutosaveStatus.saved:
+        return _staticBar(SynapseTokens.accent);
+      case AutosaveStatus.idle:
+        return state.lastSavedAt == null
+            ? _staticBar(SynapseTokens.background)
+            : _staticBar(SynapseTokens.accent.withValues(alpha: 0.4));
+    }
+  }
+
+  Widget _staticBar(Color color) =>
+      Container(decoration: BoxDecoration(color: color));
 }
