@@ -2,46 +2,179 @@ import 'package:sqflite/sqflite.dart';
 
 import '../models/graph_models.dart';
 
-/// Path-1 BFS over `node_sentence_mentions`. Higher-level retrieval
-/// (category-based seeds, heading subtree, retrieve-filter LLM) belongs
-/// in `SynapseFlow` (F5+); this helper stays purely graph-level so the
-/// reuse path (gabjil-style apps) can call it directly.
+/// Optional sentence-level filter callback. Injected by callers that want
+/// LLM-driven relevance pruning (synapse app passes a closure that calls
+/// `LlmTasks.retrieveFilter`); reuse apps that don't have an LLM simply
+/// don't pass it. Returning `false` drops the candidate sentence from the
+/// next layer.
 ///
-/// Mirrors the inner BFS loop in Python `engine/retrieve.py:503-536`.
-/// Same input → same output (verified by the BFS scenario test).
+/// Keeping this as a callback — rather than an `LlmTasks` import — is what
+/// lets `bfs.dart` honour the dependency-injection split spelled out in
+/// DESIGN_PRINCIPLES §1 원칙 11.
+typedef MentionFilter = Future<bool> Function(String sentenceText);
+
+/// BFS over the hypergraph, mirroring `engine/retrieve.py`.
+///
+/// **Path 1 (built-in)** — `node_sentence_mentions`: each layer expands to
+/// nodes that co-mention a sentence with the current layer.
+///
+/// **Path 2 (axis-A pre-seed)** — heading subtree mentions resolved by
+/// `seed_matching.dart::headingSubtreeSeeds`. Pass them as [seedMentions];
+/// the BFS will treat their sentences as already-visited and seed layer 0
+/// with their co-mentioned nodes.
+///
+/// **Path 3 (axis-B post-supplement)** — same-category sibling nodes
+/// resolved by `seed_matching.dart::sameCategoryNodes`. Pass them as
+/// [supplementNodes]; BFS runs one extra hop after the main loop ends.
+///
+/// **Stop condition** — collected sentence count ≥ [maxSentences] *or* no
+/// new nodes to visit. We stop on sentence count rather than layer depth
+/// because layer depth conveys nothing predictable about how saturated
+/// the LLM context already is (DESIGN_PIPELINE §인출).
+///
+/// **Node-explosion suppression** — every layer's candidates pass through
+/// two filters before becoming the next [current] set:
+///   (1) Frequency stopwords — nodes with `mention_count >= [stopwordThreshold]`
+///       (computed once at the start) are dropped from expansion.
+///   (2) Category overlap — if [startCategoryIds] is non-empty, only
+///       candidate nodes that share at least one category with the start
+///       set survive. Empty start categories means the filter is skipped
+///       (heading-less corpora aren't penalised).
 Future<List<Mention>> bfsRetrieve(
   Database db, {
   required Set<int> startNodes,
-  int maxLayers = 5,
+  List<Mention> seedMentions = const [],
+  Set<int> supplementNodes = const {},
+  Set<int> startCategoryIds = const {},
+  MentionFilter? filter,
+  int maxSentences = 50,
+  int stopwordThreshold = 50,
 }) async {
-  if (startNodes.isEmpty) return const [];
+  if (startNodes.isEmpty && seedMentions.isEmpty) return const [];
+
+  final stopwordIds = await _computeStopwords(db, stopwordThreshold);
+  final allowedByCategory = startCategoryIds.isEmpty
+      ? null // category filter disabled
+      : await _nodesInCategories(db, startCategoryIds);
 
   final visitedNodes = Set<int>.from(startNodes);
   final visitedSentences = <int>{};
   final mentions = <Mention>[];
-  Set<int> current = Set<int>.from(startNodes);
 
-  for (var layer = 0; layer < maxLayers; layer++) {
-    final layerMentions = await _mentionsForNodes(
+  // Pre-seed (axis-A) — fold heading-subtree mentions in before layer 0.
+  for (final m in seedMentions) {
+    if (visitedSentences.add(m.sentenceId)) {
+      mentions.add(m);
+    }
+    if (m.nodeId > 0) visitedNodes.add(m.nodeId);
+  }
+
+  Set<int> current = {
+    ...startNodes,
+    ...seedMentions.where((m) => m.nodeId > 0).map((m) => m.nodeId),
+  };
+
+  while (current.isNotEmpty && mentions.length < maxSentences) {
+    final layerCandidates = await _mentionsForNodes(
       db,
       current,
       visitedSentences,
     );
-    if (layerMentions.isEmpty) break;
+    if (layerCandidates.isEmpty) break;
 
-    mentions.addAll(layerMentions);
-    for (final m in layerMentions) {
-      visitedSentences.add(m.sentenceId);
+    final accepted = await _applyFilter(layerCandidates, filter);
+    if (accepted.isEmpty) break;
+
+    for (final m in accepted) {
+      if (mentions.length >= maxSentences) break;
+      if (visitedSentences.add(m.sentenceId)) {
+        mentions.add(m);
+      }
     }
+    if (mentions.length >= maxSentences) break;
 
-    final nextSentenceIds = layerMentions.map((m) => m.sentenceId).toSet();
+    final nextSentenceIds = accepted.map((m) => m.sentenceId).toSet();
     final coNodeIds = await _coMentionedNodeIds(db, nextSentenceIds);
-    final newIds = coNodeIds.difference(visitedNodes);
+    final newIds = <int>{
+      for (final id in coNodeIds.difference(visitedNodes))
+        if (!stopwordIds.contains(id) &&
+            (allowedByCategory == null || allowedByCategory.contains(id)))
+          id,
+    };
     if (newIds.isEmpty) break;
     visitedNodes.addAll(newIds);
     current = newIds;
   }
+
+  // Post-supplement (axis-B) — same-category siblings get one extra hop.
+  if (supplementNodes.isNotEmpty && mentions.length < maxSentences) {
+    final supplement = supplementNodes.difference(visitedNodes);
+    if (supplement.isNotEmpty) {
+      final extra = await _mentionsForNodes(
+        db,
+        supplement,
+        visitedSentences,
+      );
+      final accepted = await _applyFilter(extra, filter);
+      for (final m in accepted) {
+        if (mentions.length >= maxSentences) break;
+        if (visitedSentences.add(m.sentenceId)) {
+          mentions.add(m);
+        }
+      }
+      visitedNodes.addAll(supplement);
+    }
+  }
+
   return mentions;
+}
+
+Future<List<Mention>> _applyFilter(
+  List<Mention> candidates,
+  MentionFilter? filter,
+) async {
+  if (filter == null) return candidates;
+  // Sentence-level dedup so we don't ask the LLM the same question twice.
+  final decided = <int, bool>{};
+  final out = <Mention>[];
+  for (final m in candidates) {
+    final cached = decided[m.sentenceId];
+    if (cached == false) continue;
+    if (cached == true) {
+      out.add(m);
+      continue;
+    }
+    final keep = m.sentenceText == null
+        ? true
+        : await filter(m.sentenceText!);
+    decided[m.sentenceId] = keep;
+    if (keep) out.add(m);
+  }
+  return out;
+}
+
+Future<Set<int>> _computeStopwords(Database db, int threshold) async {
+  if (threshold <= 0) return const <int>{};
+  final rows = await db.rawQuery(
+    'SELECT node_id FROM node_sentence_mentions '
+    'GROUP BY node_id HAVING COUNT(*) >= ?',
+    [threshold],
+  );
+  return rows.map((r) => r['node_id'] as int).toSet();
+}
+
+Future<Set<int>> _nodesInCategories(
+  Database db,
+  Set<int> categoryIds,
+) async {
+  if (categoryIds.isEmpty) return const <int>{};
+  final placeholders = List.filled(categoryIds.length, '?').join(',');
+  final rows = await db.rawQuery(
+    'SELECT DISTINCT node_id FROM node_category_mentions '
+    'WHERE category_id IN ($placeholders)',
+    categoryIds.toList(),
+  );
+  return rows.map((r) => r['node_id'] as int).toSet();
 }
 
 Future<List<Mention>> _mentionsForNodes(
@@ -58,7 +191,9 @@ Future<List<Mention>> _mentionsForNodes(
   final rows = await db.rawQuery(
     '''
     SELECT m.node_id, m.sentence_id, m.origin,
-           n.name AS node_name, s.text AS sentence_text
+           n.name AS node_name,
+           s.text AS sentence_text,
+           s.created_at AS sentence_created_at
     FROM node_sentence_mentions m
     JOIN nodes n      ON n.id = m.node_id
     JOIN sentences s  ON s.id = m.sentence_id
@@ -73,6 +208,7 @@ Future<List<Mention>> _mentionsForNodes(
         origin: r['origin'] as String? ?? 'system',
         nodeName: r['node_name'] as String?,
         sentenceText: r['sentence_text'] as String?,
+        sentenceCreatedAt: r['sentence_created_at'] as String?,
       ))
       .toList(growable: false);
 }

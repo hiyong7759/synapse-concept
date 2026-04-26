@@ -31,3 +31,51 @@ class NoteProcessResult {
   /// lands.
   final List<Correction> corrections;
 }
+
+/// Outcome of [SynapseFlow.synapseTurn]. The post-id is reused on follow-up
+/// turns so a session keeps accumulating Q/A pairs; `retrievedNodeIds` is
+/// the cache the UI hands back to [SynapseFlow.promoteToInsight] when the
+/// user marks an answer as a keeper.
+class SynapseTurnResult {
+  const SynapseTurnResult({
+    required this.postId,
+    required this.questionSentenceId,
+    required this.answerSentenceId,
+    required this.answer,
+    required this.retrievedNodeIds,
+    required this.contextSentenceIds,
+  });
+
+  final int postId;
+  final int questionSentenceId;
+  final int answerSentenceId;
+  final String answer;
+
+  /// Every node id BFS visited on this turn (start nodes + expanded co-nodes
+  /// + heading-subtree co-nodes + axis-B supplements). Pass-through to
+  /// `promoteToInsight.snapshotNodeIds` when the user promotes.
+  final List<int> retrievedNodeIds;
+
+  /// Sentence ids that fed into the answer composition step. UI debug
+  /// panels can use this to highlight the supporting evidence.
+  final List<int> contextSentenceIds;
+}
+
+/// Outcome of [SynapseFlow.promoteToInsight].
+class InsightResult {
+  const InsightResult({
+    required this.postId,
+    required this.sentenceIds,
+    required this.connectedNodeCount,
+  });
+
+  /// New `posts.id` (kind='insight').
+  final int postId;
+
+  /// Every `sentences.id` inserted under the new insight post.
+  final List<int> sentenceIds;
+
+  /// Total `node_sentence_mentions` rows newly written (snapshot snapshot
+  /// + Kiwi-extracted nodes, both deduped against UNIQUE conflicts).
+  final int connectedNodeCount;
+}

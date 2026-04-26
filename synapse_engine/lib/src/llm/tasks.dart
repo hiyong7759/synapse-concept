@@ -98,20 +98,32 @@ class LlmTasks {
 
   /// Produces a short Korean answer grounded in [contexts]. Caller is
   /// responsible for pre-trimming contexts to a sensible token budget.
+  ///
+  /// Each context is sorted by `createdAt` (oldest → newest) and rendered
+  /// with a `[YYYY-MM-DD]` date prefix when available. Time-aware framing is
+  /// the core of synapse's "최근 사실 우선" reasoning pattern (DESIGN_PIPELINE
+  /// §인출), so any caller — synapse app or reuse app like gabjil — gets the
+  /// same standard prompt shape by just supplying createdAt.
   Future<String> synapseAnswer({
     required String question,
     required List<ContextSentence> contexts,
   }) async {
     await _switchTo(null);
     final system = await prompts.load(PromptKey.synapseAnswer);
-    final factsBlock = contexts.isEmpty
+    final sorted = [...contexts]
+      ..sort((a, b) => (a.createdAt ?? '').compareTo(b.createdAt ?? ''));
+    final factsBlock = sorted.isEmpty
         ? '(관련 사실 없음)'
-        : contexts.map((c) => '- ${c.text}').join('\n');
-    final userPrompt = '알려진 사실:\n$factsBlock\n\n질문: $question';
+        : sorted.map((c) {
+            final hint = c.dateHint;
+            return hint == null ? '- ${c.text}' : '- [$hint] ${c.text}';
+          }).join('\n');
+    final header = sorted.isEmpty ? '알려진 사실' : '알려진 사실 (시간 순)';
+    final userPrompt = '$header:\n$factsBlock\n\n질문: $question';
     final raw = await backend.generate(
       systemPrompt: system,
       userPrompt: userPrompt,
-      maxTokens: 512,
+      maxTokens: 4096,
       temperature: 0.3,
     );
     return stripThinking(raw);
@@ -157,10 +169,30 @@ class LlmTasks {
 }
 
 /// Single sentence pulled from retrieval, fed to [LlmTasks.synapseAnswer].
+///
+/// `createdAt` carries the original `sentences.created_at` so the answer
+/// task can sort facts by time and prefix each line with a `[YYYY-MM-DD]`
+/// hint. Callers should pass the raw DB string (e.g. `2026-04-26 14:30:00`);
+/// only the leading date portion is shown.
 class ContextSentence {
-  const ContextSentence({required this.text, this.role = 'user'});
+  const ContextSentence({
+    required this.text,
+    this.role = 'user',
+    this.createdAt,
+  });
   final String text;
   final String role;
+  final String? createdAt;
+
+  /// Date-only slice of [createdAt] — the part the LLM actually sees.
+  /// Returns null when [createdAt] is null or shaped unexpectedly.
+  String? get dateHint {
+    final ts = createdAt;
+    if (ts == null || ts.isEmpty) return null;
+    final cut = ts.indexOf(' ');
+    final slice = cut < 0 ? ts : ts.substring(0, cut);
+    return slice.length >= 10 ? slice.substring(0, 10) : slice;
+  }
 }
 
 /// One typo correction suggestion. Fields will likely grow when

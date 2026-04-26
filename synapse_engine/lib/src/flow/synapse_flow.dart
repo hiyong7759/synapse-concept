@@ -1,13 +1,19 @@
 import 'package:sqflite/sqflite.dart';
 
+import '../graph/bfs.dart' as bfs_impl;
 import '../graph/ops.dart';
+import '../graph/seed_matching.dart';
 import '../kiwi/kiwi_wasm.dart';
 import '../llm/tasks.dart';
+import '../markdown/parser.dart';
+import '../models/graph_models.dart';
 import 'note_pipeline.dart';
 import 'results.dart';
 
-/// SynapseFlow — F5a portion (note autosave/process + post management).
-/// `synapseTurn` and `promoteToInsight` land in F5b.
+/// SynapseFlow — full F5 surface.
+///
+/// `noteAutosave` / `noteProcess` come from F5a; F5b adds `synapseTurn`
+/// (retrieve-and-answer) and `promoteToInsight` (Hebbian hub creation).
 ///
 /// Activation: only attached when `EngineConfig.reservedKinds` includes
 /// both `'synapse'` and `'insight'` (DESIGN_ENGINE §3 — kind 유연성).
@@ -17,7 +23,13 @@ class SynapseFlow {
     required this.graph,
     required KiwiBackend kiwi,
     LlmTasks? llm,
-  }) : _pipeline = NotePipeline(
+    int retrieveMaxSentences = 50,
+    int retrieveStopwordThreshold = 50,
+  })  : _kiwi = kiwi,
+        _llm = llm,
+        _maxSentences = retrieveMaxSentences,
+        _stopwordThreshold = retrieveStopwordThreshold,
+        _pipeline = NotePipeline(
           db: db,
           graph: graph,
           kiwi: kiwi,
@@ -27,6 +39,10 @@ class SynapseFlow {
   final Database db;
   final GraphOps graph;
   final NotePipeline _pipeline;
+  final KiwiBackend _kiwi;
+  final LlmTasks? _llm;
+  final int _maxSentences;
+  final int _stopwordThreshold;
 
   // ── /note 4 paths ────────────────────────────────────────
 
@@ -43,6 +59,222 @@ class SynapseFlow {
     required String source,
   }) =>
       _pipeline.process(postId: postId, source: source);
+
+  // ── /synapse turn ───────────────────────────────────────
+
+  /// One synapse Q/A turn — keyword expansion → seed matching → BFS over
+  /// three paths → optional LLM filter → time-sorted answer composition →
+  /// Q/A persistence. The returned `retrievedNodeIds` is the cache the UI
+  /// passes back to [promoteToInsight] when the user keeps the answer.
+  ///
+  /// LLM tasks are best-effort: if `engine.llm` is null or any call fails
+  /// gracefully, the turn falls back to Kiwi-only keyword matching and the
+  /// answer becomes the time-ordered context dump (DESIGN_PRINCIPLES §1
+  /// 원칙 11 — LLM is core but injected, not required).
+  Future<SynapseTurnResult> synapseTurn({
+    required String question,
+    int? postId,
+  }) async {
+    // 1. Resolve / create the synapse post.
+    final pid = postId ?? await db.insert('posts', {'kind': 'synapse'});
+
+    // 2. Persist the question sentence (role='user').
+    final qPosition = await _nextPosition(pid);
+    final questionSentenceId = await db.insert('sentences', {
+      'post_id': pid,
+      'text': question,
+      'role': 'user',
+      'position': qPosition,
+    });
+
+    // 3. Keyword expansion — LLM (if available) ∪ raw split ∪ Kiwi nouns.
+    final keywords = await _expandKeywords(question);
+
+    // 4. Path-1 seed (start nodes).
+    final startNodeMap = await matchStartNodes(
+      db,
+      keywords: keywords,
+      question: question,
+    );
+    final startNodeIds = startNodeMap.keys.toSet();
+
+    // 5. Path-3 seed (heading subtree mentions).
+    final subtree = await headingSubtreeSeeds(db, startNodeIds: startNodeIds);
+
+    // 6. Path-2 supplement (same-category siblings).
+    final supplement = await sameCategoryNodes(
+      db,
+      startNodeIds: startNodeIds,
+      visitedNodeIds: startNodeIds,
+    );
+
+    // 7. BFS with LLM filter callback (when llm is wired up).
+    final llm = _llm;
+    final filter = llm == null
+        ? null
+        : (String sentenceText) async {
+            try {
+              return await llm.retrieveFilter(question, sentenceText);
+            } catch (_) {
+              // Filter failures must not silently drop content — keep it.
+              return true;
+            }
+          };
+
+    final mentions = await bfs_impl.bfsRetrieve(
+      db,
+      startNodes: startNodeIds,
+      seedMentions: subtree.mentions,
+      supplementNodes: supplement,
+      startCategoryIds: subtree.categoryIds,
+      filter: filter,
+      maxSentences: _maxSentences,
+      stopwordThreshold: _stopwordThreshold,
+    );
+
+    // 8. Build context sentences (deduped by sentence_id, time-ordered).
+    final seenSids = <int>{};
+    final contexts = <ContextSentence>[];
+    final contextSentenceIds = <int>[];
+    final retrievedNodeIds = <int>{...startNodeIds};
+    for (final m in mentions) {
+      if (m.nodeId > 0) retrievedNodeIds.add(m.nodeId);
+      if (!seenSids.add(m.sentenceId)) continue;
+      final text = m.sentenceText;
+      if (text == null) continue;
+      contexts.add(ContextSentence(
+        text: text,
+        role: 'user',
+        createdAt: m.sentenceCreatedAt,
+      ));
+      contextSentenceIds.add(m.sentenceId);
+    }
+
+    // 9. Compose the answer (LLM if available, else time-ordered dump).
+    String answer;
+    if (llm != null) {
+      try {
+        answer = await llm.synapseAnswer(
+          question: question,
+          contexts: contexts,
+        );
+      } catch (_) {
+        answer = _fallbackAnswer(contexts);
+      }
+    } else {
+      answer = _fallbackAnswer(contexts);
+    }
+
+    // 10. Persist the answer sentence (role='assistant').
+    final aPosition = qPosition + 1;
+    final answerSentenceId = await db.insert('sentences', {
+      'post_id': pid,
+      'text': answer,
+      'role': 'assistant',
+      'position': aPosition,
+    });
+
+    return SynapseTurnResult(
+      postId: pid,
+      questionSentenceId: questionSentenceId,
+      answerSentenceId: answerSentenceId,
+      answer: answer,
+      retrievedNodeIds: retrievedNodeIds.toList()..sort(),
+      contextSentenceIds: contextSentenceIds,
+    );
+  }
+
+  // ── /promote ────────────────────────────────────────────
+
+  /// Wraps [body] in a brand-new `kind='insight'` post and Hebbian-links
+  /// every node in [snapshotNodeIds] to every sentence the markdown
+  /// parser produces. Body-derived Kiwi nouns are also folded in (UNIQUE
+  /// conflict on `(node_id, sentence_id)` simply skips dupes).
+  ///
+  /// Title falls back to the first non-blank line of the body.
+  Future<InsightResult> promoteToInsight({
+    required String body,
+    required List<int> snapshotNodeIds,
+    String? title,
+  }) async {
+    if (body.trim().isEmpty) {
+      throw ArgumentError('promoteToInsight requires non-empty body');
+    }
+    final resolvedTitle = title ?? _firstLine(body);
+    final lines = parseMarkdown(body);
+
+    final newPostId = await db.insert('posts', {
+      'kind': 'insight',
+      'title': resolvedTitle,
+      'source': body,
+    });
+
+    var position = 0;
+    final sentenceIds = <int>[];
+    var connectedRows = 0;
+
+    for (final line in lines) {
+      if (line.kind == ParsedKind.heading) continue;
+      final sid = await db.insert('sentences', {
+        'post_id': newPostId,
+        'text': line.text,
+        'role': 'user',
+        'origin': 'insight',
+        'position': position++,
+      });
+      sentenceIds.add(sid);
+
+      // (a) Snapshot nodes — bulk Hebbian links.
+      for (final nodeId in snapshotNodeIds) {
+        final added = await graph.addMention(
+          nodeId: nodeId,
+          sentenceId: sid,
+          origin: 'system',
+        );
+        if (added) connectedRows++;
+      }
+
+      // (b) Kiwi-extracted nodes from the body.
+      final nouns = await _kiwi.nouns(line.text);
+      for (final name in nouns) {
+        if (name.isEmpty) continue;
+        final newNodeId = await graph.upsertNode(name);
+        final added = await graph.addMention(
+          nodeId: newNodeId,
+          sentenceId: sid,
+          origin: 'system',
+        );
+        if (added) connectedRows++;
+      }
+    }
+
+    if (sentenceIds.isEmpty) {
+      // Body had only headings (or was structurally empty after parsing).
+      // Fall back to a single sentence so the insight isn't silently void.
+      final sid = await db.insert('sentences', {
+        'post_id': newPostId,
+        'text': body.trim(),
+        'role': 'user',
+        'origin': 'insight',
+        'position': 0,
+      });
+      sentenceIds.add(sid);
+      for (final nodeId in snapshotNodeIds) {
+        final added = await graph.addMention(
+          nodeId: nodeId,
+          sentenceId: sid,
+          origin: 'system',
+        );
+        if (added) connectedRows++;
+      }
+    }
+
+    return InsightResult(
+      postId: newPostId,
+      sentenceIds: sentenceIds,
+      connectedNodeCount: connectedRows,
+    );
+  }
 
   // ── post management ─────────────────────────────────────
 
@@ -122,6 +354,75 @@ class SynapseFlow {
 
   Future<void> deletePost(int postId) async {
     await db.delete('posts', where: 'id = ?', whereArgs: [postId]);
+  }
+
+  // ── helpers ─────────────────────────────────────────────
+
+  Future<int> _nextPosition(int postId) async {
+    final rows = await db.rawQuery(
+      'SELECT COALESCE(MAX(position), -1) + 1 AS next '
+      'FROM sentences WHERE post_id = ?',
+      [postId],
+    );
+    return (rows.first['next'] as int?) ?? 0;
+  }
+
+  Future<List<String>> _expandKeywords(String question) async {
+    final out = <String>[];
+    final seen = <String>{};
+    void add(String s) {
+      final trimmed = s.trim();
+      if (trimmed.isEmpty || !seen.add(trimmed)) return;
+      out.add(trimmed);
+    }
+
+    final llm = _llm;
+    if (llm != null) {
+      try {
+        final expanded = await llm.retrieveExpand(question);
+        for (final kw in expanded) {
+          add(kw);
+        }
+      } catch (_) {
+        // LLM expand failure → fall back to deterministic sources only.
+      }
+    }
+    for (final piece in question.split(RegExp(r'\s+'))) {
+      add(piece);
+    }
+    try {
+      final nouns = await _kiwi.nouns(question);
+      for (final n in nouns) {
+        add(n);
+      }
+    } catch (_) {
+      // Kiwi miss is non-fatal — `out` already has whitespace-split tokens.
+    }
+    return out;
+  }
+
+  String _fallbackAnswer(List<ContextSentence> contexts) {
+    if (contexts.isEmpty) return '관련 정보를 찾을 수 없습니다.';
+    final sorted = [...contexts]
+      ..sort((a, b) => (a.createdAt ?? '').compareTo(b.createdAt ?? ''));
+    final lines = sorted.map((c) {
+      final hint = c.dateHint;
+      return hint == null ? c.text : '[$hint] ${c.text}';
+    });
+    return lines.join('\n');
+  }
+
+  String _firstLine(String body) {
+    for (final raw in body.split('\n')) {
+      final line = raw.trim();
+      if (line.isEmpty) continue;
+      // Strip leading markdown noise (#, -, etc.) so the title reads cleanly.
+      return line.replaceFirst(RegExp(r'^#+\s*'), '').replaceFirst(
+            RegExp(r'^[-*]\s+'),
+            '',
+          );
+    }
+    return body.trim();
   }
 }
 

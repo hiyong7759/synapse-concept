@@ -16,6 +16,8 @@ class EngineConfig {
     this.adapters = const [],
     this.kiwiAssetPath,
     this.promptOverrides,
+    this.retrieveMaxSentences = 50,
+    this.retrieveStopwordThreshold = 50,
   });
 
   /// 'synapse_app' / 'gabjil_app' / etc. Used for logging and DB filename hints.
@@ -48,6 +50,17 @@ class EngineConfig {
   /// Optional per-task system-prompt overrides. Keys are task names
   /// (e.g. 'save_pronoun', 'retrieve_expand'). Values are full prompt text.
   final Map<String, String>? promptOverrides;
+
+  /// Hard cap on sentences a single `synapseTurn` may collect. The BFS
+  /// terminates once it reaches this number, which is more predictable than
+  /// "depth N" because graph shape varies wildly across users.
+  final int retrieveMaxSentences;
+
+  /// Mention-count threshold for the BFS frequency stopword filter
+  /// (DESIGN_PIPELINE §인출 — 노드 폭증 억제). Nodes appearing in this many
+  /// or more sentences are dropped from BFS expansion (still surfaced if
+  /// they're the start node themselves). Set to `0` to disable.
+  final int retrieveStopwordThreshold;
 
   /// True iff this config has both reserved kinds for the synapse flow
   /// activated (`'synapse'` and `'insight'`).

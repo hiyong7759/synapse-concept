@@ -232,11 +232,28 @@ class GraphOps {
 
   // ── 인출 ──────────────────────────────────────────────
 
+  /// Thin pass-through to [bfs_impl.bfsRetrieve]. Reuse apps that have no
+  /// LLM and no heading tree call this with just [startNodes] and get a
+  /// pure path-1 BFS — every other knob is optional.
   Future<List<Mention>> bfsRetrieve({
     required Set<int> startNodes,
-    int maxLayers = 5,
+    List<Mention> seedMentions = const [],
+    Set<int> supplementNodes = const {},
+    Set<int> startCategoryIds = const {},
+    bfs_impl.MentionFilter? filter,
+    int maxSentences = 50,
+    int stopwordThreshold = 50,
   }) =>
-      bfs_impl.bfsRetrieve(db, startNodes: startNodes, maxLayers: maxLayers);
+      bfs_impl.bfsRetrieve(
+        db,
+        startNodes: startNodes,
+        seedMentions: seedMentions,
+        supplementNodes: supplementNodes,
+        startCategoryIds: startCategoryIds,
+        filter: filter,
+        maxSentences: maxSentences,
+        stopwordThreshold: stopwordThreshold,
+      );
 
   Future<List<TypoCandidate>> findSuspectedTypos({
     int maxDist = 1,

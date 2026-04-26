@@ -88,10 +88,101 @@ void main() {
       expect(mentions.map((m) => m.sentenceId).toSet(), {s1, s2, s3});
     });
 
-    test('respects maxLayers (truncates traversal after N layers)', () async {
-      // 5-hop chain. With maxLayers=1 only the first layer fires —
-      // emitting just (N0, edge0). N1 enters `current` for the next
-      // layer but the loop exits before that layer runs.
+    test('seedMentions are folded in before layer 0 (axis-A pre-seed)',
+        () async {
+      final hsk = await ops.upsertNode('허리디스크');
+      final cof = await ops.upsertNode('커피');
+      final s1 =
+          await ops.addSentence(postId: postId, text: '커피와 허리디스크 같이');
+      final s2 =
+          await ops.addSentence(postId: postId, text: '허리디스크 다른 문장');
+      await ops.addMention(nodeId: hsk, sentenceId: s1);
+      await ops.addMention(nodeId: cof, sentenceId: s1);
+      await ops.addMention(nodeId: hsk, sentenceId: s2);
+
+      // s1 is a pre-seed (caller resolved it from a heading subtree). BFS
+      // must include it in the result and treat hsk/cof as already known.
+      final mentions = await ops.bfsRetrieve(
+        startNodes: const {},
+        seedMentions: [
+          Mention(
+            nodeId: hsk,
+            sentenceId: s1,
+            nodeName: '허리디스크',
+            sentenceText: '커피와 허리디스크 같이',
+          ),
+          Mention(
+            nodeId: cof,
+            sentenceId: s1,
+            nodeName: '커피',
+            sentenceText: '커피와 허리디스크 같이',
+          ),
+        ],
+      );
+      // s1 is reported (from the seed) and BFS expands hsk → s2.
+      expect(mentions.map((m) => m.sentenceId).toSet(), {s1, s2});
+    });
+
+    test('supplementNodes add a one-hop axis-B layer after BFS terminates',
+        () async {
+      final hsk = await ops.upsertNode('허리디스크');
+      final exer = await ops.upsertNode('운동');
+      final s1 = await ops.addSentence(postId: postId, text: '허리디스크 진단');
+      final s2 = await ops.addSentence(postId: postId, text: '운동 시작');
+      await ops.addMention(nodeId: hsk, sentenceId: s1);
+      await ops.addMention(nodeId: exer, sentenceId: s2);
+
+      final mentions = await ops.bfsRetrieve(
+        startNodes: {hsk},
+        supplementNodes: {exer},
+      );
+      expect(mentions.map((m) => m.sentenceId).toSet(), {s1, s2});
+    });
+
+    test('filter callback gets to drop sentences', () async {
+      final hsk = await ops.upsertNode('허리디스크');
+      final s1 = await ops.addSentence(postId: postId, text: 'keep this');
+      final s2 = await ops.addSentence(postId: postId, text: 'drop this');
+      await ops.addMention(nodeId: hsk, sentenceId: s1);
+      await ops.addMention(nodeId: hsk, sentenceId: s2);
+
+      final mentions = await ops.bfsRetrieve(
+        startNodes: {hsk},
+        filter: (text) async => !text.startsWith('drop'),
+      );
+      expect(mentions.map((m) => m.sentenceText).toSet(), {'keep this'});
+    });
+
+    test('stopwordThreshold prunes hyper-connected nodes from expansion',
+        () async {
+      // "받음" appears in 3 sentences — with threshold=2 it becomes a
+      // stopword and BFS must NOT expand into it from another start node.
+      final receive = await ops.upsertNode('받음');
+      final coffee = await ops.upsertNode('커피');
+      final pkg = await ops.upsertNode('택배');
+      final s1 = await ops.addSentence(postId: postId, text: '커피 받음');
+      final s2 = await ops.addSentence(postId: postId, text: '택배 받음');
+      final s3 = await ops.addSentence(postId: postId, text: '메시지 받음');
+      await ops.addMention(nodeId: coffee, sentenceId: s1);
+      await ops.addMention(nodeId: receive, sentenceId: s1);
+      await ops.addMention(nodeId: pkg, sentenceId: s2);
+      await ops.addMention(nodeId: receive, sentenceId: s2);
+      await ops.addMention(nodeId: receive, sentenceId: s3);
+
+      final mentions = await ops.bfsRetrieve(
+        startNodes: {coffee},
+        stopwordThreshold: 2,
+      );
+      // BFS must surface the start node's own sentence but stop there:
+      // 받음 is a stopword, so neither 택배 nor s2/s3 should appear.
+      expect(mentions.map((m) => m.sentenceId).toSet(), {s1});
+    });
+
+    test('respects maxSentences (cuts off once collection reaches the cap)',
+        () async {
+      // 5-hop chain. With maxSentences=1 the BFS records only the first
+      // layer's mention (ids[0] @ edge0) and breaks immediately. With
+      // maxSentences=2 we also pick up (ids[1] @ edge1).
       final ids = <int>[];
       for (var i = 0; i < 6; i++) {
         ids.add(await ops.upsertNode('N$i'));
@@ -101,10 +192,16 @@ void main() {
         await ops.addMention(nodeId: ids[i], sentenceId: sid);
         await ops.addMention(nodeId: ids[i + 1], sentenceId: sid);
       }
-      final m1 = await ops.bfsRetrieve(startNodes: {ids[0]}, maxLayers: 1);
+      final m1 = await ops.bfsRetrieve(
+        startNodes: {ids[0]},
+        maxSentences: 1,
+      );
       expect(m1.map((m) => m.nodeId).toSet(), {ids[0]});
 
-      final m2 = await ops.bfsRetrieve(startNodes: {ids[0]}, maxLayers: 2);
+      final m2 = await ops.bfsRetrieve(
+        startNodes: {ids[0]},
+        maxSentences: 2,
+      );
       expect(m2.map((m) => m.nodeId).toSet(), {ids[0], ids[1]});
     });
   });

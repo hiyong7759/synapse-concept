@@ -133,7 +133,14 @@ class SynapseEngine {
     // ── SynapseFlow (synapse-app activation) ───────────
     SynapseFlow? flow;
     if (config.isSynapseFlowEnabled && graph != null && kiwi != null) {
-      flow = SynapseFlow(db: db, graph: graph, kiwi: kiwi, llm: tasks);
+      flow = SynapseFlow(
+        db: db,
+        graph: graph,
+        kiwi: kiwi,
+        llm: tasks,
+        retrieveMaxSentences: config.retrieveMaxSentences,
+        retrieveStopwordThreshold: config.retrieveStopwordThreshold,
+      );
     }
 
     return SynapseEngine._(

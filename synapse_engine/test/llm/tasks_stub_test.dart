@@ -63,13 +63,32 @@ void main() {
 
     test('synapseAnswer assembles facts block and runs at temperature > 0',
         () async {
-      backend.canned['::알려진 사실:\n- 스타벅스 다녀옴\n\n질문: 어디 갔어?'] = '스타벅스에 갔어요.';
+      // Header is "알려진 사실 (시간 순)" when there's at least one fact —
+      // Python parity (DESIGN_PIPELINE §인출).
+      backend.canned[
+              '::알려진 사실 (시간 순):\n- [2026-04-26] 스타벅스 다녀옴\n\n질문: 어디 갔어?'] =
+          '스타벅스에 갔어요.';
+      final answer = await tasks.synapseAnswer(
+        question: '어디 갔어?',
+        contexts: const [
+          ContextSentence(
+            text: '스타벅스 다녀옴',
+            createdAt: '2026-04-26 10:00:00',
+          ),
+        ],
+      );
+      expect(answer, '스타벅스에 갔어요.');
+      expect(backend.lastSystemPrompt, '<system:synapseAnswer>');
+    });
+
+    test('synapseAnswer skips date prefix when createdAt is null', () async {
+      backend.canned['::알려진 사실 (시간 순):\n- 스타벅스 다녀옴\n\n질문: 어디 갔어?'] =
+          '스타벅스에 갔어요.';
       final answer = await tasks.synapseAnswer(
         question: '어디 갔어?',
         contexts: const [ContextSentence(text: '스타벅스 다녀옴')],
       );
       expect(answer, '스타벅스에 갔어요.');
-      expect(backend.lastSystemPrompt, '<system:synapseAnswer>');
     });
 
     test('synapseAnswer uses a no-facts placeholder when contexts is empty',

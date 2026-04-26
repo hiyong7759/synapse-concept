@@ -34,6 +34,11 @@ class Sentence {
 
 /// One row of `node_sentence_mentions`, optionally enriched with the
 /// matching node name and sentence text (for retrieve / display paths).
+///
+/// `sentenceCreatedAt` is included so retrieve callers can sort by time
+/// without an extra round-trip to the `sentences` table — the BFS JOIN
+/// already touches that row, so we widen the SELECT instead of issuing a
+/// follow-up query (DESIGN_PIPELINE §인출 — 시간 순 정렬은 LLM 답변 합성의 핵심 입력).
 class Mention {
   const Mention({
     required this.nodeId,
@@ -41,12 +46,16 @@ class Mention {
     this.origin = 'system',
     this.nodeName,
     this.sentenceText,
+    this.sentenceCreatedAt,
   });
   final int nodeId;
   final int sentenceId;
   final String origin;
   final String? nodeName;
   final String? sentenceText;
+
+  /// `sentences.created_at` — `YYYY-MM-DD HH:MM:SS` (sqflite TEXT default).
+  final String? sentenceCreatedAt;
 }
 
 class Alias {
