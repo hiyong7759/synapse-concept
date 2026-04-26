@@ -105,6 +105,18 @@ void main() {
       expect(row['title'], 'renamed');
     });
 
+    test('createPost inserts an empty row of the requested kind', () async {
+      final id = await flow.createPost(kind: 'note');
+      final row = (await engine.db.query(
+        'posts',
+        where: 'id = ?',
+        whereArgs: [id],
+      )).single;
+      expect(row['kind'], 'note');
+      expect(row['title'], isNull);
+      expect(row['source'], isNull);
+    });
+
     test('deletePost cascades sentences', () async {
       final pid = await engine.db.insert('posts', {'kind': 'note'});
       await engine.db.insert('sentences', {

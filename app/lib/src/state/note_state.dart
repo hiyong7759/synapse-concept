@@ -66,3 +66,46 @@ final selectedPostIdProvider = StateProvider<int?>((ref) => null);
 /// Editor draft text — local UI state only at F7a. F7b will pipe this
 /// into the autosave debouncer.
 final editorDraftProvider = StateProvider<String>((ref) => '');
+
+/// Source text for the currently selected post — re-fetched whenever the
+/// selection changes. Returns `null` when no post is selected. The editor
+/// uses `ref.listen` on this to push the loaded text into its
+/// [TextEditingController] without breaking the user's cursor.
+final noteSourceProvider = FutureProvider.autoDispose<String?>((ref) async {
+  final id = ref.watch(selectedPostIdProvider);
+  if (id == null) return null;
+  final engine = await ref.watch(engineProvider.future);
+  final flow = engine.flow;
+  if (flow == null) return null;
+  final detail = await flow.getPost(id);
+  return detail.source;
+});
+
+/// Creates a new empty note, refreshes the sidebar, and selects it.
+/// Returns the new post id so the caller can focus / hand off.
+Future<int> createNote(WidgetRef ref) async {
+  final engine = await ref.read(engineProvider.future);
+  final flow = engine.flow;
+  if (flow == null) {
+    throw StateError('SynapseFlow not enabled — note creation unavailable');
+  }
+  final id = await flow.createPost(kind: 'note');
+  ref.invalidate(postListProvider);
+  ref.read(selectedPostIdProvider.notifier).state = id;
+  return id;
+}
+
+/// Deletes [postId] and refreshes the sidebar. If the deleted post was
+/// the active selection, clears it back to "no post selected".
+Future<void> deleteNote(WidgetRef ref, int postId) async {
+  final engine = await ref.read(engineProvider.future);
+  final flow = engine.flow;
+  if (flow == null) {
+    throw StateError('SynapseFlow not enabled — note deletion unavailable');
+  }
+  await flow.deletePost(postId);
+  if (ref.read(selectedPostIdProvider) == postId) {
+    ref.read(selectedPostIdProvider.notifier).state = null;
+  }
+  ref.invalidate(postListProvider);
+}

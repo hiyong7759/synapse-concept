@@ -278,6 +278,14 @@ class SynapseFlow {
 
   // ── post management ─────────────────────────────────────
 
+  /// Inserts an empty post of the given [kind] and returns the new id.
+  /// `title` and `source` start NULL — UI fills them through the editor +
+  /// autosave path. Reuse apps (synapse session, future kinds) share this
+  /// method instead of each writing their own `db.insert`.
+  Future<int> createPost({required String kind}) async {
+    return db.insert('posts', {'kind': kind});
+  }
+
   /// Newest first. [kind] filter is optional; null returns every post.
   Future<List<PostMeta>> listPosts({
     String? kind,
