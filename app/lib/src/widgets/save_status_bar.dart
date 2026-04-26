@@ -91,7 +91,7 @@ class _ShimmerTextState extends State<_ShimmerText>
                   final w = bounds.width;
                   // sweep band half-width as a fraction of the text box.
                   // Smaller = sharper highlight; larger = softer glow.
-                  final bandHalf = w * 0.18;
+                  final bandHalf = w * 0.25;
                   return ui.Gradient.linear(
                     Offset(w * p - bandHalf, 0),
                     Offset(w * p + bandHalf, 0),
