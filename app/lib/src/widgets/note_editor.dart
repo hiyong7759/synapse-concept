@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../state/autosave.dart';
 import '../state/note_state.dart';
 import '../theme/tokens.dart';
+import 'empty_editor_guide.dart';
 
 /// Single-input markdown editor.
 ///
@@ -61,15 +62,7 @@ class _NoteEditorState extends ConsumerState<NoteEditor> {
     });
 
     if (selectedId == null) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(SynapseTokens.spaceL),
-          child: Text(
-            '노트를 선택하거나 [+ 새 노트] 로 시작하세요.',
-            style: SynapseTokens.caption,
-          ),
-        ),
-      );
+      return const EmptyEditorGuide();
     }
 
     return Padding(

@@ -55,14 +55,17 @@ class _ShimmerText extends StatefulWidget {
 class _ShimmerTextState extends State<_ShimmerText>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
+  late final Animation<double> _curved;
 
   @override
   void initState() {
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 1400),
     )..repeat();
+    // ease-in: 좌측에서 천천히 출발해 우측 끝으로 갈수록 가속.
+    _curved = CurvedAnimation(parent: _ctrl, curve: Curves.easeInCubic);
   }
 
   @override
@@ -79,12 +82,12 @@ class _ShimmerTextState extends State<_ShimmerText>
         Text(widget.label, style: widget.baseStyle),
         Positioned.fill(
           child: AnimatedBuilder(
-            animation: _ctrl,
+            animation: _curved,
             builder: (_, child) {
               return ShaderMask(
                 blendMode: BlendMode.srcIn,
                 shaderCallback: (bounds) {
-                  final p = _ctrl.value;
+                  final p = _curved.value;
                   final w = bounds.width;
                   // sweep band half-width as a fraction of the text box.
                   // Smaller = sharper highlight; larger = softer glow.
