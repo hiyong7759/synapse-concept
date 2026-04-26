@@ -67,6 +67,11 @@ final selectedPostIdProvider = StateProvider<int?>((ref) => null);
 /// into the autosave debouncer.
 final editorDraftProvider = StateProvider<String>((ref) => '');
 
+/// Title draft text — same shape as [editorDraftProvider]. Title and source
+/// share the autosave debouncer (`AutosaveController.schedule`) so editing
+/// either field schedules a single combined UPDATE.
+final titleDraftProvider = StateProvider<String>((ref) => '');
+
 /// Source text for the currently selected post — re-fetched whenever the
 /// selection changes. Returns `null` when no post is selected. The editor
 /// uses `ref.listen` on this to push the loaded text into its
@@ -79,6 +84,18 @@ final noteSourceProvider = FutureProvider.autoDispose<String?>((ref) async {
   if (flow == null) return null;
   final detail = await flow.getPost(id);
   return detail.source;
+});
+
+/// Title for the currently selected post — same shape / lifecycle as
+/// [noteSourceProvider]. Used by the editor's title line.
+final noteTitleProvider = FutureProvider.autoDispose<String?>((ref) async {
+  final id = ref.watch(selectedPostIdProvider);
+  if (id == null) return null;
+  final engine = await ref.watch(engineProvider.future);
+  final flow = engine.flow;
+  if (flow == null) return null;
+  final detail = await flow.getPost(id);
+  return detail.meta.title;
 });
 
 /// Creates a new empty note, refreshes the sidebar, and selects it.

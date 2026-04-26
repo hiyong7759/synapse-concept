@@ -9,7 +9,7 @@ import 'note_state.dart';
 /// `idle`     — nothing pending; controller is in sync with DB.
 /// `dirty`    — user typed; debounce timer is counting down.
 /// `saving`   — flush is in flight (Timer fired or `flush()` called).
-/// `saved`    — most recent flush succeeded; fades back to `idle` later.
+/// `saved`    — most recent flush succeeded.
 enum AutosaveStatus { idle, dirty, saving, saved }
 
 class AutosaveState {
@@ -43,30 +43,39 @@ class AutosaveState {
 /// synchronously — used when the user navigates away, the app pauses, or
 /// the sidebar selection changes (so the source load can't race past an
 /// in-flight edit).
+///
+/// Both `source` and `title` ride the same debouncer so the user can edit
+/// both fields and end up with one DB UPDATE per pause.
 class AutosaveController extends StateNotifier<AutosaveState> {
-  AutosaveController(
-    this._ref, {
-    Duration? debounce,
-    Duration? savedHold,
-  })  : _debounce = debounce ?? const Duration(milliseconds: 1500),
-        _savedHold = savedHold ?? const Duration(seconds: 5),
+  AutosaveController(this._ref, {Duration? debounce})
+      : _debounce = debounce ?? const Duration(milliseconds: 1500),
         super(const AutosaveState());
 
   final Ref _ref;
   final Duration _debounce;
-  final Duration _savedHold;
 
   Timer? _timer;
-  Timer? _holdTimer; // saved → idle 전환 타이머
   int? _pendingPostId;
   String? _pendingSource;
+  // `null` means "don't touch title" — the engine keeps existing title or
+  // applies first-line auto-fill. An empty string clears the title.
+  String? _pendingTitle;
+  bool _titleIncluded = false;
 
-  /// Queue an autosave for [postId] with the latest [source]. Resets the
-  /// debounce window if a save was already pending.
-  void schedule({required int postId, required String source}) {
+  /// Queue an autosave for [postId]. Either or both of [source] / [title]
+  /// can be supplied. Resets the debounce window if a save was already
+  /// pending.
+  void schedule({
+    required int postId,
+    String? source,
+    String? title,
+  }) {
     _pendingPostId = postId;
-    _pendingSource = source;
-    _holdTimer?.cancel();
+    if (source != null) _pendingSource = source;
+    if (title != null) {
+      _pendingTitle = title;
+      _titleIncluded = true;
+    }
     state = state.copyWith(status: AutosaveStatus.dirty);
     _timer?.cancel();
     _timer = Timer(_debounce, _runPendingSave);
@@ -85,8 +94,11 @@ class AutosaveController extends StateNotifier<AutosaveState> {
     final source = _pendingSource;
     if (postId == null || source == null) return;
 
+    final title = _titleIncluded ? _pendingTitle : null;
     _pendingPostId = null;
     _pendingSource = null;
+    _pendingTitle = null;
+    _titleIncluded = false;
     state = state.copyWith(status: AutosaveStatus.saving);
 
     try {
@@ -95,24 +107,14 @@ class AutosaveController extends StateNotifier<AutosaveState> {
       if (flow == null) {
         throw StateError('SynapseFlow not available — autosave skipped');
       }
-      await flow.noteAutosave(postId: postId, source: source);
+      await flow.noteAutosave(postId: postId, source: source, title: title);
       // Refresh the sidebar so updated_at sort sees the bump and the
       // newly auto-filled title shows up.
       _ref.invalidate(postListProvider);
-      final savedAt = DateTime.now();
       state = AutosaveState(
         status: AutosaveStatus.saved,
-        lastSavedAt: savedAt,
+        lastSavedAt: DateTime.now(),
       );
-      // After the brief "saved (방금)" pulse, fall back to idle so the
-      // status bar switches to the "✓ 저장됨 14:30" timestamp form.
-      _holdTimer?.cancel();
-      _holdTimer = Timer(_savedHold, () {
-        if (!mounted) return;
-        if (state.status == AutosaveStatus.saved) {
-          state = state.copyWith(status: AutosaveStatus.idle);
-        }
-      });
     } catch (e) {
       state = state.copyWith(status: AutosaveStatus.dirty, error: e);
     }
@@ -124,17 +126,16 @@ class AutosaveController extends StateNotifier<AutosaveState> {
   void clear() {
     _timer?.cancel();
     _timer = null;
-    _holdTimer?.cancel();
-    _holdTimer = null;
     _pendingPostId = null;
     _pendingSource = null;
+    _pendingTitle = null;
+    _titleIncluded = false;
     state = const AutosaveState();
   }
 
   @override
   void dispose() {
     _timer?.cancel();
-    _holdTimer?.cancel();
     super.dispose();
   }
 }
@@ -145,32 +146,26 @@ final autosaveProvider =
 });
 
 /// Map a save state to the human-readable label that appears on the
-/// status bar. Pulled out so the UI widget stays declarative and so we
-/// can unit-test the logic without spinning up a controller.
-///
-/// Time formatting is hybrid: short relative ("방금" / "30초 전" / "5분 전")
-/// while the save is recent enough to feel immediate, then absolute
-/// timestamps ("오늘 14:30" / "어제 14:30" / "2026-04-25 14:30") so a
-/// note saved yesterday reads as "yesterday at 14:30" rather than
-/// "23 hours ago" — long horizons need calendar context, not a counter.
-String autosaveStatusLabel(AutosaveState state, {DateTime? now}) {
+/// status bar above the editor. Three phases — "입력 중" / "저장 중..." /
+/// "저장됨". Time-of-save is shown only in the sidebar (one source of truth
+/// per surface), so this label stays stable across long idle windows.
+String autosaveStatusLabel(AutosaveState state) {
   if (state.error != null) return '저장 실패 — 다시 시도 중';
   switch (state.status) {
     case AutosaveStatus.idle:
-      final saved = state.lastSavedAt;
-      if (saved == null) return '';
-      return '✓ 저장됨 ${formatSaveTimestamp(saved, now ?? DateTime.now())}';
+      return state.lastSavedAt == null ? '' : '저장됨';
     case AutosaveStatus.dirty:
       return '입력 중';
     case AutosaveStatus.saving:
       return '저장 중...';
     case AutosaveStatus.saved:
-      return '✓ 저장됨 (방금)';
+      return '저장됨';
   }
 }
 
 /// Hybrid timestamp — short relative within the hour, absolute past that.
-/// Public so the sidebar (`updated_at`) can use the same formatting.
+/// Used by the sidebar to show "방금" / "5분 전" / "오늘 14:30" /
+/// "어제 14:30" / "2026-04-25 14:30" against `posts.updated_at`.
 String formatSaveTimestamp(DateTime t, DateTime now) {
   final delta = now.difference(t);
   if (delta.isNegative) return _absolute(t, now);
@@ -196,8 +191,6 @@ String _pad(int n) => n < 10 ? '0$n' : '$n';
 Future<void> flushAutosave(WidgetRef ref) =>
     ref.read(autosaveProvider.notifier).flush();
 
-/// Convenience for keeping the engine import out of UI files. The lifecycle
-/// observer needs an engine reference to ensure the SynapseFlow exists; we
-/// hand it back through this helper.
+/// Convenience for keeping the engine import out of UI files.
 Future<SynapseEngine> readEngine(WidgetRef ref) =>
     ref.read(engineProvider.future);

@@ -42,28 +42,35 @@ class NotePipeline {
   /// Updates `posts.source` (and `updated_at`). No LLM, no Kiwi. Single
   /// SQL UPDATE — meant for the 1.5 s debounce + page-leave path.
   ///
-  /// If `posts.title` is currently NULL we also auto-fill it with the
-  /// first non-blank line of [source] so the sidebar has something to
-  /// show right after the user starts typing. The title is only seeded
-  /// once — once a title exists (auto or user-edited), autosave never
-  /// touches it again. Body changes that no longer match the title are
-  /// the user's deliberate divergence, not a re-derivation trigger.
-  Future<void> autosave({required int postId, required String source}) async {
+  /// When [title] is supplied (the user is editing the title field) it
+  /// goes into the same UPDATE. When it is null and `posts.title` is
+  /// also null we seed it with [source]'s first non-blank line so the
+  /// sidebar has something to show. Once a title exists it is left alone
+  /// unless the caller passes a new value.
+  Future<void> autosave({
+    required int postId,
+    required String source,
+    String? title,
+  }) async {
     final updates = <String, Object?>{
       'source': source,
       'updated_at': _isoNow(),
     };
 
-    final row = await db.query(
-      'posts',
-      columns: ['title'],
-      where: 'id = ?',
-      whereArgs: [postId],
-      limit: 1,
-    );
-    if (row.isNotEmpty && row.first['title'] == null) {
-      final firstLine = _firstNonBlankLine(source);
-      if (firstLine != null) updates['title'] = firstLine;
+    if (title != null) {
+      updates['title'] = title.isEmpty ? null : title;
+    } else {
+      final row = await db.query(
+        'posts',
+        columns: ['title'],
+        where: 'id = ?',
+        whereArgs: [postId],
+        limit: 1,
+      );
+      if (row.isNotEmpty && row.first['title'] == null) {
+        final firstLine = _firstNonBlankLine(source);
+        if (firstLine != null) updates['title'] = firstLine;
+      }
     }
 
     await db.update(

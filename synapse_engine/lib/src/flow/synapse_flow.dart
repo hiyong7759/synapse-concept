@@ -50,8 +50,9 @@ class SynapseFlow {
   Future<void> noteAutosave({
     required int postId,
     required String source,
+    String? title,
   }) =>
-      _pipeline.autosave(postId: postId, source: source);
+      _pipeline.autosave(postId: postId, source: source, title: title);
 
   /// Full meaning-processing pass. See [NotePipeline.process].
   Future<NoteProcessResult> noteProcess({

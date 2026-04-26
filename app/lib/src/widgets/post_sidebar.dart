@@ -40,7 +40,6 @@ class PostSidebar extends ConsumerWidget {
                 onSelect: (id) =>
                     ref.read(selectedPostIdProvider.notifier).state = id,
                 onDelete: (post) => _confirmAndDelete(context, ref, post),
-                onRename: (post) => _promptRename(context, ref, post),
               ),
               loading: () =>
                   const Center(child: CircularProgressIndicator.adaptive()),
@@ -85,41 +84,6 @@ class PostSidebar extends ConsumerWidget {
       await deleteNote(ref, post.id);
     }
   }
-
-  Future<void> _promptRename(
-    BuildContext context,
-    WidgetRef ref,
-    PostMeta post,
-  ) async {
-    final controller = TextEditingController(text: post.title ?? '');
-    final newTitle = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('제목 편집'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(hintText: '노트 제목'),
-          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('취소'),
-          ),
-          TextButton(
-            onPressed: () =>
-                Navigator.of(ctx).pop(controller.text.trim()),
-            child: const Text('저장'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (newTitle != null && newTitle.isNotEmpty) {
-      await renameNote(ref, post.id, newTitle);
-    }
-  }
 }
 
 class _PostList extends StatelessWidget {
@@ -128,14 +92,12 @@ class _PostList extends StatelessWidget {
     required this.selectedId,
     required this.onSelect,
     required this.onDelete,
-    required this.onRename,
   });
 
   final List<PostMeta> posts;
   final int? selectedId;
   final ValueChanged<int> onSelect;
   final ValueChanged<PostMeta> onDelete;
-  final ValueChanged<PostMeta> onRename;
 
   @override
   Widget build(BuildContext context) {
@@ -165,7 +127,6 @@ class _PostList extends StatelessWidget {
               isSelected: post.id == selectedId,
               onTap: () => onSelect(post.id),
               onDelete: () => onDelete(post),
-              onRename: () => onRename(post),
             ),
         ],
         if (synapses.isNotEmpty) ...[
@@ -177,7 +138,6 @@ class _PostList extends StatelessWidget {
               isSelected: post.id == selectedId,
               onTap: () => onSelect(post.id),
               onDelete: () => onDelete(post),
-              onRename: () => onRename(post),
             ),
         ],
       ],
@@ -207,14 +167,12 @@ class _PostTile extends StatefulWidget {
     required this.isSelected,
     required this.onTap,
     required this.onDelete,
-    required this.onRename,
   });
 
   final PostMeta post;
   final bool isSelected;
   final VoidCallback onTap;
   final VoidCallback onDelete;
-  final VoidCallback onRename;
 
   @override
   State<_PostTile> createState() => _PostTileState();
@@ -282,18 +240,7 @@ class _PostTileState extends State<_PostTile> {
                     ],
                   ),
                 ),
-                if (_hovered) ...[
-                  IconButton(
-                    icon: const Icon(Icons.edit, size: 16),
-                    tooltip: '제목 편집',
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 24,
-                      minHeight: 24,
-                    ),
-                    onPressed: widget.onRename,
-                  ),
+                if (_hovered)
                   IconButton(
                     icon: const Icon(Icons.close, size: 16),
                     tooltip: '삭제',
@@ -305,7 +252,6 @@ class _PostTileState extends State<_PostTile> {
                     ),
                     onPressed: widget.onDelete,
                   ),
-                ],
               ],
             ),
           ),

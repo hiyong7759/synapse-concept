@@ -73,7 +73,12 @@ class _NoteEditorState extends ConsumerState<NoteEditor> {
     }
 
     return Padding(
-      padding: const EdgeInsets.all(SynapseTokens.spaceL),
+      padding: const EdgeInsets.fromLTRB(
+        SynapseTokens.spaceL,
+        SynapseTokens.spaceS,
+        SynapseTokens.spaceL,
+        SynapseTokens.spaceL,
+      ),
       child: TextField(
         controller: _controller,
         maxLines: null,

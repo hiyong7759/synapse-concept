@@ -7,10 +7,9 @@ import '../state/autosave.dart';
 import '../state/note_state.dart';
 import '../theme/tokens.dart';
 
-/// Slim status strip above the editor — DESIGN_UI line 128 / §자동저장 상태.
-/// Mirrors the four [AutosaveStatus] phases plus a hidden state when no
-/// note is selected. Adds a "..." pulsing animation while dirty so the
-/// user feels the system is alive between keystrokes.
+/// Slim status strip above the editor. Shows the three transient phases
+/// (입력 중 / 저장 중 / 저장됨); the absolute "when" lives in the sidebar
+/// so the editor header stays calm and stable across idle windows.
 class SaveStatusBar extends ConsumerStatefulWidget {
   const SaveStatusBar({super.key});
 

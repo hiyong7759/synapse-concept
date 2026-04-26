@@ -100,8 +100,8 @@ void main() {
       }
     });
 
-    test('preserves an existing title — autosave never overwrites it',
-        () async {
+    test('preserves an existing title — autosave with no title arg never '
+        'overwrites it', () async {
       final s = await setup();
       try {
         // User-set title already on the row.
@@ -122,6 +122,52 @@ void main() {
           whereArgs: [s.postId],
         )).single;
         expect(row['title'], '내가 정한 제목');
+      } finally {
+        await s.engine.dispose();
+      }
+    });
+
+    test('explicit title arg overrides whatever was on the row', () async {
+      final s = await setup();
+      try {
+        await s.pipeline.autosave(
+          postId: s.postId,
+          source: '아무 본문',
+          title: '사용자 명시 제목',
+        );
+        final row = (await s.engine.db.query(
+          'posts',
+          columns: ['title'],
+          where: 'id = ?',
+          whereArgs: [s.postId],
+        )).single;
+        expect(row['title'], '사용자 명시 제목');
+      } finally {
+        await s.engine.dispose();
+      }
+    });
+
+    test('explicit empty title arg clears the title back to NULL', () async {
+      final s = await setup();
+      try {
+        await s.engine.db.update(
+          'posts',
+          {'title': '있던 제목'},
+          where: 'id = ?',
+          whereArgs: [s.postId],
+        );
+        await s.pipeline.autosave(
+          postId: s.postId,
+          source: '아무 본문',
+          title: '',
+        );
+        final row = (await s.engine.db.query(
+          'posts',
+          columns: ['title'],
+          where: 'id = ?',
+          whereArgs: [s.postId],
+        )).single;
+        expect(row['title'], isNull);
       } finally {
         await s.engine.dispose();
       }

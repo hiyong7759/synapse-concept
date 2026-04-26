@@ -7,7 +7,7 @@ void main() {
       expect(autosaveStatusLabel(const AutosaveState()), '');
     });
 
-    test('dirty → "입력 중" (dots are added by the widget)', () {
+    test('dirty → "입력 중" (dots are appended by the widget)', () {
       const state = AutosaveState(status: AutosaveStatus.dirty);
       expect(autosaveStatusLabel(state), '입력 중');
     });
@@ -17,54 +17,17 @@ void main() {
       expect(autosaveStatusLabel(state), '저장 중...');
     });
 
-    test('saved → "✓ 저장됨 (방금)"', () {
+    test('saved → "저장됨" (time lives in the sidebar, not here)', () {
       const state = AutosaveState(status: AutosaveStatus.saved);
-      expect(autosaveStatusLabel(state), '✓ 저장됨 (방금)');
+      expect(autosaveStatusLabel(state), '저장됨');
     });
 
-    test('idle within the minute uses seconds', () {
-      final now = DateTime(2026, 4, 26, 12, 0, 0);
+    test('idle with a prior save also reads as "저장됨"', () {
       final state = AutosaveState(
         status: AutosaveStatus.idle,
-        lastSavedAt: now.subtract(const Duration(seconds: 30)),
+        lastSavedAt: DateTime(2026, 4, 26, 12, 0, 0),
       );
-      expect(autosaveStatusLabel(state, now: now), '✓ 저장됨 30초 전');
-    });
-
-    test('idle within the hour uses minutes', () {
-      final now = DateTime(2026, 4, 26, 12, 0, 0);
-      final state = AutosaveState(
-        status: AutosaveStatus.idle,
-        lastSavedAt: now.subtract(const Duration(minutes: 12)),
-      );
-      expect(autosaveStatusLabel(state, now: now), '✓ 저장됨 12분 전');
-    });
-
-    test('idle past the hour but same day → "오늘 HH:MM"', () {
-      final now = DateTime(2026, 4, 26, 14, 30, 0);
-      final state = AutosaveState(
-        status: AutosaveStatus.idle,
-        lastSavedAt: DateTime(2026, 4, 26, 9, 5, 0),
-      );
-      expect(autosaveStatusLabel(state, now: now), '✓ 저장됨 오늘 09:05');
-    });
-
-    test('idle yesterday → "어제 HH:MM"', () {
-      final now = DateTime(2026, 4, 26, 9, 0, 0);
-      final state = AutosaveState(
-        status: AutosaveStatus.idle,
-        lastSavedAt: DateTime(2026, 4, 25, 22, 15, 0),
-      );
-      expect(autosaveStatusLabel(state, now: now), '✓ 저장됨 어제 22:15');
-    });
-
-    test('idle older than yesterday → absolute date', () {
-      final now = DateTime(2026, 4, 26, 9, 0, 0);
-      final state = AutosaveState(
-        status: AutosaveStatus.idle,
-        lastSavedAt: DateTime(2026, 4, 20, 18, 45, 0),
-      );
-      expect(autosaveStatusLabel(state, now: now), '✓ 저장됨 2026-04-20 18:45');
+      expect(autosaveStatusLabel(state), '저장됨');
     });
 
     test('error overrides any status', () {
@@ -77,19 +40,43 @@ void main() {
   });
 
   group('formatSaveTimestamp', () {
-    test('older than a minute on the same day uses "오늘"', () {
-      final now = DateTime(2026, 4, 26, 14, 30, 0);
+    test('within a minute → "N초 전"', () {
+      final now = DateTime(2026, 4, 26, 12, 0, 0);
       expect(
-        formatSaveTimestamp(DateTime(2026, 4, 26, 13, 0, 0), now),
-        '오늘 13:00',
+        formatSaveTimestamp(now.subtract(const Duration(seconds: 30)), now),
+        '30초 전',
       );
     });
 
-    test('two days ago uses absolute date', () {
+    test('within an hour → "N분 전"', () {
+      final now = DateTime(2026, 4, 26, 12, 0, 0);
+      expect(
+        formatSaveTimestamp(now.subtract(const Duration(minutes: 12)), now),
+        '12분 전',
+      );
+    });
+
+    test('past the hour but same day → "오늘 HH:MM"', () {
+      final now = DateTime(2026, 4, 26, 14, 30, 0);
+      expect(
+        formatSaveTimestamp(DateTime(2026, 4, 26, 9, 5, 0), now),
+        '오늘 09:05',
+      );
+    });
+
+    test('yesterday → "어제 HH:MM"', () {
       final now = DateTime(2026, 4, 26, 9, 0, 0);
       expect(
-        formatSaveTimestamp(DateTime(2026, 4, 24, 7, 30, 0), now),
-        '2026-04-24 07:30',
+        formatSaveTimestamp(DateTime(2026, 4, 25, 22, 15, 0), now),
+        '어제 22:15',
+      );
+    });
+
+    test('older → absolute date', () {
+      final now = DateTime(2026, 4, 26, 9, 0, 0);
+      expect(
+        formatSaveTimestamp(DateTime(2026, 4, 20, 18, 45, 0), now),
+        '2026-04-20 18:45',
       );
     });
   });

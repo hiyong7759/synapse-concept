@@ -10,6 +10,7 @@ import '../widgets/graph_panel_placeholder.dart';
 import '../widgets/note_editor.dart';
 import '../widgets/post_sidebar.dart';
 import '../widgets/save_status_bar.dart';
+import '../widgets/title_editor.dart';
 
 /// `/note` page — DESIGN_UI §/note. Owns the autosave-flush lifecycle for
 /// the editor (page disposal, app lifecycle) so the editor widget itself
@@ -94,6 +95,7 @@ class _DesktopLayout extends StatelessWidget {
           Expanded(
             child: Column(
               children: [
+                TitleEditor(),
                 SaveStatusBar(),
                 Expanded(child: NoteEditor()),
               ],
@@ -145,6 +147,7 @@ class _MobileLayoutState extends State<_MobileLayout> {
           ? const GraphPanelPlaceholder()
           : const Column(
               children: [
+                TitleEditor(),
                 SaveStatusBar(),
                 Expanded(child: NoteEditor()),
               ],
