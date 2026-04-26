@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,15 +9,15 @@ import '../theme/tokens.dart';
 
 /// Tiny status label in the title row, right-aligned.
 ///
-///   - dirty   → "입력 중" 텍스트 위로 흰 세로 막대가 좌→우 linear sweep
+///   - dirty   → "입력 중" 글자 stroke (폰트 픽셀) 위로 흰 sweep band
 ///   - saving  → "저장 중..." 텍스트만
 ///   - saved / idle (저장 있음) → "저장됨" 텍스트만
 ///   - idle (no save) → 빈
 ///   - error   → "저장 실패 — 다시 시도 중" (빨강)
 ///
-/// Stack 이 Text 의 intrinsic 폭을 그대로 받아 sweep overlay 도 라벨 글자
-/// 영역만 정확히 cover. 라벨이 바뀌면 폭은 변하지만 우측 정렬 위치라
-/// 좌측 가장자리만 살짝 이동.
+/// dirty 일 때 흰 sweep 은 텍스트의 글자 stroke 자체에만 적용 — Stack +
+/// ShaderMask + BlendMode.srcIn 으로 흰 텍스트 위에 sweep gradient 가
+/// 마스크 역할. 결과는 회색 라벨 위로 광이 글자 모양 그대로 지나감.
 class SaveStatusBar extends ConsumerWidget {
   const SaveStatusBar({super.key});
 
@@ -33,28 +35,24 @@ class SaveStatusBar extends ConsumerWidget {
         : SynapseTokens.onSurfaceMuted;
     final style = SynapseTokens.caption.copyWith(color: color);
 
-    return Stack(
-      children: [
-        Text(label, style: style),
-        if (state.status == AutosaveStatus.dirty)
-          const Positioned.fill(child: _SweepOverlay()),
-      ],
-    );
+    if (state.status == AutosaveStatus.dirty) {
+      return _ShimmerText(label: label, baseStyle: style);
+    }
+    return Text(label, style: style);
   }
 }
 
-/// Opaque white vertical bar that travels left → right across the parent
-/// in a single direction, then loops back from the left. Sits as a Stack
-/// overlay above the dirty-state label so the label briefly disappears
-/// behind the bar as it passes — same pattern as skeleton shimmer.
-class _SweepOverlay extends StatefulWidget {
-  const _SweepOverlay();
+/// 텍스트 stroke 픽셀 위로만 흰 sweep band 가 좌→우 linear 로 흐른다.
+class _ShimmerText extends StatefulWidget {
+  const _ShimmerText({required this.label, required this.baseStyle});
+  final String label;
+  final TextStyle baseStyle;
 
   @override
-  State<_SweepOverlay> createState() => _SweepOverlayState();
+  State<_ShimmerText> createState() => _ShimmerTextState();
 }
 
-class _SweepOverlayState extends State<_SweepOverlay>
+class _ShimmerTextState extends State<_ShimmerText>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
 
@@ -75,30 +73,40 @@ class _SweepOverlayState extends State<_SweepOverlay>
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(painter: _SweepPainter(progress: _ctrl));
-  }
-}
-
-class _SweepPainter extends CustomPainter {
-  _SweepPainter({required this.progress}) : super(repaint: progress);
-
-  final Animation<double> progress;
-
-  static const double _barWidth = 8;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // No background — overlay sits over the existing label so the rest of
-    // the row stays transparent.
-    final span = size.width + _barWidth;
-    final x = span * progress.value - _barWidth;
-    final paint = Paint()..color = Colors.white;
-    canvas.drawRect(
-      Rect.fromLTWH(x, 0, _barWidth, size.height),
-      paint,
+    final whiteStyle = widget.baseStyle.copyWith(color: Colors.white);
+    return Stack(
+      children: [
+        Text(widget.label, style: widget.baseStyle),
+        Positioned.fill(
+          child: AnimatedBuilder(
+            animation: _ctrl,
+            builder: (_, child) {
+              return ShaderMask(
+                blendMode: BlendMode.srcIn,
+                shaderCallback: (bounds) {
+                  final p = _ctrl.value;
+                  final w = bounds.width;
+                  // sweep band half-width as a fraction of the text box.
+                  // Smaller = sharper highlight; larger = softer glow.
+                  final bandHalf = w * 0.18;
+                  return ui.Gradient.linear(
+                    Offset(w * p - bandHalf, 0),
+                    Offset(w * p + bandHalf, 0),
+                    const <Color>[
+                      Color(0x00FFFFFF),
+                      Color(0xFFFFFFFF),
+                      Color(0x00FFFFFF),
+                    ],
+                    const <double>[0.0, 0.5, 1.0],
+                    TileMode.decal,
+                  );
+                },
+                child: Text(widget.label, style: whiteStyle),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
-
-  @override
-  bool shouldRepaint(covariant _SweepPainter oldDelegate) => false;
 }
