@@ -62,7 +62,7 @@ class _ShimmerTextState extends State<_ShimmerText>
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1400),
+      duration: const Duration(milliseconds: 800),
     )..repeat();
     // ease-in: 좌측에서 천천히 출발해 우측 끝으로 갈수록 가속.
     _curved = CurvedAnimation(parent: _ctrl, curve: Curves.easeInCubic);
