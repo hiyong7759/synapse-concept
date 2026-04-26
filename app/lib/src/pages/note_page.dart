@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../layout/responsive.dart';
 import '../state/autosave.dart';
+import '../state/note_process.dart';
 import '../state/note_state.dart';
 import '../theme/tokens.dart';
+import '../widgets/correction_list.dart';
 import '../widgets/graph_panel_placeholder.dart';
 import '../widgets/note_editor.dart';
 import '../widgets/post_sidebar.dart';
@@ -52,13 +55,34 @@ class _NotePageState extends ConsumerState<NotePage>
     }
   }
 
+  /// ⌘S / Ctrl+S handler — flush any pending autosave so the engine sees
+  /// the current draft, then run `noteProcess` for the active post.
+  Future<void> _runMeaningPass() async {
+    final postId = ref.read(selectedPostIdProvider);
+    if (postId == null) return;
+    await _autosave?.flush();
+    final source = ref.read(editorDraftProvider);
+    await ref
+        .read(noteProcessProvider.notifier)
+        .run(postId: postId, source: source);
+  }
+
   @override
   Widget build(BuildContext context) {
     final engineAsync = ref.watch(engineProvider);
-    return engineAsync.when(
+    final body = engineAsync.when(
       data: (_) => const _NoteScaffold(),
       loading: () => const _BootScreen(label: '엔진 준비 중...'),
       error: (e, _) => _BootScreen(label: '엔진 시작 실패\n$e', isError: true),
+    );
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.keyS, meta: true):
+            _runMeaningPass,
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true):
+            _runMeaningPass,
+      },
+      child: Focus(autofocus: true, child: body),
     );
   }
 }
@@ -97,6 +121,7 @@ class _DesktopLayout extends StatelessWidget {
               children: [
                 _TitleRow(),
                 Expanded(child: NoteEditor()),
+                CorrectionList(),
               ],
             ),
           ),
@@ -148,6 +173,7 @@ class _MobileLayoutState extends State<_MobileLayout> {
               children: [
                 _TitleRow(),
                 Expanded(child: NoteEditor()),
+                CorrectionList(),
               ],
             ),
     );
