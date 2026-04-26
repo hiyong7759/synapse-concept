@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'src/pages/note_page.dart';
@@ -6,7 +7,7 @@ import 'src/pages/synapse_page.dart';
 import 'src/theme/tokens.dart';
 
 void main() {
-  runApp(const SynapseApp());
+  runApp(const ProviderScope(child: SynapseApp()));
 }
 
 /// Top-level app — wires the global theme to the go_router config and

@@ -43,6 +43,20 @@ dependencies:
   # routes, deep links, and platform back-button handling.
   go_router: ^14.6.0
 
+  # State management. Notes share state across sidebar / editor / graph
+  # panel, and F7b–d add async work (debounced autosave, ⌘S meaning,
+  # graph queries) — Riverpod handles all of those without boilerplate.
+  flutter_riverpod: ^2.6.1
+
+  # Per-platform "documents" path — used to place the sqflite DB outside
+  # the app bundle (which is read-only on iOS / signed on macOS).
+  path_provider: ^2.1.5
+
+  # sqflite is a transitive dependency of synapse_engine, but we touch the
+  # `databaseFactory` global on desktop platforms so we need an explicit pin.
+  sqflite: ^2.3.0
+  sqflite_common_ffi: ^2.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

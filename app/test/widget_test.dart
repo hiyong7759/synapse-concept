@@ -1,30 +1,30 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:synapse_app/main.dart';
+import 'package:synapse_app/src/state/note_state.dart';
+import 'package:synapse_engine/synapse_engine.dart';
 
 void main() {
-  testWidgets('boots into /note placeholder', (tester) async {
-    await tester.pumpWidget(const SynapseApp());
-    await tester.pumpAndSettle();
+  testWidgets('shows boot screen while the engine future is pending',
+      (tester) async {
+    final pending = Completer<SynapseEngine>();
 
-    expect(find.text('/note'), findsOneWidget);
-    expect(
-      find.textContaining('F7 에서 구현'),
-      findsOneWidget,
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          engineProvider.overrideWith((ref) => pending.future),
+        ],
+        child: const SynapseApp(),
+      ),
     );
-  });
+    await tester.pump(); // first frame after the FutureProvider subscribes
 
-  testWidgets('routes to /synapse via the AppBar action', (tester) async {
-    await tester.pumpWidget(const SynapseApp());
+    expect(find.text('엔진 준비 중...'), findsOneWidget);
+
+    // Tearing down: complete the future so the test can finish cleanly.
+    pending.completeError(StateError('test teardown — ignore'));
     await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Synapse →'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('/synapse'), findsOneWidget);
-    expect(
-      find.textContaining('F9 에서 구현'),
-      findsOneWidget,
-    );
   });
 }

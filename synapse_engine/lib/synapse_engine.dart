@@ -27,7 +27,8 @@ export 'src/graph/ops.dart' show GraphOps;
 export 'src/graph/seed_matching.dart'
     show matchStartNodes, headingSubtreeSeeds, sameCategoryNodes,
         HeadingSubtreeSeeds;
-export 'src/kiwi/kiwi_wasm.dart' show KiwiBackend;
+export 'src/kiwi/kiwi_wasm.dart'
+    show KiwiBackend, FlutterKiwiBackend, InMemoryKiwiBackend;
 export 'src/kiwi/tokens.dart' show KiwiToken;
 export 'src/models/graph_models.dart'
     show Node, Sentence, Mention, Alias, TypoCandidate, EngineStats;
