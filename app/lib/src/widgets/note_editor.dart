@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/autosave.dart';
+import '../state/note_process.dart';
 import '../state/note_state.dart';
 import '../theme/tokens.dart';
 import 'empty_editor_guide.dart';
@@ -57,6 +58,9 @@ class _NoteEditorState extends ConsumerState<NoteEditor> {
       next.whenData((source) async {
         await ref.read(autosaveProvider.notifier).flush();
         ref.read(autosaveProvider.notifier).clear();
+        // The previous note's "정리됨" badge shouldn't carry over to a
+        // freshly opened post.
+        ref.read(noteProcessProvider.notifier).clear();
         _applyLoadedSource(source);
       });
     });

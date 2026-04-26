@@ -20,6 +20,13 @@ final engineProvider = FutureProvider<SynapseEngine>((ref) async {
   final dir = await getApplicationDocumentsDirectory();
   final dbPath = '${dir.path}/synapse.db';
 
+  // Production Kiwi: macOS / iOS / Android / Windows all bundle the
+  // flutter_kiwi_nlp dylib at build time. Without this the engine has
+  // no way to extract Korean nouns from sentences during ⌘S meaning
+  // pass, so the graph stays empty regardless of how much the user
+  // writes.
+  final kiwi = await FlutterKiwiBackend.load();
+
   final engine = await SynapseEngine.create(
     EngineConfig(
       appName: 'synapse_app',
@@ -28,10 +35,7 @@ final engineProvider = FutureProvider<SynapseEngine>((ref) async {
       dbPath: dbPath,
       categorySeed: CategorySeed.synapse19(),
     ),
-    // F7a uses the in-memory Kiwi backend so the screen renders even
-    // before the production WASM binding is wired in. Switching to the
-    // real backend is a one-liner once F7c needs noun extraction.
-    kiwiOverride: InMemoryKiwiBackend(),
+    kiwiOverride: kiwi,
   );
 
   ref.onDispose(engine.dispose);

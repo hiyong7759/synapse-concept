@@ -45,7 +45,7 @@ class SaveStatusBar extends ConsumerWidget {
   // Meaning pass takes the spotlight while running — it was triggered
   // explicitly so the user is watching for the result.
   if (process.status == NoteProcessStatus.processing) {
-    return (label: '⚙ 정리 중', shimmer: true, error: false);
+    return (label: '정리 중', shimmer: true, error: false);
   }
   if (process.status == NoteProcessStatus.error) {
     return (label: '정리 실패', shimmer: false, error: true);
@@ -64,7 +64,7 @@ class SaveStatusBar extends ConsumerWidget {
       // noteProcess just finished and the user hasn't started typing
       // again — show the "정리됨" badge instead of the older "저장됨".
       if (process.status == NoteProcessStatus.done) {
-        return (label: '✦ 정리됨', shimmer: false, error: false);
+        return (label: '정리됨', shimmer: false, error: false);
       }
       if (autosave.lastSavedAt != null) {
         return (label: '저장됨', shimmer: false, error: false);
