@@ -115,6 +115,10 @@ class AutosaveController extends StateNotifier<AutosaveState> {
       // Refresh the sidebar so updated_at sort sees the bump and the
       // newly auto-filled title shows up.
       _ref.invalidate(postListProvider);
+      // Pull the (possibly server-derived) title back so the title
+      // field can absorb auto-fill. Source isn't invalidated — the
+      // editor's controller already has the latest user input.
+      _ref.invalidate(noteTitleProvider);
       state = AutosaveState(
         status: AutosaveStatus.saved,
         lastSavedAt: DateTime.now(),

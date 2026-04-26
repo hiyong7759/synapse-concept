@@ -57,17 +57,28 @@ class _SaveStatusBarState extends ConsumerState<SaveStatusBar> {
       _stopDots();
     }
 
-    var label = autosaveStatusLabel(state);
-    if (state.status == AutosaveStatus.dirty) {
-      label = '$label${'.' * _dots}';
-    }
+    final label = autosaveStatusLabel(state);
     final color = state.error != null
         ? Colors.red
         : SynapseTokens.onSurfaceMuted;
+    final style = SynapseTokens.caption.copyWith(color: color);
 
-    return Text(
-      label,
-      style: SynapseTokens.caption.copyWith(color: color),
-    );
+    if (state.status == AutosaveStatus.dirty) {
+      // "입력 중" stays put and only the dots animate inside a fixed
+      // 16-pixel slot — the row is right-aligned, so any width change
+      // would jiggle the whole label.
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: style),
+          SizedBox(
+            width: 16,
+            child: Text('.' * _dots, style: style),
+          ),
+        ],
+      );
+    }
+
+    return Text(label, style: style);
   }
 }
