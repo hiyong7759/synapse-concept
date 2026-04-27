@@ -240,6 +240,11 @@ class NotePipeline {
       }
     }
 
+    // 4h. categorize fresh nodes (LLM, best-effort).
+    if (llm != null) {
+      await _categorizePostNodes(postId);
+    }
+
     // 5. auto-fill posts.title with the first sentence's first line, if
     //    title is still null.
     if (firstSentenceText != null) {
@@ -266,6 +271,99 @@ class NotePipeline {
       sentencesAdded: added,
       unresolvedTokens: unresolvedRecords,
     );
+  }
+
+  /// Categorizes every node mentioned in [postId] that doesn't yet have an
+  /// `origin='ai'` mapping in `node_category_mentions`. One LLM call per
+  /// node (deduped). Failures are swallowed — categorization is best-effort
+  /// and the rest of the pipeline (sentence INSERTs, mentions, headings)
+  /// stays committed regardless.
+  ///
+  /// Sub codes (`BOD.disease`) are resolved to leaf category rows under
+  /// the seed root (`BOD`). Unknown roots / leaves are skipped — the
+  /// system prompt enumerates the closed set, so unknown codes are
+  /// hallucinations rather than legitimate user-headings.
+  Future<void> _categorizePostNodes(int postId) async {
+    final llmRef = llm;
+    if (llmRef == null) return;
+    final rows = await db.rawQuery(
+      '''
+      SELECT DISTINCT n.id, n.name
+      FROM nodes n
+      JOIN node_sentence_mentions m ON m.node_id = n.id
+      JOIN sentences s ON s.id = m.sentence_id
+      WHERE s.post_id = ?
+        AND n.id NOT IN (
+          SELECT node_id FROM node_category_mentions WHERE origin = 'ai'
+        )
+      ''',
+      [postId],
+    );
+    for (final row in rows) {
+      final nodeId = row['id']! as int;
+      final nodeName = row['name']! as String;
+
+      final ctxRows = await db.rawQuery(
+        '''
+        SELECT s.text FROM sentences s
+        JOIN node_sentence_mentions m ON m.sentence_id = s.id
+        WHERE m.node_id = ? AND s.post_id = ?
+        ORDER BY s.position
+        LIMIT 3
+        ''',
+        [nodeId, postId],
+      );
+      final contexts =
+          ctxRows.map((r) => r['text']! as String).toList(growable: false);
+
+      List<String> codes;
+      try {
+        codes = await llmRef.categorize(
+          nodeName: nodeName,
+          contextSentences: contexts,
+        );
+      } on Object {
+        continue;
+      }
+
+      for (final code in codes) {
+        final leafId = await _resolveSubCategoryId(code);
+        if (leafId == null) continue;
+        await graph.addCategoryMention(
+          nodeId: nodeId,
+          categoryId: leafId,
+          origin: 'ai',
+        );
+      }
+    }
+  }
+
+  /// Resolves a `BOD.disease` style code to its `categories.id`. Returns
+  /// null when the root or leaf is missing — caller skips the mention.
+  Future<int?> _resolveSubCategoryId(String code) async {
+    final dot = code.indexOf('.');
+    if (dot <= 0 || dot == code.length - 1) return null;
+    final rootName = code.substring(0, dot);
+    final leafName = code.substring(dot + 1);
+
+    final rootRows = await db.query(
+      'categories',
+      columns: ['id'],
+      where: 'name = ? AND parent_id IS NULL',
+      whereArgs: [rootName],
+      limit: 1,
+    );
+    if (rootRows.isEmpty) return null;
+    final rootId = rootRows.first['id']! as int;
+
+    final leafRows = await db.query(
+      'categories',
+      columns: ['id'],
+      where: 'name = ? AND parent_id = ?',
+      whereArgs: [leafName, rootId],
+      limit: 1,
+    );
+    return leafRows.isEmpty ? null : leafRows.first['id']! as int;
   }
 
   String _isoNow() => _now()

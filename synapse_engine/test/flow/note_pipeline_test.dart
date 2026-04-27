@@ -351,6 +351,86 @@ void main() {
     });
   });
 
+  group('categorize', () {
+    test('llm null → no node_category_mentions rows written', () async {
+      final s = await setup(kiwiFixtures: {
+        '허리 아픔': [_nng('허리', 0)],
+      });
+      try {
+        await s.pipeline.process(postId: s.postId, source: '허리 아픔');
+        final c = Sqflite.firstIntValue(
+          await s.engine.db.rawQuery(
+            'SELECT COUNT(*) FROM node_category_mentions',
+          ),
+        );
+        expect(c, 0);
+      } finally {
+        await s.engine.dispose();
+      }
+    });
+
+    test('llm canned BOD.disease → node_category_mentions row written',
+        () async {
+      // metaFilter ignores '허리 아픔' (Kiwi yields '허리'); categorize gets
+      // the prompt the pipeline assembles for that node.
+      final stub = StubInferenceBackend(canned: {
+        '::허리 아픔': 'no',
+        '::노드: 허리\n맥락 문장:\n- 허리 아픔':
+            '{"categories": ["BOD.disease"]}',
+      });
+      final s = await setup(
+        stub: stub,
+        kiwiFixtures: {
+          '허리 아픔': [_nng('허리', 0)],
+        },
+      );
+      try {
+        await s.pipeline.process(postId: s.postId, source: '허리 아픔');
+        final rows = await s.engine.db.rawQuery(
+          '''
+          SELECT n.name, c.name AS sub, p.name AS root, ncm.origin
+          FROM node_category_mentions ncm
+          JOIN nodes n ON n.id = ncm.node_id
+          JOIN categories c ON c.id = ncm.category_id
+          JOIN categories p ON p.id = c.parent_id
+          ''',
+        );
+        expect(rows, hasLength(1));
+        expect(rows.first['name'], '허리');
+        expect(rows.first['root'], 'BOD');
+        expect(rows.first['sub'], 'disease');
+        expect(rows.first['origin'], 'ai');
+      } finally {
+        await s.engine.dispose();
+      }
+    });
+
+    test('llm returns unknown sub-code → mapping is skipped', () async {
+      final stub = StubInferenceBackend(canned: {
+        '::허리 아픔': 'no',
+        '::노드: 허리\n맥락 문장:\n- 허리 아픔':
+            '{"categories": ["XXX.unknown"]}',
+      });
+      final s = await setup(
+        stub: stub,
+        kiwiFixtures: {
+          '허리 아픔': [_nng('허리', 0)],
+        },
+      );
+      try {
+        await s.pipeline.process(postId: s.postId, source: '허리 아픔');
+        final c = Sqflite.firstIntValue(
+          await s.engine.db.rawQuery(
+            'SELECT COUNT(*) FROM node_category_mentions',
+          ),
+        );
+        expect(c, 0);
+      } finally {
+        await s.engine.dispose();
+      }
+    });
+  });
+
   group('first-person alias seed', () {
     test('seeded "나" node + 11 aliases land in DB at engine.create', () async {
       final s = await setup();
