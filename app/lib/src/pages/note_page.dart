@@ -12,6 +12,7 @@ import '../widgets/correction_list.dart';
 import '../widgets/graph_panel_placeholder.dart';
 import '../widgets/note_editor.dart';
 import '../widgets/post_sidebar.dart';
+import '../widgets/resizable_split.dart';
 import '../widgets/save_status_bar.dart';
 import '../widgets/title_editor.dart';
 import '../widgets/top_bar.dart';
@@ -114,13 +115,10 @@ class _DesktopLayout extends StatelessWidget {
         children: const [
           TopBar(active: 'note'),
           Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                PostSidebar(),
-                Expanded(child: _NoteEditorPane()),
-                GraphPanelPlaceholder(),
-              ],
+            child: ResizableSplit(
+              start: PostSidebar(),
+              center: _NoteEditorPane(),
+              end: GraphPanelPlaceholder(),
             ),
           ),
         ],

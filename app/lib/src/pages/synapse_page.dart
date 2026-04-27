@@ -5,6 +5,7 @@ import '../theme/tokens.dart';
 import '../widgets/components.dart';
 import '../widgets/graph_panel_placeholder.dart';
 import '../widgets/post_sidebar.dart';
+import '../widgets/resizable_split.dart';
 import '../widgets/top_bar.dart';
 
 /// `/synapse` placeholder. F9 will replace the centre column with the Q/A
@@ -34,13 +35,10 @@ class _DesktopLayout extends StatelessWidget {
         children: const [
           TopBar(active: 'synapse'),
           Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                PostSidebar(),
-                Expanded(child: _SynapseStub(showGraphHint: true)),
-                GraphPanelPlaceholder(),
-              ],
+            child: ResizableSplit(
+              start: PostSidebar(),
+              center: _SynapseStub(showGraphHint: true),
+              end: GraphPanelPlaceholder(),
             ),
           ),
         ],

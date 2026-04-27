@@ -20,10 +20,8 @@ class PostSidebar extends ConsumerWidget {
     final selectedId = ref.watch(selectedPostIdProvider);
 
     return Container(
-      width: 220,
       decoration: const BoxDecoration(
         color: SynapseTokens.bg2,
-        border: Border(right: BorderSide(color: SynapseTokens.border)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

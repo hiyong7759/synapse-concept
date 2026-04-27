@@ -12,10 +12,8 @@ class GraphPanelPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 320,
       decoration: const BoxDecoration(
         color: SynapseTokens.bg2,
-        border: Border(left: BorderSide(color: SynapseTokens.border)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
