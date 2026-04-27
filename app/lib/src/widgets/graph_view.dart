@@ -78,11 +78,11 @@ class _VisNetworkGraphViewState extends State<VisNetworkGraphView> {
       child: InAppWebView(
         initialFile: 'assets/graph/index.html',
         initialSettings: InAppWebViewSettings(
-          transparentBackground: true,
-          // macOS / iOS WKWebView — let JS make outbound requests to the
-          // vis-network CDN. Default settings already allow https.
+          // Let the host page's own dark background show through. Setting
+          // transparentBackground=true caused a fully black canvas on macOS
+          // (WKWebView didn't repaint with the HTML's background).
+          transparentBackground: false,
           allowsInlineMediaPlayback: false,
-          // No need for over-zoom on a force-layout canvas.
           supportZoom: false,
         ),
         onWebViewCreated: (controller) {
