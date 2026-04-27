@@ -83,6 +83,114 @@ class TypoCandidate {
   final int distance;
 }
 
+/// Per-post / per-nodeIds / full snapshot of the hypergraph for visualization.
+///
+/// Returned by `SynapseFlow.getGraph({postId?, nodeIds?})`. Single entry point
+/// for the F8 `/hypergraph` route, F7d `/note` graph panel, and F9 `/synapse`
+/// graph panel — they only differ in the filter passed.
+///
+/// `degree`, `isInsight`, and `primaryCategoryCode` are pre-computed in SQL so
+/// the visualization layer (vis-network) can map straight to node radius /
+/// glow / color without a second pass.
+class GraphData {
+  const GraphData({
+    required this.nodes,
+    required this.sentences,
+    required this.mentions,
+    required this.categories,
+    required this.nodeCategories,
+  });
+
+  final List<GraphNode> nodes;
+  final List<GraphSentence> sentences;
+  final List<GraphMention> mentions;
+  final List<GraphCategory> categories;
+  final List<GraphNodeCategory> nodeCategories;
+
+  bool get isEmpty => nodes.isEmpty && sentences.isEmpty;
+}
+
+class GraphNode {
+  const GraphNode({
+    required this.id,
+    required this.name,
+    required this.degree,
+    required this.isInsight,
+    this.primaryCategoryCode,
+  });
+
+  final int id;
+  final String name;
+
+  /// `node_sentence_mentions` row count for this node, after the filter.
+  /// Drives node radius (`min(14, 3 + sqrt(degree) * 2.2)`).
+  final int degree;
+
+  /// True if this node is connected to any `sentences.origin = 'insight'`
+  /// sentence. Drives the amber glow + outer ring.
+  final bool isInsight;
+
+  /// First seed-root category code (`BOD` / `WRK` / `FOD` / ...) attached to
+  /// this node via `node_category_mentions`, picked deterministically by
+  /// lowest `category_id`. Drives node fill color in `/hypergraph`. `null`
+  /// when the node has no seed-root mapping yet.
+  final String? primaryCategoryCode;
+}
+
+class GraphSentence {
+  const GraphSentence({
+    required this.id,
+    required this.postId,
+    required this.text,
+    required this.role,
+    this.origin,
+  });
+  final int id;
+  final int postId;
+  final String text;
+  final String role;
+  final String? origin;
+
+  bool get isInsight => origin == 'insight';
+}
+
+class GraphMention {
+  const GraphMention({
+    required this.nodeId,
+    required this.sentenceId,
+  });
+  final int nodeId;
+  final int sentenceId;
+}
+
+class GraphCategory {
+  const GraphCategory({
+    required this.id,
+    required this.name,
+    this.parentId,
+    this.code,
+  });
+  final int id;
+  final String name;
+  final int? parentId;
+
+  /// 3-letter seed-root code (`BOD` / `WRK` / ...) when this row is itself
+  /// a seed root (i.e. `parent_id IS NULL` AND `name` is in `seedRoots19`).
+  /// `null` for user-heading categories and leaf rows under a seed root.
+  final String? code;
+}
+
+class GraphNodeCategory {
+  const GraphNodeCategory({
+    required this.nodeId,
+    required this.categoryId,
+    required this.origin,
+  });
+  final int nodeId;
+  final int categoryId;
+  final String origin;
+}
+
 /// Lightweight rollup for diagnostics + the `/review` summary header.
 /// Each field is a row count in the corresponding table.
 class EngineStats {

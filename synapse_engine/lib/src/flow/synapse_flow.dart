@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 
+import '../db/category_seed.dart';
 import '../graph/bfs.dart' as bfs_impl;
 import '../graph/ops.dart';
 import '../graph/seed_matching.dart';
@@ -363,6 +364,247 @@ class SynapseFlow {
 
   Future<void> deletePost(int postId) async {
     await db.delete('posts', where: 'id = ?', whereArgs: [postId]);
+  }
+
+  // ── graph view ──────────────────────────────────────────
+
+  /// Snapshot of the hypergraph for the visualization layer
+  /// (`/hypergraph` + F7d `/note` panel + F9 `/synapse` panel).
+  ///
+  /// Filter mutually exclusive — caller picks one shape:
+  /// - **all**: no filter → entire hypergraph
+  /// - **postId**: only sentences in that post + the nodes they mention
+  /// - **nodeIds**: only those nodes + every sentence they appear in
+  ///
+  /// `degree`, `isInsight`, and `primaryCategoryCode` are pre-computed in
+  /// SQL so vis-network can skip a second pass — node radius / glow / fill
+  /// drop straight in. See `docs/DESIGN_UI.md §/hypergraph 동작 사양`.
+  Future<GraphData> getGraph({int? postId, List<int>? nodeIds}) async {
+    if (postId != null && nodeIds != null) {
+      throw ArgumentError(
+        'getGraph: pass postId OR nodeIds, not both',
+      );
+    }
+
+    // Resolve the working sentence set first; everything else hangs off it.
+    final List<Map<String, Object?>> sentenceRows;
+    if (postId != null) {
+      sentenceRows = await db.query(
+        'sentences',
+        where: 'post_id = ?',
+        whereArgs: [postId],
+        orderBy: 'post_id, position, id',
+      );
+    } else if (nodeIds != null) {
+      if (nodeIds.isEmpty) return _emptyGraph;
+      final placeholders = List.filled(nodeIds.length, '?').join(',');
+      sentenceRows = await db.rawQuery(
+        'SELECT s.* FROM sentences s '
+        'WHERE s.id IN ('
+        '  SELECT DISTINCT m.sentence_id FROM node_sentence_mentions m '
+        '  WHERE m.node_id IN ($placeholders)'
+        ') '
+        'ORDER BY s.post_id, s.position, s.id',
+        nodeIds,
+      );
+    } else {
+      sentenceRows = await db.query(
+        'sentences',
+        orderBy: 'post_id, position, id',
+      );
+    }
+
+    final sentences = sentenceRows
+        .map((r) => GraphSentence(
+              id: r['id']! as int,
+              postId: r['post_id']! as int,
+              text: r['text']! as String,
+              role: r['role']! as String,
+              origin: r['origin'] as String?,
+            ))
+        .toList(growable: false);
+
+    if (sentences.isEmpty) return _emptyGraph;
+    final sentenceIds = sentences.map((s) => s.id).toList(growable: false);
+    final sentencePh = List.filled(sentenceIds.length, '?').join(',');
+
+    // Mentions: every row whose sentence_id sits in the working set. When
+    // the caller filtered by nodeIds, also constrain on node_id so the
+    // mentions list doesn't bleed in unrelated nodes that share a sentence.
+    final List<Map<String, Object?>> mentionRows;
+    if (nodeIds != null) {
+      final nodePh = List.filled(nodeIds.length, '?').join(',');
+      mentionRows = await db.rawQuery(
+        'SELECT node_id, sentence_id FROM node_sentence_mentions '
+        'WHERE sentence_id IN ($sentencePh) AND node_id IN ($nodePh)',
+        [...sentenceIds, ...nodeIds],
+      );
+    } else {
+      mentionRows = await db.rawQuery(
+        'SELECT node_id, sentence_id FROM node_sentence_mentions '
+        'WHERE sentence_id IN ($sentencePh)',
+        sentenceIds,
+      );
+    }
+    final mentions = mentionRows
+        .map((r) => GraphMention(
+              nodeId: r['node_id']! as int,
+              sentenceId: r['sentence_id']! as int,
+            ))
+        .toList(growable: false);
+
+    if (mentions.isEmpty) {
+      // Sentences exist but no node mentions — return sentences alone so
+      // an empty post still renders in F7d (header + carrying sentence count).
+      return GraphData(
+        nodes: const [],
+        sentences: sentences,
+        mentions: const [],
+        categories: const [],
+        nodeCategories: const [],
+      );
+    }
+
+    // Node ids appearing in the working mention set.
+    final workingNodeIds = mentions.map((m) => m.nodeId).toSet().toList()
+      ..sort();
+    final nodePh = List.filled(workingNodeIds.length, '?').join(',');
+
+    // Nodes — degree is the count of working mentions per node, isInsight
+    // joins back to sentences.origin = 'insight' over the same working set.
+    final nodeRows = await db.rawQuery(
+      '''
+      SELECT n.id, n.name,
+        (SELECT COUNT(*) FROM node_sentence_mentions m
+          WHERE m.node_id = n.id AND m.sentence_id IN ($sentencePh)) AS degree,
+        EXISTS(
+          SELECT 1 FROM node_sentence_mentions m
+          JOIN sentences s ON s.id = m.sentence_id
+          WHERE m.node_id = n.id
+            AND m.sentence_id IN ($sentencePh)
+            AND s.origin = 'insight'
+        ) AS is_insight
+      FROM nodes n
+      WHERE n.id IN ($nodePh)
+      ORDER BY n.id
+      ''',
+      [...sentenceIds, ...sentenceIds, ...workingNodeIds],
+    );
+
+    // node_category_mentions — one row per (node, category). Pick the
+    // lowest category_id among seed roots as primaryCategoryCode.
+    final ncRows = await db.rawQuery(
+      'SELECT nc.node_id, nc.category_id, nc.origin '
+      'FROM node_category_mentions nc '
+      'WHERE nc.node_id IN ($nodePh)',
+      workingNodeIds,
+    );
+    final nodeCategories = ncRows
+        .map((r) => GraphNodeCategory(
+              nodeId: r['node_id']! as int,
+              categoryId: r['category_id']! as int,
+              origin: r['origin']! as String,
+            ))
+        .toList(growable: false);
+
+    // Categories — fetch every category referenced by working nodes plus
+    // every category that appears as a sentence_categories row in the
+    // working set (so user-heading hierarchy shows up too).
+    final touchedCategoryIds = <int>{};
+    for (final nc in nodeCategories) {
+      touchedCategoryIds.add(nc.categoryId);
+    }
+    if (touchedCategoryIds.isEmpty) {
+      // No node-category mentions but sentence_categories may still apply.
+      final scRows = await db.rawQuery(
+        'SELECT DISTINCT category_id FROM sentence_categories '
+        'WHERE sentence_id IN ($sentencePh)',
+        sentenceIds,
+      );
+      for (final r in scRows) {
+        touchedCategoryIds.add(r['category_id']! as int);
+      }
+    } else {
+      final scRows = await db.rawQuery(
+        'SELECT DISTINCT category_id FROM sentence_categories '
+        'WHERE sentence_id IN ($sentencePh)',
+        sentenceIds,
+      );
+      for (final r in scRows) {
+        touchedCategoryIds.add(r['category_id']! as int);
+      }
+    }
+
+    final List<GraphCategory> categories;
+    if (touchedCategoryIds.isEmpty) {
+      categories = const [];
+    } else {
+      final catPh = List.filled(touchedCategoryIds.length, '?').join(',');
+      final catRows = await db.rawQuery(
+        'SELECT id, name, parent_id FROM categories '
+        'WHERE id IN ($catPh) ORDER BY id',
+        touchedCategoryIds.toList(),
+      );
+      categories = catRows
+          .map((r) => GraphCategory(
+                id: r['id']! as int,
+                name: r['name']! as String,
+                parentId: r['parent_id'] as int?,
+                code: _seedRootCode(
+                  name: r['name']! as String,
+                  parentId: r['parent_id'] as int?,
+                ),
+              ))
+          .toList(growable: false);
+    }
+
+    // primaryCategoryCode per node — first seed-root code among that
+    // node's categories, ordered by category_id ascending so the result
+    // is deterministic.
+    final categoryById = {for (final c in categories) c.id: c};
+    final primaryByNode = <int, String>{};
+    for (final nc in nodeCategories) {
+      final cat = categoryById[nc.categoryId];
+      if (cat == null || cat.code == null) continue;
+      primaryByNode.putIfAbsent(nc.nodeId, () => cat.code!);
+    }
+
+    final nodes = nodeRows.map((r) {
+      final id = r['id']! as int;
+      return GraphNode(
+        id: id,
+        name: r['name']! as String,
+        degree: (r['degree'] as int?) ?? 0,
+        isInsight: ((r['is_insight'] as int?) ?? 0) == 1,
+        primaryCategoryCode: primaryByNode[id],
+      );
+    }).toList(growable: false);
+
+    return GraphData(
+      nodes: nodes,
+      sentences: sentences,
+      mentions: mentions,
+      categories: categories,
+      nodeCategories: nodeCategories,
+    );
+  }
+
+  static const GraphData _emptyGraph = GraphData(
+    nodes: [],
+    sentences: [],
+    mentions: [],
+    categories: [],
+    nodeCategories: [],
+  );
+
+  /// Returns the seed-root code for a category row when it's a top-level
+  /// seed (parent_id IS NULL AND name is one of the 19 known codes).
+  String? _seedRootCode({required String name, int? parentId}) {
+    if (parentId != null) return null;
+    for (final root in seedRoots19) {
+      if (root.code == name) return name;
+    }
+    return null;
   }
 
   // ── helpers ─────────────────────────────────────────────
