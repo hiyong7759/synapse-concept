@@ -62,6 +62,12 @@ dependencies:
   # bundling (assets/fonts) is a separate task before mobile release.
   google_fonts: ^6.2.1
 
+  # Hypergraph visualization host. F8 mounts vis-network inside a WebView and
+  # bridges click / search / filter events back to Flutter. The visualization
+  # JS itself is loaded from a CDN (same offline policy as google_fonts —
+  # data-bearing assets stay on-device, third-party libraries don't).
+  webview_flutter: ^4.10.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -83,6 +89,11 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # F8 hypergraph host page. The HTML loads vis-network from a CDN and
+  # exchanges JSON messages with Flutter through the WebView controller.
+  assets:
+    - assets/graph/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

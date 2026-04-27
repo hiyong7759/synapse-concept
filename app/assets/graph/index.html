@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Synapse hypergraph</title>
+  <!-- vis-network 9.x — DESIGN_UI line ~493 명시 라이브러리. CDN 정책은
+       google_fonts 와 동일: 데이터-bearing 자산은 온디바이스, 3rd-party
+       라이브러리는 CDN 캐시 기반. -->
+  <script src="https://unpkg.com/vis-network@9/standalone/umd/vis-network.min.js"></script>
+  <style>
+    /* DESIGN_UI §디자인 토큰 — 시안의 hypergraph 캔버스 동일.
+       CSS 변수는 Flutter 측에서 수정 안 함, 변경은 DESIGN_UI 단일 출처. */
+    :root {
+      --bg: #0A0B0E;
+      --bg-2: #0E1014;
+      --border: #252730;
+      --border-strong: #3A3D4A;
+      --text-2: #B8B4A9;
+      --text-3: #7A7B82;
+      --text-4: #555761;
+      --accent: #C8A96E;
+      --accent-2: #D9BC83;
+      --accent-line: rgba(200, 169, 110, 0.4);
+      --node: #8A8B92;
+      /* DESIGN_UI §디자인 토큰 — 카테고리 7 색 (BOD/MND/FOD/WRK/REL/LIV/TIM) */
+      --cat-bod: #C85D5D;
+      --cat-mnd: #B68AC8;
+      --cat-fod: #D9A55D;
+      --cat-wrk: #6E9DC8;
+      --cat-rel: #5DAB8A;
+      --cat-liv: #8AC8B6;
+      --cat-tim: #7A7B82;
+    }
+    * { box-sizing: border-box; }
+    html, body, #graph {
+      margin: 0; padding: 0;
+      width: 100%; height: 100%;
+      background: var(--bg);
+      overflow: hidden;
+    }
+    body {
+      /* 시안의 hypergraph 캔버스 배경 (radial-gradient 중심을 살짝 밝게). */
+      background: radial-gradient(ellipse at center, #0c0d11 0%, var(--bg) 70%);
+      font-family: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+      color: var(--text-2);
+    }
+    #status {
+      position: absolute;
+      top: 12px; left: 12px;
+      background: rgba(20,21,25,0.85);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 10px;
+      color: var(--text-3);
+      pointer-events: none;
+      letter-spacing: 0.05em;
+    }
+    #status.idle { display: none; }
+  </style>
+</head>
+<body>
+  <div id="graph"></div>
+  <div id="status" class="idle"></div>
+
+  <script>
+    // ── Categories → CSS variables (DESIGN_UI 7 색) ──────────
+    const CAT_COLOR = {
+      BOD: getCss('--cat-bod'),
+      MND: getCss('--cat-mnd'),
+      FOD: getCss('--cat-fod'),
+      WRK: getCss('--cat-wrk'),
+      REL: getCss('--cat-rel'),
+      LIV: getCss('--cat-liv'),
+      TIM: getCss('--cat-tim'),
+    };
+    const NODE_FALLBACK = getCss('--node');
+    const NODE_INSIGHT = getCss('--accent-2');
+    const EDGE_BASE = getCss('--border-strong');
+
+    function getCss(name) {
+      return getComputedStyle(document.documentElement)
+        .getPropertyValue(name).trim();
+    }
+
+    // ── Bridge ────────────────────────────────────────────────
+    // Flutter calls window.synapseSetGraph(jsonString) after the WebView
+    // boots. The shape mirrors `GraphData` from synapse_engine.
+    let network = null;
+
+    function setStatus(text) {
+      const el = document.getElementById('status');
+      if (!text) {
+        el.classList.add('idle');
+        el.textContent = '';
+      } else {
+        el.classList.remove('idle');
+        el.textContent = text;
+      }
+    }
+
+    window.synapseSetGraph = function (jsonString) {
+      let data;
+      try {
+        data = JSON.parse(jsonString);
+      } catch (e) {
+        setStatus('데이터 파싱 실패: ' + e.message);
+        return;
+      }
+      render(data);
+    };
+
+    function render(g) {
+      const nodeCount = g.nodes ? g.nodes.length : 0;
+      const sentCount = g.sentences ? g.sentences.length : 0;
+      if (nodeCount === 0) {
+        setStatus('노드 없음 — 노트를 작성하고 ⌘S 로 의미 처리하세요.');
+        if (network) { network.destroy(); network = null; }
+        return;
+      }
+
+      // Build vis-network nodes.
+      const visNodes = g.nodes.map(n => {
+        const r = nodeRadius(n);
+        const fill = nodeColor(n);
+        return {
+          id: n.id,
+          label: (n.isInsight ? '✦ ' : '') + n.name,
+          color: { background: fill, border: fill },
+          size: r,
+          font: {
+            color: n.isInsight ? NODE_INSIGHT : getCss('--text-2'),
+            face: 'JetBrains Mono, ui-monospace, monospace',
+            size: n.isInsight ? 12 : (n.degree >= 8 ? 11 : 10),
+            strokeWidth: 0,
+          },
+          borderWidth: n.isInsight ? 2 : 0,
+          shadow: shadowFor(n, fill),
+          shape: 'dot',
+        };
+      });
+
+      // Build co-occurrence edges from mentions: for every sentence, every
+      // unordered pair of node ids in that sentence becomes one edge with
+      // `weight = number of sentences they co-appear in`.
+      const bySentence = new Map();
+      for (const m of (g.mentions || [])) {
+        if (!bySentence.has(m.sentenceId)) {
+          bySentence.set(m.sentenceId, []);
+        }
+        bySentence.get(m.sentenceId).push(m.nodeId);
+      }
+      const edgeWeights = new Map();
+      for (const ids of bySentence.values()) {
+        for (let i = 0; i < ids.length; i++) {
+          for (let j = i + 1; j < ids.length; j++) {
+            const a = Math.min(ids[i], ids[j]);
+            const b = Math.max(ids[i], ids[j]);
+            const key = a + ':' + b;
+            edgeWeights.set(key, (edgeWeights.get(key) || 0) + 1);
+          }
+        }
+      }
+      const visEdges = [];
+      for (const [key, weight] of edgeWeights) {
+        const [a, b] = key.split(':').map(Number);
+        visEdges.push({
+          from: a, to: b,
+          width: Math.min(3.5, 0.5 + weight * 0.4),
+          color: { color: EDGE_BASE, opacity: 0.55 },
+          smooth: false,
+        });
+      }
+
+      const container = document.getElementById('graph');
+      const options = {
+        physics: {
+          enabled: true,
+          // Visual stability priority — settle fast, then freeze.
+          stabilization: { iterations: 200, fit: true },
+          barnesHut: {
+            gravitationalConstant: -2000,
+            springLength: 90,
+            springConstant: 0.04,
+            damping: 0.85,
+          },
+        },
+        interaction: {
+          dragNodes: false,
+          hover: false,        // F8'-2 — click/hover handlers in F8'-3
+          tooltipDelay: 0,
+          zoomView: true,
+          dragView: true,
+        },
+        nodes: { borderWidthSelected: 0 },
+        edges: { selectionWidth: 0 },
+      };
+      if (network) network.destroy();
+      network = new vis.Network(container, { nodes: visNodes, edges: visEdges }, options);
+      network.once('stabilizationIterationsDone', () => {
+        network.setOptions({ physics: { enabled: false } });
+      });
+      setStatus('노드 ' + nodeCount + ' · 바구니 ' + sentCount);
+    }
+
+    function nodeRadius(n) {
+      if (n.isInsight) return 16;
+      const isolated = (n.degree || 0) <= 0;
+      if (isolated) return 2.5;
+      return Math.min(14, 3 + Math.sqrt(n.degree) * 2.2);
+    }
+
+    function nodeColor(n) {
+      if (n.isInsight) return NODE_INSIGHT;
+      if (n.degree <= 0) return getCss('--text-4');
+      const code = n.primaryCategoryCode;
+      if (code && CAT_COLOR[code]) return CAT_COLOR[code];
+      return NODE_FALLBACK;
+    }
+
+    function shadowFor(n, fill) {
+      if (n.isInsight) {
+        return { enabled: true, color: 'rgba(217,188,131,0.7)', size: 14, x: 0, y: 0 };
+      }
+      const isHub = (n.degree || 0) >= 8;
+      if (isHub) {
+        return { enabled: true, color: fill + '88', size: 8, x: 0, y: 0 };
+      }
+      return { enabled: false };
+    }
+
+    // Boot: tell Flutter we're ready so it can push the graph data.
+    setStatus('vis-network 로딩 대기…');
+    window.addEventListener('load', () => {
+      setStatus('데이터 대기 중…');
+      // The WebView controller listens for this exact message string.
+      if (window.SynapseHost && window.SynapseHost.postMessage) {
+        window.SynapseHost.postMessage('ready');
+      }
+    });
+  </script>
+</body>
+</html>

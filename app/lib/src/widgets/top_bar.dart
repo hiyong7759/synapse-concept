@@ -58,10 +58,10 @@ class TopBar extends ConsumerWidget {
             active: active == 'synapse',
             onTap: () => _navigate(ref, context, '/synapse'),
           ),
-          const _RouteTab(
+          _RouteTab(
             id: 'hypergraph',
-            active: false,
-            onTap: null,
+            active: active == 'hypergraph',
+            onTap: () => _navigate(ref, context, '/hypergraph'),
           ),
         ],
       ),

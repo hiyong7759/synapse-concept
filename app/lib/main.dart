@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'src/pages/hypergraph_page.dart';
 import 'src/pages/note_page.dart';
 import 'src/pages/synapse_page.dart';
 import 'src/theme/tokens.dart';
@@ -37,6 +38,10 @@ final GoRouter _router = GoRouter(
     GoRoute(
       path: '/synapse',
       builder: (context, state) => const SynapsePage(),
+    ),
+    GoRoute(
+      path: '/hypergraph',
+      builder: (context, state) => const HypergraphPage(),
     ),
   ],
 );
