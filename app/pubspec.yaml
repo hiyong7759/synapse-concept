@@ -66,7 +66,13 @@ dependencies:
   # bridges click / search / filter events back to Flutter. The visualization
   # JS itself is loaded from a CDN (same offline policy as google_fonts —
   # data-bearing assets stay on-device, third-party libraries don't).
-  webview_flutter: ^4.10.0
+  #
+  # `flutter_inappwebview` (vs Flutter's official `webview_flutter`) is the
+  # only major option that supports macOS + Windows in addition to mobile,
+  # which Synapse needs for desktop-first dogfood (DESIGN_APP §모바일 우선
+  # ·데스크톱 통합). Single package keeps the Dart-side API uniform across
+  # platforms.
+  flutter_inappwebview: ^6.1.5
 
 dev_dependencies:
   flutter_test:

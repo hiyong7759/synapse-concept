@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:synapse_engine/synapse_engine.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 
 import '../theme/tokens.dart';
 
@@ -14,8 +14,7 @@ import '../theme/tokens.dart';
 /// `nodeIds`, F8 passes the full snapshot.
 ///
 /// This milestone (F8'-2) only pushes data into JS — click / search /
-/// filter live in F8'-3 and F8'-4. Empty / null `data` shows the in-page
-/// placeholder.
+/// filter live in F8'-3 and F8'-4.
 class VisNetworkGraphView extends StatefulWidget {
   const VisNetworkGraphView({super.key, required this.data});
   final GraphData? data;
@@ -25,43 +24,17 @@ class VisNetworkGraphView extends StatefulWidget {
 }
 
 class _VisNetworkGraphViewState extends State<VisNetworkGraphView> {
-  late final WebViewController _controller;
+  InAppWebViewController? _controller;
   bool _ready = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(SynapseTokens.bg)
-      ..addJavaScriptChannel(
-        'SynapseHost',
-        onMessageReceived: (msg) {
-          if (msg.message == 'ready') {
-            _ready = true;
-            _maybePush();
-          }
-        },
-      )
-      ..loadFlutterAsset('assets/graph/index.html');
-  }
-
-  @override
-  void didUpdateWidget(covariant VisNetworkGraphView oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.data != widget.data && _ready) {
-      _maybePush();
-    }
-  }
-
   Future<void> _maybePush() async {
-    if (!_ready) return;
+    final controller = _controller;
+    if (!_ready || controller == null) return;
     final json = jsonEncode(_serialize(widget.data));
-    // Embed the JSON as a JS string literal — `jsonEncode` again to escape
-    // backslashes / quotes for the inner string. This avoids touching the
-    // host page's own parser.
     final escaped = jsonEncode(json);
-    await _controller.runJavaScript('window.synapseSetGraph($escaped)');
+    await controller.evaluateJavascript(
+      source: 'window.synapseSetGraph($escaped)',
+    );
   }
 
   Map<String, Object?> _serialize(GraphData? data) {
@@ -91,10 +64,39 @@ class _VisNetworkGraphViewState extends State<VisNetworkGraphView> {
   }
 
   @override
+  void didUpdateWidget(covariant VisNetworkGraphView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.data != widget.data) {
+      _maybePush();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ColoredBox(
       color: SynapseTokens.bg,
-      child: WebViewWidget(controller: _controller),
+      child: InAppWebView(
+        initialFile: 'assets/graph/index.html',
+        initialSettings: InAppWebViewSettings(
+          transparentBackground: true,
+          // macOS / iOS WKWebView — let JS make outbound requests to the
+          // vis-network CDN. Default settings already allow https.
+          allowsInlineMediaPlayback: false,
+          // No need for over-zoom on a force-layout canvas.
+          supportZoom: false,
+        ),
+        onWebViewCreated: (controller) {
+          _controller = controller;
+          controller.addJavaScriptHandler(
+            handlerName: 'synapseReady',
+            callback: (args) {
+              _ready = true;
+              _maybePush();
+              return null;
+            },
+          );
+        },
+      ),
     );
   }
 }

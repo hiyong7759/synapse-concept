@@ -231,13 +231,14 @@
       return { enabled: false };
     }
 
-    // Boot: tell Flutter we're ready so it can push the graph data.
+    // Boot: tell Flutter we're ready so it can push the graph data. The
+    // host registers `synapseReady` via flutter_inappwebview's
+    // addJavaScriptHandler in graph_view.dart.
     setStatus('vis-network 로딩 대기…');
     window.addEventListener('load', () => {
       setStatus('데이터 대기 중…');
-      // The WebView controller listens for this exact message string.
-      if (window.SynapseHost && window.SynapseHost.postMessage) {
-        window.SynapseHost.postMessage('ready');
+      if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+        window.flutter_inappwebview.callHandler('synapseReady');
       }
     });
   </script>
