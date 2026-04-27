@@ -2,8 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Debug-only: sandbox is OFF so llamadart can mmap a GGUF on an
+	     external volume (/Volumes/...) during dogfood. Release.entitlements
+	     keeps the sandbox ON — production builds bundle the model inside
+	     the app and don't need external file access (PLAN §F-bundle). -->
 	<key>com.apple.security.app-sandbox</key>
-	<true/>
+	<false/>
 	<key>com.apple.security.cs.allow-jit</key>
 	<true/>
 	<key>com.apple.security.network.server</key>

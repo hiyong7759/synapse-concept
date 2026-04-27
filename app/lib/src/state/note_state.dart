@@ -1,3 +1,5 @@
+import 'dart:io' show File, Platform;
+
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -34,6 +36,7 @@ final engineProvider = FutureProvider<SynapseEngine>((ref) async {
       reservedKinds: const ['synapse', 'insight'],
       dbPath: dbPath,
       categorySeed: CategorySeed.synapse19(),
+      modelPath: _resolveModelPath(),
     ),
     kiwiOverride: kiwi,
   );
@@ -41,6 +44,40 @@ final engineProvider = FutureProvider<SynapseEngine>((ref) async {
   ref.onDispose(engine.dispose);
   return engine;
 });
+
+/// Locates the Gemma 4 E2B-it Q4_K_M GGUF the engine should hand to
+/// `LlamadartInferenceBackend`. The bundle policy (DESIGN_APP §모델, PLAN
+/// §F-bundle) is "single base model on the device"; this implementation
+/// is the dogfood-stage stand-in until the model lands inside the app
+/// bundle on every platform:
+///
+///   1. `SYNAPSE_MODEL_PATH` env var (developer override)
+///   2. external dev location on this workstation
+///      (`/Volumes/macex/models/gemma-4-E2B-it-Q4_K_M.gguf`)
+///   3. `null` → engine boots in stub mode (LlmTasks not attached, F8'-2
+///      deterministic fallbacks remain in effect)
+String? _resolveModelPath() {
+  if (kIsMobileTarget) return null; // mobile bundling is a separate task.
+  try {
+    final env = Platform.environment['SYNAPSE_MODEL_PATH'];
+    if (env != null && env.isNotEmpty && File(env).existsSync()) return env;
+  } catch (_) {
+    // Platform.environment can throw on some sandboxed builds — ignore.
+  }
+  const devPath = '/Volumes/macex/models/gemma-4-E2B-it-Q4_K_M.gguf';
+  if (File(devPath).existsSync()) return devPath;
+  return null;
+}
+
+bool get kIsMobileTarget {
+  switch (defaultTargetPlatform) {
+    case TargetPlatform.iOS:
+    case TargetPlatform.android:
+      return true;
+    default:
+      return false;
+  }
+}
 
 bool get _needsFfi {
   switch (defaultTargetPlatform) {
