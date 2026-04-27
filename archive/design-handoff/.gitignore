@@ -1,0 +1,5 @@
+# Sketches and source bitmaps from the design tool — kept on disk for
+# reference but excluded from git history (multi-MB binary files inflate
+# clones). The textual jsx/css/html parts of each handoff bundle ARE
+# tracked; that's the part coding agents actually re-read.
+**/scraps/
