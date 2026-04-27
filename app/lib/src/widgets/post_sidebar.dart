@@ -28,23 +28,7 @@ class PostSidebar extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: SynapseTokens.s4,
-              vertical: SynapseTokens.s3,
-            ),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: SynapseTokens.border)),
-            ),
-            alignment: Alignment.centerLeft,
-            child: SButton(
-              label: '새 노트',
-              icon: const Icon(Icons.add, size: 14),
-              variant: SButtonVariant.ghost,
-              size: SButtonSize.sm,
-              onPressed: () => createNote(ref),
-            ),
-          ),
+          _NewNoteButton(onPressed: () => createNote(ref)),
           Expanded(
             child: postsAsync.when(
               data: (posts) => _PostList(
@@ -138,6 +122,64 @@ class PostSidebar extends ConsumerWidget {
     if (confirmed == true) {
       await deleteNote(ref, post.id);
     }
+  }
+}
+
+/// Full-width pressable header — clicking anywhere in the row creates a new
+/// note. Hovering tints the entire row, not just the inline button, so the
+/// affordance is unambiguous.
+class _NewNoteButton extends StatefulWidget {
+  const _NewNoteButton({required this.onPressed});
+  final VoidCallback onPressed;
+
+  @override
+  State<_NewNoteButton> createState() => _NewNoteButtonState();
+}
+
+class _NewNoteButtonState extends State<_NewNoteButton> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onPressed,
+        child: AnimatedContainer(
+          duration: SynapseTokens.durFast,
+          curve: SynapseTokens.ease,
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: SynapseTokens.s4),
+          decoration: BoxDecoration(
+            color: _hover ? SynapseTokens.surface2 : Colors.transparent,
+            border: const Border(
+              bottom: BorderSide(color: SynapseTokens.border),
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.add,
+                size: 16,
+                color: _hover ? SynapseTokens.accent : SynapseTokens.text2,
+              ),
+              const SizedBox(width: SynapseTokens.s2),
+              Text(
+                '새 노트',
+                style: SynapseTokens.bodyStyle(
+                  size: SynapseTokens.tSm,
+                  weight: FontWeight.w500,
+                  color: _hover ? SynapseTokens.text : SynapseTokens.text2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -305,40 +347,25 @@ class _PostTileState extends State<_PostTile> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              SizedBox(
-                width: 24,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '${post.id}',
-                      style: SynapseTokens.monoStyle(
-                        size: SynapseTokens.tXs,
-                        color: SynapseTokens.text4,
-                      ),
-                    ),
-                    if (isInsight) ...[
-                      const SizedBox(width: 4),
-                      Text(
-                        '✦',
-                        style: TextStyle(
-                          color: SynapseTokens.accent,
-                          fontSize: SynapseTokens.tXs,
-                        ),
-                      ),
-                    ] else if (widget.isSynapse) ...[
-                      const SizedBox(width: 4),
-                      Text(
-                        '◯',
-                        style: TextStyle(
-                          color: SynapseTokens.text3,
-                          fontSize: SynapseTokens.tXs,
-                        ),
-                      ),
-                    ],
-                  ],
+              if (isInsight) ...[
+                const Text(
+                  '✦',
+                  style: TextStyle(
+                    color: SynapseTokens.accent,
+                    fontSize: SynapseTokens.tBase,
+                  ),
                 ),
-              ),
+                const SizedBox(width: SynapseTokens.s2),
+              ] else if (widget.isSynapse) ...[
+                const Text(
+                  '◯',
+                  style: TextStyle(
+                    color: SynapseTokens.text3,
+                    fontSize: SynapseTokens.tSm,
+                  ),
+                ),
+                const SizedBox(width: SynapseTokens.s2),
+              ],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
