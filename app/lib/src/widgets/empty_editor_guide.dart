@@ -16,14 +16,14 @@ class EmptyEditorGuide extends StatelessWidget {
         constraints: const BoxConstraints(maxWidth: 560),
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(
-            horizontal: SynapseTokens.spaceL,
-            vertical: SynapseTokens.spaceXl,
+            horizontal: SynapseTokens.s6,
+            vertical: SynapseTokens.s8,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: const [
               _GuideHeader(),
-              SizedBox(height: SynapseTokens.spaceL),
+              SizedBox(height: SynapseTokens.s6),
               _GuideExample(
                 icon: '📝',
                 title: '자유롭게 적기',
@@ -33,7 +33,7 @@ class EmptyEditorGuide extends StatelessWidget {
                   '팀 회의 결정 — 모바일 우선',
                 ],
               ),
-              SizedBox(height: SynapseTokens.spaceL),
+              SizedBox(height: SynapseTokens.s6),
               _GuideExample(
                 icon: '📂',
                 title: '제목으로 묶기',
@@ -44,7 +44,7 @@ class EmptyEditorGuide extends StatelessWidget {
                   '이 규칙은 ... 목적으로 한다.',
                 ],
               ),
-              SizedBox(height: SynapseTokens.spaceL),
+              SizedBox(height: SynapseTokens.s6),
               _GuideExample(
                 icon: '🔖',
                 title: '용어·속성 정의',
@@ -54,7 +54,7 @@ class EmptyEditorGuide extends StatelessWidget {
                   '- 개정일:: 2025-04-30',
                 ],
               ),
-              SizedBox(height: SynapseTokens.spaceL),
+              SizedBox(height: SynapseTokens.s6),
               _GuideExample(
                 icon: '📋',
                 title: '항목 나열',
@@ -64,7 +64,7 @@ class EmptyEditorGuide extends StatelessWidget {
                   '- 자기소개서 1통',
                 ],
               ),
-              SizedBox(height: SynapseTokens.spaceL),
+              SizedBox(height: SynapseTokens.s6),
               _GuideExample(
                 icon: '➡️',
                 title: '한 줄 경로',
@@ -74,7 +74,7 @@ class EmptyEditorGuide extends StatelessWidget {
                   '이 규칙은 ... 목적으로 한다.',
                 ],
               ),
-              SizedBox(height: SynapseTokens.spaceXl),
+              SizedBox(height: SynapseTokens.s8),
               _GuideFooter(),
             ],
           ),
@@ -94,12 +94,20 @@ class _GuideHeader extends StatelessWidget {
       children: [
         Text(
           '노트를 시작하세요',
-          style: SynapseTokens.display.copyWith(fontSize: 24),
+          style: SynapseTokens.displayStyle(
+            size: SynapseTokens.t2xl,
+            weight: FontWeight.w600,
+            color: SynapseTokens.text,
+            letterSpacing: -0.4,
+          ),
         ),
-        const SizedBox(height: SynapseTokens.spaceXs),
+        const SizedBox(height: SynapseTokens.s2),
         Text(
           '왼쪽 [+ 새 노트] 또는 기존 노트 선택. 어떻게 적든 같은 그릇입니다.',
-          style: SynapseTokens.caption,
+          style: SynapseTokens.bodyStyle(
+            size: SynapseTokens.tSm,
+            color: SynapseTokens.text3,
+          ),
         ),
       ],
     );
@@ -128,27 +136,37 @@ class _GuideExample extends StatelessWidget {
           width: 28,
           child: Text(icon, style: const TextStyle(fontSize: 18)),
         ),
-        const SizedBox(width: SynapseTokens.spaceS),
+        const SizedBox(width: SynapseTokens.s2),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(title, style: SynapseTokens.title),
+              Text(
+                title,
+                style: SynapseTokens.bodyStyle(
+                  size: SynapseTokens.tLg,
+                  weight: FontWeight.w600,
+                  color: SynapseTokens.text,
+                ),
+              ),
               const SizedBox(height: 2),
-              Text(subtitle, style: SynapseTokens.caption),
-              const SizedBox(height: SynapseTokens.spaceS),
+              Text(
+                subtitle,
+                style: SynapseTokens.bodyStyle(
+                  size: SynapseTokens.tSm,
+                  color: SynapseTokens.text3,
+                ),
+              ),
+              const SizedBox(height: SynapseTokens.s2),
               Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: SynapseTokens.spaceM,
-                  vertical: SynapseTokens.spaceS,
+                  horizontal: SynapseTokens.s4,
+                  vertical: SynapseTokens.s2,
                 ),
                 decoration: BoxDecoration(
                   color: SynapseTokens.surface,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: SynapseTokens.background,
-                    width: 1,
-                  ),
+                  borderRadius: BorderRadius.circular(SynapseTokens.rMd),
+                  border: Border.all(color: SynapseTokens.border, width: 1),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -156,12 +174,10 @@ class _GuideExample extends StatelessWidget {
                     for (final line in examples)
                       Text(
                         line,
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 13,
-                          height: 1.6,
-                          color: SynapseTokens.onSurface,
-                        ),
+                        style: SynapseTokens.monoStyle(
+                          size: SynapseTokens.tSm,
+                          color: SynapseTokens.text2,
+                        ).copyWith(height: 1.6),
                       ),
                   ],
                 ),
@@ -180,19 +196,23 @@ class _GuideFooter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(SynapseTokens.spaceM),
+      padding: const EdgeInsets.all(SynapseTokens.s4),
       decoration: BoxDecoration(
         color: SynapseTokens.surface,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(SynapseTokens.rMd),
+        border: Border.all(color: SynapseTokens.border),
       ),
       child: Row(
         children: [
           const Text('💾', style: TextStyle(fontSize: 16)),
-          const SizedBox(width: SynapseTokens.spaceS),
+          const SizedBox(width: SynapseTokens.s2),
           Expanded(
             child: Text(
               '입력 후 1.5초 멈추면 자동 저장. 페이지 떠나도 본문은 살아 있습니다.',
-              style: SynapseTokens.caption,
+              style: SynapseTokens.bodyStyle(
+                size: SynapseTokens.tSm,
+                color: SynapseTokens.text3,
+              ),
             ),
           ),
         ],

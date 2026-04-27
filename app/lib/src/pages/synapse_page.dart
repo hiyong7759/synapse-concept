@@ -38,22 +38,34 @@ class _SynapseScaffold extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(SynapseTokens.spaceL),
+        padding: const EdgeInsets.all(SynapseTokens.s6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('/synapse', style: SynapseTokens.display),
-            const SizedBox(height: SynapseTokens.spaceM),
+            Text(
+              '/synapse',
+              style: SynapseTokens.displayStyle(
+                size: SynapseTokens.t3xl,
+                color: SynapseTokens.text,
+              ),
+            ),
+            const SizedBox(height: SynapseTokens.s4),
             Text(
               'F9 에서 구현 — Q/A 스레드, 통찰 승격 모달, 세션 그래프 패널.',
-              style: SynapseTokens.body,
+              style: SynapseTokens.bodyStyle(
+                size: SynapseTokens.tBase,
+                color: SynapseTokens.text2,
+              ),
               textAlign: TextAlign.center,
             ),
             if (showGraphHint) ...[
-              const SizedBox(height: SynapseTokens.spaceS),
+              const SizedBox(height: SynapseTokens.s2),
               Text(
                 '(데스크톱 레이아웃 — 그래프 패널 자리)',
-                style: SynapseTokens.caption,
+                style: SynapseTokens.bodyStyle(
+                  size: SynapseTokens.tSm,
+                  color: SynapseTokens.text3,
+                ),
               ),
             ],
           ],

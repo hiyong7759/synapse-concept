@@ -69,22 +69,29 @@ class _NoteEditorState extends ConsumerState<NoteEditor> {
       return const EmptyEditorGuide();
     }
 
+    final bodyStyle = SynapseTokens.bodyStyle(
+      size: SynapseTokens.tMd,
+      color: SynapseTokens.text,
+      height: 1.7,
+    );
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-        SynapseTokens.spaceL,
-        SynapseTokens.spaceS,
-        SynapseTokens.spaceL,
-        SynapseTokens.spaceL,
+        SynapseTokens.s6,
+        SynapseTokens.s2,
+        SynapseTokens.s6,
+        SynapseTokens.s6,
       ),
       child: TextField(
         controller: _controller,
         maxLines: null,
         expands: true,
-        style: SynapseTokens.body,
+        style: bodyStyle,
+        cursorColor: SynapseTokens.accent,
         decoration: InputDecoration(
           border: InputBorder.none,
           hintText: '여기에 적으세요. 자동저장은 1.5초 후 적용됩니다.',
-          hintStyle: SynapseTokens.caption,
+          hintStyle: bodyStyle.copyWith(color: SynapseTokens.text4),
         ),
         onChanged: (value) {
           ref.read(editorDraftProvider.notifier).state = value;

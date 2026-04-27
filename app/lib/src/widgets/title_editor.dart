@@ -54,19 +54,23 @@ class _TitleEditorState extends ConsumerState<TitleEditor> {
 
     if (selectedId == null) return const SizedBox.shrink();
 
+    final titleStyle = SynapseTokens.displayStyle(
+      size: SynapseTokens.t3xl,
+      weight: FontWeight.w600,
+      color: SynapseTokens.text,
+      letterSpacing: -0.4,
+    );
+
     return TextField(
       controller: _controller,
-      style: SynapseTokens.display.copyWith(fontSize: 24),
+      style: titleStyle,
       maxLines: 1,
-      decoration: const InputDecoration(
+      cursorColor: SynapseTokens.accent,
+      decoration: InputDecoration(
         border: InputBorder.none,
         isCollapsed: true,
         hintText: '제목',
-        hintStyle: TextStyle(
-          fontSize: 24,
-          fontWeight: FontWeight.w600,
-          color: SynapseTokens.onSurfaceMuted,
-        ),
+        hintStyle: titleStyle.copyWith(color: SynapseTokens.text4),
       ),
       onChanged: (value) {
         ref.read(titleDraftProvider.notifier).state = value;

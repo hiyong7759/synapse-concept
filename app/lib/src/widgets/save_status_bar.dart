@@ -28,8 +28,15 @@ class SaveStatusBar extends ConsumerWidget {
     final spec = _resolveSpec(autosave, process);
     if (spec == null) return const SizedBox.shrink();
 
-    final color = spec.error ? Colors.red : SynapseTokens.onSurfaceMuted;
-    final style = SynapseTokens.caption.copyWith(color: color);
+    final color = spec.error
+        ? SynapseTokens.danger
+        : spec.success
+            ? SynapseTokens.success
+            : SynapseTokens.text3;
+    final style = SynapseTokens.bodyStyle(
+      size: SynapseTokens.tSm,
+      color: color,
+    );
 
     if (spec.shimmer) {
       return _ShimmerText(label: spec.label, baseStyle: style);
@@ -38,36 +45,61 @@ class SaveStatusBar extends ConsumerWidget {
   }
 }
 
-({String label, bool shimmer, bool error})? _resolveSpec(
+({String label, bool shimmer, bool error, bool success})? _resolveSpec(
   AutosaveState autosave,
   NoteProcessState process,
 ) {
   // Meaning pass takes the spotlight while running — it was triggered
   // explicitly so the user is watching for the result.
   if (process.status == NoteProcessStatus.processing) {
-    return (label: '정리 중', shimmer: true, error: false);
+    return (label: '정리 중', shimmer: true, error: false, success: false);
   }
   if (process.status == NoteProcessStatus.error) {
-    return (label: '정리 실패', shimmer: false, error: true);
+    return (label: '정리 실패', shimmer: false, error: true, success: false);
   }
   if (autosave.error != null) {
-    return (label: '저장 실패 — 다시 시도 중', shimmer: false, error: true);
+    return (
+      label: '저장 실패 — 다시 시도 중',
+      shimmer: false,
+      error: true,
+      success: false
+    );
   }
   switch (autosave.status) {
     case AutosaveStatus.dirty:
-      return (label: '입력 중', shimmer: true, error: false);
+      return (label: '입력 중', shimmer: true, error: false, success: false);
     case AutosaveStatus.saving:
-      return (label: '저장 중...', shimmer: false, error: false);
+      return (
+        label: '저장 중...',
+        shimmer: false,
+        error: false,
+        success: false
+      );
     case AutosaveStatus.saved:
-      return (label: '저장됨', shimmer: false, error: false);
+      return (
+        label: '저장됨',
+        shimmer: false,
+        error: false,
+        success: true,
+      );
     case AutosaveStatus.idle:
       // noteProcess just finished and the user hasn't started typing
       // again — show the "정리됨" badge instead of the older "저장됨".
       if (process.status == NoteProcessStatus.done) {
-        return (label: '정리됨', shimmer: false, error: false);
+        return (
+          label: '정리됨',
+          shimmer: false,
+          error: false,
+          success: true,
+        );
       }
       if (autosave.lastSavedAt != null) {
-        return (label: '저장됨', shimmer: false, error: false);
+        return (
+          label: '저장됨',
+          shimmer: false,
+          error: false,
+          success: true,
+        );
       }
       return null;
   }

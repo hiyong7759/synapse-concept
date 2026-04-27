@@ -153,28 +153,6 @@ class SynapseTokens {
   static const Duration durSlow = Duration(milliseconds: 400);
   static const Curve ease = Cubic(0.2, 0.8, 0.2, 1);
 
-  // ── Backwards-compat aliases ────────────────────────────
-  // Retained only until M3 widget migration finishes — every alias points
-  // at the new dark-system token, so the light-theme look is gone
-  // immediately, but call-sites in existing widgets still compile.
-  // Removed at the end of M3.
-  static const Color background = bg;
-  static const Color onSurface = text;
-  static const Color onSurfaceMuted = text3;
-  static const Color insightAccent = accent2;
-  static const double spaceXs = s1;
-  static const double spaceS = s2;
-  static const double spaceM = s4;
-  static const double spaceL = s6;
-  static const double spaceXl = s8;
-  // Legacy TextStyle aliases — non-const because GoogleFonts loaders are
-  // runtime-resolved. Existing widgets that wrote `style: SynapseTokens.body`
-  // keep working; M3 will replace them with the *Style() helpers above.
-  static final TextStyle display = displayStyle(size: 28, letterSpacing: -0.5);
-  static final TextStyle title = bodyStyle(size: 18, weight: FontWeight.w600);
-  static final TextStyle body = bodyStyle(size: 15, height: 1.5);
-  static final TextStyle caption = bodyStyle(size: 13, color: text3);
-
   // ── Theme bundle ────────────────────────────────────────
   static ThemeData themeData() {
     final colorScheme = ColorScheme(

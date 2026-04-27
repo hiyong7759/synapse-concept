@@ -191,16 +191,16 @@ class _TitleRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Padding(
       padding: EdgeInsets.fromLTRB(
-        SynapseTokens.spaceL,
-        SynapseTokens.spaceL,
-        SynapseTokens.spaceL,
-        SynapseTokens.spaceS,
+        SynapseTokens.s6,
+        SynapseTokens.s6,
+        SynapseTokens.s6,
+        SynapseTokens.s2,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(child: TitleEditor()),
-          SizedBox(width: SynapseTokens.spaceM),
+          SizedBox(width: SynapseTokens.s4),
           SaveStatusBar(),
         ],
       ),
@@ -239,16 +239,30 @@ class _BootScreen extends StatelessWidget {
     return Scaffold(
       body: Center(
         child: Padding(
-          padding: const EdgeInsets.all(SynapseTokens.spaceL),
+          padding: const EdgeInsets.all(SynapseTokens.s6),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (!isError)
-                const CircularProgressIndicator.adaptive()
+                const CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: SynapseTokens.accent,
+                )
               else
-                const Icon(Icons.error_outline, color: Colors.red, size: 32),
-              const SizedBox(height: SynapseTokens.spaceM),
-              Text(label, textAlign: TextAlign.center, style: SynapseTokens.body),
+                const Icon(
+                  Icons.error_outline,
+                  color: SynapseTokens.danger,
+                  size: 32,
+                ),
+              const SizedBox(height: SynapseTokens.s4),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: SynapseTokens.bodyStyle(
+                  size: SynapseTokens.tBase,
+                  color: SynapseTokens.text2,
+                ),
+              ),
             ],
           ),
         ),

@@ -5,6 +5,7 @@ import 'package:synapse_engine/synapse_engine.dart';
 import '../state/autosave.dart';
 import '../state/note_state.dart';
 import '../theme/tokens.dart';
+import 'components.dart';
 
 /// Sidebar listing every post grouped by kind (`note` / `synapse`),
 /// matching DESIGN_UI §post 사이드바. Insight posts get the `✦` glyph and
@@ -20,16 +21,28 @@ class PostSidebar extends ConsumerWidget {
 
     return Container(
       width: 220,
-      color: SynapseTokens.surface,
+      decoration: const BoxDecoration(
+        color: SynapseTokens.bg2,
+        border: Border(right: BorderSide(color: SynapseTokens.border)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.all(SynapseTokens.spaceM),
-            child: ElevatedButton.icon(
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: SynapseTokens.s4,
+              vertical: SynapseTokens.s3,
+            ),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: SynapseTokens.border)),
+            ),
+            alignment: Alignment.centerLeft,
+            child: SButton(
+              label: '새 노트',
+              icon: const Icon(Icons.add, size: 14),
+              variant: SButtonVariant.ghost,
+              size: SButtonSize.sm,
               onPressed: () => createNote(ref),
-              icon: const Icon(Icons.add),
-              label: const Text('새 노트'),
             ),
           ),
           Expanded(
@@ -41,11 +54,25 @@ class PostSidebar extends ConsumerWidget {
                     ref.read(selectedPostIdProvider.notifier).state = id,
                 onDelete: (post) => _confirmAndDelete(context, ref, post),
               ),
-              loading: () =>
-                  const Center(child: CircularProgressIndicator.adaptive()),
+              loading: () => const Center(
+                child: SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: SynapseTokens.accent,
+                  ),
+                ),
+              ),
               error: (e, _) => Padding(
-                padding: const EdgeInsets.all(SynapseTokens.spaceM),
-                child: Text('목록 로드 실패: $e', style: SynapseTokens.caption),
+                padding: const EdgeInsets.all(SynapseTokens.s4),
+                child: Text(
+                  '목록 로드 실패: $e',
+                  style: SynapseTokens.bodyStyle(
+                    size: SynapseTokens.tSm,
+                    color: SynapseTokens.danger,
+                  ),
+                ),
               ),
             ),
           ),
@@ -65,17 +92,45 @@ class PostSidebar extends ConsumerWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('노트 삭제'),
-        content: Text('"$title" 을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('취소'),
+        backgroundColor: SynapseTokens.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(SynapseTokens.rLg),
+          side: const BorderSide(color: SynapseTokens.border),
+        ),
+        title: Text(
+          '노트 삭제',
+          style: SynapseTokens.bodyStyle(
+            size: SynapseTokens.tLg,
+            weight: FontWeight.w600,
+            color: SynapseTokens.text,
           ),
-          TextButton(
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
+        ),
+        content: Text(
+          '"$title" 을 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.',
+          style: SynapseTokens.bodyStyle(
+            size: SynapseTokens.tBase,
+            color: SynapseTokens.text2,
+          ),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(
+          SynapseTokens.s4,
+          0,
+          SynapseTokens.s4,
+          SynapseTokens.s4,
+        ),
+        actions: [
+          SButton(
+            label: '취소',
+            variant: SButtonVariant.ghost,
+            size: SButtonSize.sm,
+            onPressed: () => Navigator.of(ctx).pop(false),
+          ),
+          const SizedBox(width: SynapseTokens.s2),
+          SButton(
+            label: '삭제',
+            variant: SButtonVariant.danger,
+            size: SButtonSize.sm,
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('삭제'),
           ),
         ],
       ),
@@ -104,11 +159,15 @@ class _PostList extends StatelessWidget {
     if (posts.isEmpty) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(SynapseTokens.spaceM),
+          padding: const EdgeInsets.all(SynapseTokens.s4),
           child: Text(
             '아직 노트가 없습니다.\n[+ 새 노트] 로 시작하세요.',
             textAlign: TextAlign.center,
-            style: SynapseTokens.caption,
+            style: SynapseTokens.bodyStyle(
+              size: SynapseTokens.tSm,
+              color: SynapseTokens.text3,
+              height: 1.6,
+            ),
           ),
         ),
       );
@@ -118,9 +177,10 @@ class _PostList extends StatelessWidget {
     final synapses = posts.where((p) => p.kind == 'synapse').toList();
 
     return ListView(
+      padding: const EdgeInsets.symmetric(vertical: SynapseTokens.s3),
       children: [
         if (notes.isNotEmpty) ...[
-          const _SectionLabel('— 노트 —'),
+          const _SectionLabel('── 노트 ──'),
           for (final post in notes)
             _PostTile(
               post: post,
@@ -130,14 +190,15 @@ class _PostList extends StatelessWidget {
             ),
         ],
         if (synapses.isNotEmpty) ...[
-          const SizedBox(height: SynapseTokens.spaceS),
-          const _SectionLabel('— 시냅스 —'),
+          const SizedBox(height: SynapseTokens.s3),
+          const _SectionLabel('── 시냅스 ──'),
           for (final post in synapses)
             _PostTile(
               post: post,
               isSelected: post.id == selectedId,
               onTap: () => onSelect(post.id),
               onDelete: () => onDelete(post),
+              isSynapse: true,
             ),
         ],
       ],
@@ -152,11 +213,20 @@ class _SectionLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: SynapseTokens.spaceM,
-        vertical: SynapseTokens.spaceS,
+      padding: const EdgeInsets.fromLTRB(
+        SynapseTokens.s4,
+        SynapseTokens.s3,
+        SynapseTokens.s4,
+        SynapseTokens.s2,
       ),
-      child: Text(text, style: SynapseTokens.caption),
+      child: Text(
+        text,
+        style: SynapseTokens.monoStyle(
+          size: 10,
+          color: SynapseTokens.text4,
+          letterSpacing: 0.15 * 10,
+        ),
+      ),
     );
   }
 }
@@ -167,12 +237,14 @@ class _PostTile extends StatefulWidget {
     required this.isSelected,
     required this.onTap,
     required this.onDelete,
+    this.isSynapse = false,
   });
 
   final PostMeta post;
   final bool isSelected;
   final VoidCallback onTap;
   final VoidCallback onDelete;
+  final bool isSynapse;
 
   @override
   State<_PostTile> createState() => _PostTileState();
@@ -185,6 +257,7 @@ class _PostTileState extends State<_PostTile> {
   Widget build(BuildContext context) {
     final post = widget.post;
     final isInsight = post.kind == 'insight';
+    final isSelected = widget.isSelected;
     final title = post.title?.trim().isNotEmpty == true
         ? post.title!.trim()
         : '제목 없음';
@@ -192,68 +265,127 @@ class _PostTileState extends State<_PostTile> {
       parsePostTimestamp(post.updatedAt),
       DateTime.now(),
     );
-    final accent = isInsight ? SynapseTokens.insightAccent : null;
+
+    final background = isInsight
+        ? const Color(0x0DC8A96E)
+        : isSelected
+            ? SynapseTokens.surface
+            : Colors.transparent;
+    final leftBorderColor = isSelected
+        ? SynapseTokens.accent
+        : Colors.transparent;
+    final insightBorder = isInsight
+        ? const Border(
+            top: BorderSide(color: SynapseTokens.accentLine),
+            bottom: BorderSide(color: SynapseTokens.accentLine),
+          )
+        : null;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: Material(
-        color: widget.isSelected
-            ? SynapseTokens.background
-            : SynapseTokens.surface,
-        child: InkWell(
-          onTap: widget.onTap,
-          onLongPress: widget.onDelete,
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: SynapseTokens.spaceM,
-              vertical: SynapseTokens.spaceS,
-            ),
-            decoration: BoxDecoration(
-              border: accent == null
-                  ? null
-                  : Border(left: BorderSide(color: accent, width: 3)),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                if (isInsight)
-                  const Padding(
-                    padding: EdgeInsets.only(right: SynapseTokens.spaceXs),
-                    child: Text('✦',
-                        style:
-                            TextStyle(color: SynapseTokens.insightAccent)),
-                  ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: SynapseTokens.body,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(timestamp, style: SynapseTokens.caption),
-                    ],
-                  ),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        onLongPress: widget.onDelete,
+        child: Container(
+          decoration: BoxDecoration(
+            color: background,
+            border: insightBorder ??
+                Border(
+                  left: BorderSide(color: leftBorderColor, width: 2),
                 ),
-                if (_hovered)
-                  IconButton(
-                    icon: const Icon(Icons.close, size: 16),
-                    tooltip: '삭제',
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 24,
-                      minHeight: 24,
+          ),
+          padding: const EdgeInsets.fromLTRB(
+            SynapseTokens.s3,
+            SynapseTokens.s2,
+            SynapseTokens.s3,
+            SynapseTokens.s2,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 24,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${post.id}',
+                      style: SynapseTokens.monoStyle(
+                        size: SynapseTokens.tXs,
+                        color: SynapseTokens.text4,
+                      ),
                     ),
-                    onPressed: widget.onDelete,
+                    if (isInsight) ...[
+                      const SizedBox(width: 4),
+                      Text(
+                        '✦',
+                        style: TextStyle(
+                          color: SynapseTokens.accent,
+                          fontSize: SynapseTokens.tXs,
+                        ),
+                      ),
+                    ] else if (widget.isSynapse) ...[
+                      const SizedBox(width: 4),
+                      Text(
+                        '◯',
+                        style: TextStyle(
+                          color: SynapseTokens.text3,
+                          fontSize: SynapseTokens.tXs,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: SynapseTokens.bodyStyle(
+                        size: 13,
+                        weight: isSelected
+                            ? FontWeight.w500
+                            : FontWeight.w400,
+                        color: isSelected
+                            ? SynapseTokens.text
+                            : SynapseTokens.text2,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      timestamp,
+                      style: SynapseTokens.monoStyle(
+                        size: 10,
+                        color: SynapseTokens.text4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_hovered)
+                IconButton(
+                  icon: const Icon(
+                    Icons.close,
+                    size: 14,
+                    color: SynapseTokens.text3,
                   ),
-              ],
-            ),
+                  tooltip: '삭제',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 24,
+                    minHeight: 24,
+                  ),
+                  onPressed: widget.onDelete,
+                ),
+            ],
           ),
         ),
       ),

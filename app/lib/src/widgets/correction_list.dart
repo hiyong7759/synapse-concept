@@ -24,7 +24,10 @@ class CorrectionList extends ConsumerWidget {
       return _Frame(
         child: Text(
           '정리 실패: ${state.error}',
-          style: SynapseTokens.caption.copyWith(color: Colors.red),
+          style: SynapseTokens.bodyStyle(
+            size: SynapseTokens.tSm,
+            color: SynapseTokens.danger,
+          ),
         ),
       );
     }
@@ -33,7 +36,10 @@ class CorrectionList extends ConsumerWidget {
       return _Frame(
         child: Text(
           '정정 후보 없음 — 의미 처리만 완료',
-          style: SynapseTokens.caption,
+          style: SynapseTokens.bodyStyle(
+            size: SynapseTokens.tSm,
+            color: SynapseTokens.text3,
+          ),
         ),
       );
     }
@@ -42,7 +48,7 @@ class CorrectionList extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const _Header(),
-          const SizedBox(height: SynapseTokens.spaceS),
+          const SizedBox(height: SynapseTokens.s2),
           for (final c in corrections)
             CorrectionCard(
               correction: c,
@@ -66,14 +72,14 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text('—', style: SynapseTokens.caption),
-        const SizedBox(width: SynapseTokens.spaceXs),
-        Text('LLM 정정 후보', style: SynapseTokens.caption),
-        const SizedBox(width: SynapseTokens.spaceXs),
-        Text('—', style: SynapseTokens.caption),
-      ],
+    final label = SynapseTokens.monoStyle(
+      size: 10,
+      color: SynapseTokens.text4,
+      letterSpacing: 0.1 * 10,
+    );
+    return Text(
+      '─── LLM 정정 후보 ───',
+      style: label,
     );
   }
 }
@@ -86,10 +92,10 @@ class _Frame extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(
-        SynapseTokens.spaceL,
+        SynapseTokens.s6,
         0,
-        SynapseTokens.spaceL,
-        SynapseTokens.spaceL,
+        SynapseTokens.s6,
+        SynapseTokens.s6,
       ),
       child: child,
     );
