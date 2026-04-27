@@ -97,7 +97,7 @@ class _GuideHeader extends StatelessWidget {
           style: SynapseTokens.display.copyWith(fontSize: 24),
         ),
         const SizedBox(height: SynapseTokens.spaceXs),
-        const Text(
+        Text(
           '왼쪽 [+ 새 노트] 또는 기존 노트 선택. 어떻게 적든 같은 그릇입니다.',
           style: SynapseTokens.caption,
         ),
@@ -185,10 +185,10 @@ class _GuideFooter extends StatelessWidget {
         color: SynapseTokens.surface,
         borderRadius: BorderRadius.circular(6),
       ),
-      child: const Row(
+      child: Row(
         children: [
-          Text('💾', style: TextStyle(fontSize: 16)),
-          SizedBox(width: SynapseTokens.spaceS),
+          const Text('💾', style: TextStyle(fontSize: 16)),
+          const SizedBox(width: SynapseTokens.spaceS),
           Expanded(
             child: Text(
               '입력 후 1.5초 멈추면 자동 저장. 페이지 떠나도 본문은 살아 있습니다.',

@@ -42,16 +42,16 @@ class _SynapseScaffold extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('/synapse', style: SynapseTokens.display),
+            Text('/synapse', style: SynapseTokens.display),
             const SizedBox(height: SynapseTokens.spaceM),
-            const Text(
+            Text(
               'F9 에서 구현 — Q/A 스레드, 통찰 승격 모달, 세션 그래프 패널.',
               style: SynapseTokens.body,
               textAlign: TextAlign.center,
             ),
             if (showGraphHint) ...[
               const SizedBox(height: SynapseTokens.spaceS),
-              const Text(
+              Text(
                 '(데스크톱 레이아웃 — 그래프 패널 자리)',
                 style: SynapseTokens.caption,
               ),

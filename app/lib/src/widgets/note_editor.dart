@@ -81,7 +81,7 @@ class _NoteEditorState extends ConsumerState<NoteEditor> {
         maxLines: null,
         expands: true,
         style: SynapseTokens.body,
-        decoration: const InputDecoration(
+        decoration: InputDecoration(
           border: InputBorder.none,
           hintText: '여기에 적으세요. 자동저장은 1.5초 후 적용됩니다.',
           hintStyle: SynapseTokens.caption,

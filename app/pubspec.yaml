@@ -57,6 +57,11 @@ dependencies:
   sqflite: ^2.3.0
   sqflite_common_ffi: ^2.3.0
 
+  # Design-system fonts (Playfair Display · Noto Sans KR · JetBrains Mono).
+  # Fetched once on first launch and cached locally. Strict offline-first
+  # bundling (assets/fonts) is a separate task before mobile release.
+  google_fonts: ^6.2.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

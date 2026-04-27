@@ -12,13 +12,13 @@ class GraphPanelPlaceholder extends StatelessWidget {
     return Container(
       width: 280,
       color: SynapseTokens.surface,
-      child: const Padding(
-        padding: EdgeInsets.all(SynapseTokens.spaceM),
+      child: Padding(
+        padding: const EdgeInsets.all(SynapseTokens.spaceM),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('📊 이 노트 그래프', style: SynapseTokens.title),
-            SizedBox(height: SynapseTokens.spaceM),
+            const SizedBox(height: SynapseTokens.spaceM),
             Text(
               'F7d 에서 구현 — 해당 post 의 노드·하이퍼엣지를 시각화합니다.',
               style: SynapseTokens.caption,

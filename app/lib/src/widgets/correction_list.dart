@@ -67,11 +67,11 @@ class _Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      children: const [
+      children: [
         Text('—', style: SynapseTokens.caption),
-        SizedBox(width: SynapseTokens.spaceXs),
+        const SizedBox(width: SynapseTokens.spaceXs),
         Text('LLM 정정 후보', style: SynapseTokens.caption),
-        SizedBox(width: SynapseTokens.spaceXs),
+        const SizedBox(width: SynapseTokens.spaceXs),
         Text('—', style: SynapseTokens.caption),
       ],
     );

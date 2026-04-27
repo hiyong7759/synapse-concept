@@ -102,9 +102,9 @@ class _PostList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (posts.isEmpty) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(SynapseTokens.spaceM),
+          padding: const EdgeInsets.all(SynapseTokens.spaceM),
           child: Text(
             '아직 노트가 없습니다.\n[+ 새 노트] 로 시작하세요.',
             textAlign: TextAlign.center,
