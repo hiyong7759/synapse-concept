@@ -61,6 +61,52 @@ void main() {
       expect(backend.generateCalls, 3);
     });
 
+    // ── categorize ────────────────────────────────────
+
+    test('categorize parses JSON {"categories":[...]} on a clean response',
+        () async {
+      backend.canned['::노드: 허리\n맥락 문장:\n- L4-L5 진단 받음'] =
+          '{"categories": ["BOD.disease"]}';
+      final result = await tasks.categorize(
+        nodeName: '허리',
+        contextSentences: const ['L4-L5 진단 받음'],
+      );
+      expect(result, ['BOD.disease']);
+      expect(backend.activeAdapter, isNull,
+          reason: 'category runs on base model only');
+    });
+
+    test('categorize accepts multiple sub-codes', () async {
+      backend.canned['::노드: 강남세브란스\n맥락 문장:\n(맥락 없음)'] =
+          '{"categories": ["BOD.medical", "PER.org"]}';
+      final result = await tasks.categorize(nodeName: '강남세브란스');
+      expect(result, ['BOD.medical', 'PER.org']);
+    });
+
+    test('categorize returns [] when the model says no category', () async {
+      backend.canned['::노드: 그게\n맥락 문장:\n(맥락 없음)'] =
+          '{"categories": []}';
+      final result = await tasks.categorize(nodeName: '그게');
+      expect(result, isEmpty);
+    });
+
+    test('categorize tolerates commentary surrounding the JSON', () async {
+      backend.canned['::노드: 회의\n맥락 문장:\n- 오후 회의 잡힘'] =
+          '여기는 일 맥락이라 → {"categories": ["WRK.role"]}';
+      final result = await tasks.categorize(
+        nodeName: '회의',
+        contextSentences: const ['오후 회의 잡힘'],
+      );
+      expect(result, ['WRK.role']);
+    });
+
+    test('categorize returns [] when the model produces no JSON object',
+        () async {
+      backend.canned['::노드: 빈응답\n맥락 문장:\n(맥락 없음)'] = 'hmm';
+      final result = await tasks.categorize(nodeName: '빈응답');
+      expect(result, isEmpty);
+    });
+
     test('synapseAnswer assembles facts block and runs at temperature > 0',
         () async {
       // Header is "알려진 사실 (시간 순)" when there's at least one fact —

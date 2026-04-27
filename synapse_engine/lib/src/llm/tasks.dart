@@ -129,6 +129,52 @@ class LlmTasks {
     return stripThinking(raw);
   }
 
+  // ── categorize ───────────────────────────────────────────
+
+  /// Classifies a node into seed-19 sub categories (`BOD.disease`,
+  /// `WRK.role`, ...) given a small set of sentences it appeared in.
+  /// Output mirrors `assets/prompts/CATEGORY_SYSTEMPROMPT.md`:
+  /// `{"categories": ["BOD.disease", ...]}`. Empty list when the model
+  /// returns no categories or fails to produce parseable JSON — caller
+  /// treats this as "leave the node uncategorized" (DESIGN_HYPERGRAPH
+  /// §하이퍼엣지 ② — `node_category_mentions` 자동 등록은 origin='ai'
+  /// 만이며, 확신 없으면 매핑하지 않는다).
+  ///
+  /// `contextSentences` is trimmed to 3 entries — the system prompt's
+  /// disambiguation rules ("수영(건강) → BOD.exercise / 수영(취미) →
+  /// HOB.sport") need at least one or two surrounding sentences to fire,
+  /// but more than 3 wastes the small token budget without changing the
+  /// answer.
+  Future<List<String>> categorize({
+    required String nodeName,
+    List<String> contextSentences = const [],
+  }) async {
+    await _switchTo(null);
+    final system = await prompts.load(PromptKey.category);
+    final ctxBlock = contextSentences.isEmpty
+        ? '(맥락 없음)'
+        : contextSentences.take(3).map((s) => '- $s').join('\n');
+    final userPrompt = '노드: $nodeName\n맥락 문장:\n$ctxBlock';
+    final raw = stripThinking(await backend.generate(
+      systemPrompt: system,
+      userPrompt: userPrompt,
+      maxTokens: 64,
+    ));
+    final match = RegExp(r'\{.*?\}', dotAll: true).firstMatch(raw);
+    if (match == null) return const [];
+    try {
+      final obj = jsonDecode(match.group(0)!) as Map<String, dynamic>;
+      final list = (obj['categories'] as List<dynamic>?) ?? const [];
+      return list
+          .whereType<String>()
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList(growable: false);
+    } on FormatException {
+      return const [];
+    }
+  }
+
   // ── typoNormalize (F3 stub) ──────────────────────────────
 
   /// Suggests typo corrections for [text]. The protected alias set must be
