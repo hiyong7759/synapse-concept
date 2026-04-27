@@ -39,7 +39,13 @@ class _VisNetworkGraphViewState extends State<VisNetworkGraphView> {
 
   Map<String, Object?> _serialize(GraphData? data) {
     if (data == null) {
-      return const {'nodes': [], 'sentences': [], 'mentions': []};
+      return const {
+        'nodes': [],
+        'sentences': [],
+        'mentions': [],
+        'categories': [],
+        'sentenceCategories': [],
+      };
     }
     return {
       'nodes': [
@@ -59,6 +65,22 @@ class _VisNetworkGraphViewState extends State<VisNetworkGraphView> {
       'mentions': [
         for (final m in data.mentions)
           {'nodeId': m.nodeId, 'sentenceId': m.sentenceId},
+      ],
+      // Categories + sentence_categories so the JS layer can walk a
+      // sentence to its user-heading root and pick a color distinct from
+      // seed-19 node colors.
+      'categories': [
+        for (final c in data.categories)
+          {
+            'id': c.id,
+            'name': c.name,
+            'parentId': c.parentId,
+            'code': c.code,
+          },
+      ],
+      'sentenceCategories': [
+        for (final sc in data.sentenceCategories)
+          {'sentenceId': sc.sentenceId, 'categoryId': sc.categoryId},
       ],
     };
   }

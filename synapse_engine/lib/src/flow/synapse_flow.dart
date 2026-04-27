@@ -507,43 +507,63 @@ class SynapseFlow {
             ))
         .toList(growable: false);
 
+    // sentence_categories — fetch the full mapping (not just distinct
+    // category_id) so the visualization layer can color sentence baskets
+    // by their user-heading root.
+    final scFullRows = await db.rawQuery(
+      'SELECT sentence_id, category_id, origin FROM sentence_categories '
+      'WHERE sentence_id IN ($sentencePh)',
+      sentenceIds,
+    );
+    final sentenceCategories = scFullRows
+        .map((r) => GraphSentenceCategory(
+              sentenceId: r['sentence_id']! as int,
+              categoryId: r['category_id']! as int,
+              origin: r['origin']! as String,
+            ))
+        .toList(growable: false);
+
     // Categories — fetch every category referenced by working nodes plus
     // every category that appears as a sentence_categories row in the
-    // working set (so user-heading hierarchy shows up too).
+    // working set (so user-heading hierarchy shows up too). Then walk
+    // every category to its root via parent_id so the root rows are
+    // also fetched for color attribution.
     final touchedCategoryIds = <int>{};
     for (final nc in nodeCategories) {
       touchedCategoryIds.add(nc.categoryId);
     }
-    if (touchedCategoryIds.isEmpty) {
-      // No node-category mentions but sentence_categories may still apply.
-      final scRows = await db.rawQuery(
-        'SELECT DISTINCT category_id FROM sentence_categories '
-        'WHERE sentence_id IN ($sentencePh)',
-        sentenceIds,
-      );
-      for (final r in scRows) {
-        touchedCategoryIds.add(r['category_id']! as int);
-      }
-    } else {
-      final scRows = await db.rawQuery(
-        'SELECT DISTINCT category_id FROM sentence_categories '
-        'WHERE sentence_id IN ($sentencePh)',
-        sentenceIds,
-      );
-      for (final r in scRows) {
-        touchedCategoryIds.add(r['category_id']! as int);
-      }
+    for (final sc in sentenceCategories) {
+      touchedCategoryIds.add(sc.categoryId);
     }
 
     final List<GraphCategory> categories;
     if (touchedCategoryIds.isEmpty) {
       categories = const [];
     } else {
-      final catPh = List.filled(touchedCategoryIds.length, '?').join(',');
+      // Walk parent_id chain so every ancestor (root included) is also
+      // fetched. Visualization needs the root to attribute color
+      // (seed-19 vs user-heading).
+      final allCatIds = <int>{...touchedCategoryIds};
+      var frontier = touchedCategoryIds.toList();
+      while (frontier.isNotEmpty) {
+        final ph = List.filled(frontier.length, '?').join(',');
+        final rows = await db.rawQuery(
+          'SELECT DISTINCT parent_id FROM categories '
+          'WHERE id IN ($ph) AND parent_id IS NOT NULL',
+          frontier,
+        );
+        final next = <int>[];
+        for (final r in rows) {
+          final pid = r['parent_id'] as int;
+          if (allCatIds.add(pid)) next.add(pid);
+        }
+        frontier = next;
+      }
+      final catPh = List.filled(allCatIds.length, '?').join(',');
       final catRows = await db.rawQuery(
         'SELECT id, name, parent_id FROM categories '
         'WHERE id IN ($catPh) ORDER BY id',
-        touchedCategoryIds.toList(),
+        allCatIds.toList(),
       );
       categories = catRows
           .map((r) => GraphCategory(
@@ -586,6 +606,7 @@ class SynapseFlow {
       mentions: mentions,
       categories: categories,
       nodeCategories: nodeCategories,
+      sentenceCategories: sentenceCategories,
     );
   }
 

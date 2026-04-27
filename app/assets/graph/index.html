@@ -121,17 +121,33 @@
         return;
       }
 
-      // Build vis-network nodes.
+      // Bipartite layout (β). v22 데이터 모델 (DESIGN_HYPERGRAPH §스키마):
+      //   nodes ───── node_sentence_mentions ───── sentences
+      // 그대로 시각으로 옮김. 같은 sentence 안 노드 N 개는 그 sentence
+      // 점 하나에서 묶인다 ("바구니에 담겼다"). 페어 N(N-1)/2 환원이
+      // 아니라 mentions 1:1.
+      //
+      // 일반 노드는 주인공 (degree-비례 큰 점, 카테고리 색), sentence
+      // 점은 보조 (작은 다이아, --text-4 회색). 통찰 sentence
+      // (origin='insight') 만 sentence 자체가 앰버로 강조됨 — 가치 B
+      // (Hebbian 통찰 허브) 는 본체 sentence 가 그 자체로 시각의 무게
+      // 중심.
+      const LABEL_MIN_DEGREE = 4;
       const visNodes = g.nodes.map(n => {
         const r = nodeRadius(n);
         const fill = nodeColor(n);
+        const showLabel = n.isInsight || (n.degree || 0) >= LABEL_MIN_DEGREE;
         return {
-          id: n.id,
-          label: (n.isInsight ? '✦ ' : '') + n.name,
+          id: 'n:' + n.id,
+          label: showLabel ? (n.isInsight ? '✦ ' + n.name : n.name) : ' ',
           color: { background: fill, border: fill },
           size: r,
           font: {
-            color: n.isInsight ? NODE_INSIGHT : getCss('--text-2'),
+            color: n.isInsight
+              ? NODE_INSIGHT
+              : (n.degree || 0) >= 8
+                  ? getCss('--text')
+                  : getCss('--text-2'),
             face: 'JetBrains Mono, ui-monospace, monospace',
             size: n.isInsight ? 12 : (n.degree >= 8 ? 11 : 10),
             strokeWidth: 0,
@@ -142,49 +158,103 @@
         };
       });
 
-      // Build co-occurrence edges from mentions: for every sentence, every
-      // unordered pair of node ids in that sentence becomes one edge with
-      // `weight = number of sentences they co-appear in`.
-      const bySentence = new Map();
-      for (const m of (g.mentions || [])) {
-        if (!bySentence.has(m.sentenceId)) {
-          bySentence.set(m.sentenceId, []);
+      // Build a category lookup so we can walk a sentence's heading
+      // category up to its root (parent_id IS NULL). The root tells us
+      // whether it's a seed-19 root or a user-heading root → drives color.
+      const catById = new Map();
+      for (const c of (g.categories || [])) catById.set(c.id, c);
+      function rootOf(catId) {
+        let cur = catById.get(catId);
+        while (cur && cur.parentId != null) {
+          cur = catById.get(cur.parentId);
         }
-        bySentence.get(m.sentenceId).push(m.nodeId);
+        return cur;
       }
-      const edgeWeights = new Map();
-      for (const ids of bySentence.values()) {
-        for (let i = 0; i < ids.length; i++) {
-          for (let j = i + 1; j < ids.length; j++) {
-            const a = Math.min(ids[i], ids[j]);
-            const b = Math.max(ids[i], ids[j]);
-            const key = a + ':' + b;
-            edgeWeights.set(key, (edgeWeights.get(key) || 0) + 1);
+
+      // Distinct user-heading roots (parent_id IS NULL && code IS NULL)
+      // get assigned a distinct hue from a small palette. Seed-19 roots
+      // (code != null) use --node-fallback gray for sentences (sentences
+      // shouldn't co-opt seed colors which belong to nodes).
+      const USER_PALETTE = [
+        '#6E9DC8', '#5DAB8A', '#B68AC8', '#8AC8B6',
+        '#D9A55D', '#C85D5D', '#7A7B82',
+      ];
+      const userRootColor = new Map();
+      let nextPaletteIdx = 0;
+      function colorForUserRoot(rootId) {
+        if (!userRootColor.has(rootId)) {
+          userRootColor.set(rootId, USER_PALETTE[nextPaletteIdx % USER_PALETTE.length]);
+          nextPaletteIdx++;
+        }
+        return userRootColor.get(rootId);
+      }
+
+      // sentence_id → primary heading category id (lowest id wins —
+      // deterministic, matches getGraph primaryCategoryCode policy).
+      const sentenceCatId = new Map();
+      for (const sc of (g.sentenceCategories || [])) {
+        const cur = sentenceCatId.get(sc.sentenceId);
+        if (cur == null || sc.categoryId < cur) {
+          sentenceCatId.set(sc.sentenceId, sc.categoryId);
+        }
+      }
+
+      // Sentence basket dots — small diamonds. Insight sentences glow
+      // amber (가치 B 통찰 중력). Otherwise color by user-heading root,
+      // or fall back to gray when no heading is mapped.
+      const sentencePost = new Map();
+      for (const s of (g.sentences || [])) {
+        sentencePost.set(s.id, s.postId);
+        const isInsight = s.origin === 'insight';
+        let fill;
+        if (isInsight) {
+          fill = NODE_INSIGHT;
+        } else {
+          const catId = sentenceCatId.get(s.id);
+          const root = catId == null ? null : rootOf(catId);
+          if (root && root.code == null) {
+            // user-heading root
+            fill = colorForUserRoot(root.id);
+          } else {
+            fill = getCss('--text-4');
           }
         }
-      }
-      const visEdges = [];
-      for (const [key, weight] of edgeWeights) {
-        const [a, b] = key.split(':').map(Number);
-        visEdges.push({
-          from: a, to: b,
-          width: Math.min(3.5, 0.5 + weight * 0.4),
-          color: { color: EDGE_BASE, opacity: 0.55 },
-          smooth: false,
+        visNodes.push({
+          id: 's:' + s.id,
+          label: ' ',
+          color: { background: fill, border: fill },
+          size: isInsight ? 6 : 3,
+          shape: 'diamond',
+          shadow: isInsight
+              ? { enabled: true, color: 'rgba(217,188,131,0.6)', size: 10, x: 0, y: 0 }
+              : { enabled: false },
         });
       }
+
+      // Edges = mentions, 1:1. (node ↔ sentence basket).
+      const visEdges = (g.mentions || []).map(m => ({
+        from: 'n:' + m.nodeId,
+        to: 's:' + m.sentenceId,
+        color: { color: getCss('--border-strong'), opacity: 0.35 },
+        width: 0.5,
+        smooth: false,
+      }));
 
       const container = document.getElementById('graph');
       const options = {
         physics: {
           enabled: true,
-          // Visual stability priority — settle fast, then freeze.
-          stabilization: { iterations: 200, fit: true },
+          // Bipartite force-layout: mentions are springs that pull a node
+          // and its sentence basket together; barnesHut repels everything
+          // else. avoidOverlap=1 keeps node dots from intersecting.
+          stabilization: { iterations: 400, fit: true },
           barnesHut: {
-            gravitationalConstant: -2000,
-            springLength: 90,
+            gravitationalConstant: -3500,
+            centralGravity: 0.2,
+            springLength: 80,
             springConstant: 0.04,
-            damping: 0.85,
+            damping: 0.9,
+            avoidOverlap: 1.0,
           },
         },
         interaction: {

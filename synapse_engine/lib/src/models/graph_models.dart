@@ -99,6 +99,7 @@ class GraphData {
     required this.mentions,
     required this.categories,
     required this.nodeCategories,
+    this.sentenceCategories = const [],
   });
 
   final List<GraphNode> nodes;
@@ -106,6 +107,11 @@ class GraphData {
   final List<GraphMention> mentions;
   final List<GraphCategory> categories;
   final List<GraphNodeCategory> nodeCategories;
+
+  /// `sentence_categories` rows scoped to the working sentence set.
+  /// Used by the visualization layer to color sentence baskets by their
+  /// user-heading root (vs seed-19 categories on nodes).
+  final List<GraphSentenceCategory> sentenceCategories;
 
   bool get isEmpty => nodes.isEmpty && sentences.isEmpty;
 }
@@ -187,6 +193,17 @@ class GraphNodeCategory {
     required this.origin,
   });
   final int nodeId;
+  final int categoryId;
+  final String origin;
+}
+
+class GraphSentenceCategory {
+  const GraphSentenceCategory({
+    required this.sentenceId,
+    required this.categoryId,
+    required this.origin,
+  });
+  final int sentenceId;
   final int categoryId;
   final String origin;
 }

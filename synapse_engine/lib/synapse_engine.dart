@@ -33,7 +33,7 @@ export 'src/kiwi/tokens.dart' show KiwiToken;
 export 'src/models/graph_models.dart'
     show Node, Sentence, Mention, Alias, TypoCandidate, EngineStats,
         GraphData, GraphNode, GraphSentence, GraphMention, GraphCategory,
-        GraphNodeCategory;
+        GraphNodeCategory, GraphSentenceCategory;
 
 // F5 — synapse flow (note + retrieve + insight).
 export 'src/flow/results.dart'
