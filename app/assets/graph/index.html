@@ -88,6 +88,10 @@
     let nodesData = null;
     let edgesData = null;
 
+    // 2 s — long enough for stabilization to complete on real graphs,
+    // short enough that a stuck simulation doesn't hog frame budget.
+    const PHYSICS_BACKSTOP_MS = 2000;
+
     // Replace whatever's in `ds` with `items`, computing the remove set
     // ourselves — vis-network's DataSet has update() (insert/upsert) and
     // remove() but no built-in "diff against full new collection".
@@ -372,9 +376,7 @@
           { nodes: nodesData, edges: edgesData },
           options,
         );
-        network.on('stabilizationIterationsDone', () => {
-          network.setOptions({ physics: { enabled: false } });
-        });
+        network.on('stabilizationIterationsDone', forcePhysicsOff);
         network.on('click', (params) => {
           let nodeId = null;
           if (params && Array.isArray(params.nodes) && params.nodes.length > 0) {
@@ -388,6 +390,7 @@
             window.flutter_inappwebview.callHandler('synapseNodeClicked', nodeId);
           }
         });
+        schedulePhysicsBackstop();
       } else {
         const nodeDelta = reconcile(nodesData, visNodes);
         const edgeDelta = reconcile(edgesData, visEdges);
@@ -397,9 +400,28 @@
         if (topologyChanged) {
           network.setOptions({ physics: { enabled: true } });
           network.stabilize(300);
+          schedulePhysicsBackstop();
         }
       }
       setStatus('노드 ' + nodeCount + ' · 바구니 ' + sentCount);
+    }
+
+    let physicsBackstopTimer = null;
+    function forcePhysicsOff() {
+      if (network === null) return;
+      network.setOptions({ physics: { enabled: false } });
+      if (physicsBackstopTimer !== null) {
+        clearTimeout(physicsBackstopTimer);
+        physicsBackstopTimer = null;
+      }
+    }
+    // stabilizationIterationsDone occasionally never fires (fit:true edge
+    // cases, very small iter counts). After every push that runs physics,
+    // force the simulation off so the canvas stops eating frame budget
+    // for nothing.
+    function schedulePhysicsBackstop() {
+      if (physicsBackstopTimer !== null) clearTimeout(physicsBackstopTimer);
+      physicsBackstopTimer = setTimeout(forcePhysicsOff, PHYSICS_BACKSTOP_MS);
     }
 
     function nodeRadius(n) {
