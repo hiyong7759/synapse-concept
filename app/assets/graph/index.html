@@ -179,30 +179,61 @@
         nodeRingColors.set(nc.nodeId, list);
       }
 
+      // Cache CSS-variable lookups once per render — getComputedStyle is
+      // a style-resolve, paying it ~2x per node would dwarf the ring-arc
+      // savings we just got from the hybrid path.
+      const TEXT = getCss('--text');
+      const TEXT2 = getCss('--text-2');
+
       const LABEL_MIN_DEGREE = 4;
       const visNodes = g.nodes.map(n => {
         const r = nodeRadius(n);
         const fill = nodeColor(n);
         const ring = nodeRingColors.get(n.id) || [];
-        const showLabel = n.isInsight || (n.degree || 0) >= LABEL_MIN_DEGREE;
+        const degree = n.degree || 0;
+        const isHub = degree >= 8;
+        const showLabel = n.isInsight || degree >= LABEL_MIN_DEGREE;
+        const font = {
+          color: n.isInsight ? NODE_INSIGHT : (isHub ? TEXT : TEXT2),
+          face: 'JetBrains Mono, ui-monospace, monospace',
+          size: n.isInsight ? 12 : (isHub ? 11 : 10),
+          strokeWidth: 0,
+        };
+        const label =
+            showLabel ? (n.isInsight ? '✦ ' + n.name : n.name) : ' ';
+
+        // Hybrid: only multi-category non-insight nodes need the
+        // canvas-direct ring renderer (heavy: N+1 arcs per frame). Single
+        // category / no category / insight stay on vis's native dot
+        // shape, which has a much faster built-in draw path.
+        if (!n.isInsight && ring.length >= 2) {
+          return {
+            id: 'n:' + n.id,
+            label,
+            font,
+            shape: 'custom',
+            ctxRenderer: makeNodeRenderer({ r, fill, ring, n }),
+          };
+        }
+
+        let borderColor = fill;
+        let borderWidth = 0;
+        if (n.isInsight) {
+          borderColor = NODE_INSIGHT;
+          borderWidth = 2;
+        } else if (ring.length === 1) {
+          borderColor = ring[0];
+          borderWidth = 1.5;
+        }
         return {
           id: 'n:' + n.id,
-          label: showLabel ? (n.isInsight ? '✦ ' + n.name : n.name) : ' ',
-          font: {
-            color: n.isInsight
-              ? NODE_INSIGHT
-              : (n.degree || 0) >= 8
-                  ? getCss('--text')
-                  : getCss('--text-2'),
-            face: 'JetBrains Mono, ui-monospace, monospace',
-            size: n.isInsight ? 12 : (n.degree >= 8 ? 11 : 10),
-            strokeWidth: 0,
-          },
-          shape: 'custom',
-          // vis dot rebuilt manually so multi-category nodes can show every
-          // seed-root color in the border. Label + font are still drawn by
-          // vis externally via the nodeDimensions return.
-          ctxRenderer: makeNodeRenderer({ r, fill, ring, n }),
+          label,
+          font,
+          shape: 'dot',
+          color: { background: fill, border: borderColor },
+          size: r,
+          borderWidth,
+          shadow: shadowFor(n, fill),
         };
       });
 
@@ -382,19 +413,29 @@
       return NODE_FALLBACK;
     }
 
+    function shadowFor(n, fill) {
+      if (n.isInsight) {
+        return { enabled: true, color: 'rgba(217,188,131,0.7)', size: 14, x: 0, y: 0 };
+      }
+      if ((n.degree || 0) >= 8) {
+        return { enabled: true, color: fill + '88', size: 8, x: 0, y: 0 };
+      }
+      return { enabled: false };
+    }
+
     // Returns a ctxRenderer that draws a vis "dot" by hand so multi-
     // category nodes can show every seed-root color in the border ring.
+    // Only used for nodes with 2+ category colors — the native dot path
+    // handles 0/1/insight cases an order of magnitude faster.
     // Label/font are still drawn by vis externally from the node's
     // `font` config — we only return nodeDimensions for text placement.
     function makeNodeRenderer({ r, fill, ring, n }) {
+      // Invariant: this renderer is only attached when ring.length >= 2
+      // and !n.isInsight (see hybrid branch in synapseSetGraph). 0/1/
+      // insight cases use vis's native dot shape.
       return ({ ctx, x, y }) => ({
         drawNode: () => {
-          // Glow — insight: amber halo. Hub (degree ≥ 8): tinted halo of
-          // primary fill. Plain nodes: none.
-          if (n.isInsight) {
-            ctx.shadowColor = 'rgba(217,188,131,0.7)';
-            ctx.shadowBlur = 14;
-          } else if ((n.degree || 0) >= 8) {
+          if ((n.degree || 0) >= 8) {
             ctx.shadowColor = fill + '88';
             ctx.shadowBlur = 8;
           } else {
@@ -408,31 +449,11 @@
           ctx.fill();
 
           // Drop the shadow before stroking — otherwise the halo doubles
-          // onto the border.
+          // onto each ring arc.
           ctx.shadowColor = 'transparent';
           ctx.shadowBlur = 0;
 
-          // Border: insight overrides categories with a 2 px accent-2
-          // outline (visual signal trumps category set). Otherwise the
-          // seed-root colors form an equal-arc ring; one color → solid
-          // outline, none → no border.
-          if (n.isInsight) {
-            ctx.strokeStyle = NODE_INSIGHT;
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.arc(x, y, r, 0, Math.PI * 2);
-            ctx.stroke();
-            return;
-          }
-          if (ring.length === 0) return;
           ctx.lineWidth = 1.5;
-          if (ring.length === 1) {
-            ctx.strokeStyle = ring[0];
-            ctx.beginPath();
-            ctx.arc(x, y, r, 0, Math.PI * 2);
-            ctx.stroke();
-            return;
-          }
           const seg = (Math.PI * 2) / ring.length;
           for (let i = 0; i < ring.length; i++) {
             ctx.strokeStyle = ring[i];
