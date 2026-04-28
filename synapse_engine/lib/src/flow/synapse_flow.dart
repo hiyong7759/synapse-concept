@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:sqflite/sqflite.dart';
 
 import '../db/category_seed.dart';
@@ -77,10 +78,15 @@ class SynapseFlow {
     required String question,
     int? postId,
   }) async {
-    // 1. Resolve / create the synapse post.
+    // Per-stage timing (debug builds only). Decides which stage to
+    // optimise next — see PLAN-20260429-SYN-synapse-perf.
+    final total = Stopwatch()..start();
+    final persist = Stopwatch();
+    final stage = Stopwatch();
+
+    persist.start();
     final pid = postId ?? await db.insert('posts', {'kind': 'synapse'});
 
-    // 2. Persist the question sentence (role='user').
     final qPosition = await _nextPosition(pid);
     final questionSentenceId = await db.insert('sentences', {
       'post_id': pid,
@@ -88,29 +94,28 @@ class SynapseFlow {
       'role': 'user',
       'position': qPosition,
     });
+    persist.stop();
 
-    // 3. Keyword expansion — LLM (if available) ∪ raw split ∪ Kiwi nouns.
+    stage..reset()..start();
     final keywords = await _expandKeywords(question);
+    final tExpand = stage.elapsedMilliseconds;
 
-    // 4. Path-1 seed (start nodes).
+    stage..reset()..start();
     final startNodeMap = await matchStartNodes(
       db,
       keywords: keywords,
       question: question,
     );
     final startNodeIds = startNodeMap.keys.toSet();
-
-    // 5. Path-3 seed (heading subtree mentions).
     final subtree = await headingSubtreeSeeds(db, startNodeIds: startNodeIds);
-
-    // 6. Path-2 supplement (same-category siblings).
     final supplement = await sameCategoryNodes(
       db,
       startNodeIds: startNodeIds,
       visitedNodeIds: startNodeIds,
     );
+    final tMatch = stage.elapsedMilliseconds;
 
-    // 7. BFS with LLM filter callback (when llm is wired up).
+    stage..reset()..start();
     final llm = _llm;
     final filter = llm == null
         ? null
@@ -122,7 +127,6 @@ class SynapseFlow {
               return true;
             }
           };
-
     final mentions = await bfs_impl.bfsRetrieve(
       db,
       startNodes: startNodeIds,
@@ -133,8 +137,8 @@ class SynapseFlow {
       maxSentences: _maxSentences,
       stopwordThreshold: _stopwordThreshold,
     );
+    final tBfs = stage.elapsedMilliseconds;
 
-    // 8. Build context sentences (deduped by sentence_id, time-ordered).
     final seenSids = <int>{};
     final contexts = <ContextSentence>[];
     final contextSentenceIds = <int>[];
@@ -152,7 +156,7 @@ class SynapseFlow {
       contextSentenceIds.add(m.sentenceId);
     }
 
-    // 9. Compose the answer (LLM if available, else time-ordered dump).
+    stage..reset()..start();
     String answer;
     if (llm != null) {
       try {
@@ -166,8 +170,9 @@ class SynapseFlow {
     } else {
       answer = _fallbackAnswer(contexts);
     }
+    final tAnswer = stage.elapsedMilliseconds;
 
-    // 10. Persist the answer sentence (role='assistant').
+    persist.start();
     final aPosition = qPosition + 1;
     final answerSentenceId = await db.insert('sentences', {
       'post_id': pid,
@@ -175,6 +180,16 @@ class SynapseFlow {
       'role': 'assistant',
       'position': aPosition,
     });
+    persist.stop();
+
+    if (kDebugMode) {
+      // ignore: avoid_print
+      print('[synapseTurn] expand=${tExpand}ms match=${tMatch}ms '
+          'bfs=${tBfs}ms answer=${tAnswer}ms '
+          'persist=${persist.elapsedMilliseconds}ms '
+          'total=${total.elapsedMilliseconds}ms '
+          '(ctx=${contexts.length})');
+    }
 
     return SynapseTurnResult(
       postId: pid,
