@@ -349,7 +349,19 @@
         nodes: { borderWidthSelected: 0 },
         edges: { selectionWidth: 0 },
       };
-      if (network === null) {
+      // Detect a shape flip on any existing node — vis-network's DataSet
+      // update() merges attributes but doesn't re-instantiate the
+      // internal node object on shape change, leaving stale custom
+      // ctxRenderer hooks (or stale dot internals). When that happens
+      // the canvas goes blank for those nodes, so we tear down and
+      // rebuild instead of reconciling.
+      const shapeFlipped = network !== null && visNodes.some(n => {
+        const old = nodesData.get(n.id);
+        return old && old.shape !== n.shape;
+      });
+
+      if (network === null || shapeFlipped) {
+        if (network !== null) network.destroy();
         nodesData = new vis.DataSet(visNodes);
         edgesData = new vis.DataSet(visEdges);
         network = new vis.Network(
@@ -357,17 +369,9 @@
           { nodes: nodesData, edges: edgesData },
           options,
         );
-        // Single handler for the lifetime of the network — fires after
-        // the initial 1500-iter stabilization and after every subsequent
-        // stabilize(300). Each run leaves physics disabled so already
-        // settled nodes don't drift.
         network.on('stabilizationIterationsDone', () => {
           network.setOptions({ physics: { enabled: false } });
         });
-        // Click bridge — node clicks send `nodeId` (int) to Flutter;
-        // clicks on sentence baskets or empty canvas send `null` so the
-        // host can clear the selection. Vis-network ids are prefixed
-        // (`n:` / `s:`) — strip.
         network.on('click', (params) => {
           let nodeId = null;
           if (params && Array.isArray(params.nodes) && params.nodes.length > 0) {
@@ -384,9 +388,6 @@
       } else {
         const nodeDelta = reconcile(nodesData, visNodes);
         const edgeDelta = reconcile(edgesData, visEdges);
-        // Only kick physics back on when topology actually changed.
-        // Color-only updates (categorize queue draining) shouldn't
-        // disturb already-placed nodes.
         const topologyChanged =
             nodeDelta.added > 0 || nodeDelta.removed > 0 ||
             edgeDelta.added > 0 || edgeDelta.removed > 0;
