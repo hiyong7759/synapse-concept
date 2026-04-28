@@ -39,12 +39,13 @@ class _VisNetworkGraphViewState extends State<VisNetworkGraphView> {
 
   Map<String, Object?> _serialize(GraphData? data) {
     if (data == null) {
-      return const {
-        'nodes': [],
-        'sentences': [],
-        'mentions': [],
-        'categories': [],
-        'sentenceCategories': [],
+      return {
+        'nodes': const [],
+        'sentences': const [],
+        'mentions': const [],
+        'categories': const [],
+        'sentenceCategories': const [],
+        'theme': _theme(),
       };
     }
     return {
@@ -82,8 +83,22 @@ class _VisNetworkGraphViewState extends State<VisNetworkGraphView> {
         for (final sc in data.sentenceCategories)
           {'sentenceId': sc.sentenceId, 'categoryId': sc.categoryId},
       ],
+      'theme': _theme(),
     };
   }
+
+  /// Tokens crossing the WebView boundary. `tokens.dart` is the single
+  /// source — `assets/graph/index.html` reads colors from this payload
+  /// (DESIGN_SYSTEM.md §75, §78 — no inline hex in the WebView).
+  Map<String, Object?> _theme() => {
+    'categoryColors': {
+      for (final e in SynapseTokens.categoryColors19.entries)
+        e.key: _hex(e.value),
+    },
+  };
+
+  static String _hex(Color c) =>
+      '#${c.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
 
   @override
   void didUpdateWidget(covariant VisNetworkGraphView oldWidget) {

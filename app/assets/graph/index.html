@@ -23,14 +23,10 @@
       --accent-2: #D9BC83;
       --accent-line: rgba(200, 169, 110, 0.4);
       --node: #8A8B92;
-      /* DESIGN_UI §디자인 토큰 — 카테고리 7 색 (BOD/MND/FOD/WRK/REL/LIV/TIM) */
-      --cat-bod: #C85D5D;
-      --cat-mnd: #B68AC8;
-      --cat-fod: #D9A55D;
-      --cat-wrk: #6E9DC8;
-      --cat-rel: #5DAB8A;
-      --cat-liv: #8AC8B6;
-      --cat-tim: #7A7B82;
+      /* 카테고리 19 색은 tokens.dart 의 categoryColors19 단일 출처
+         (DESIGN_SYSTEM.md §75, §78). Flutter 측이 그래프 페이로드의
+         theme.categoryColors 로 코드→hex 매핑을 보내고, 아래 JS 가
+         CAT_COLOR 에 채운다. 인라인 hex 금지. */
     }
     * { box-sizing: border-box; }
     html, body, #graph {
@@ -66,16 +62,12 @@
   <div id="status" class="idle"></div>
 
   <script>
-    // ── Categories → CSS variables (DESIGN_UI 7 색) ──────────
-    const CAT_COLOR = {
-      BOD: getCss('--cat-bod'),
-      MND: getCss('--cat-mnd'),
-      FOD: getCss('--cat-fod'),
-      WRK: getCss('--cat-wrk'),
-      REL: getCss('--cat-rel'),
-      LIV: getCss('--cat-liv'),
-      TIM: getCss('--cat-tim'),
-    };
+    // ── Categories ────────────────────────────────────────────
+    // CAT_COLOR is populated from graph payload's `theme.categoryColors`
+    // (single source = tokens.dart categoryColors19). Empty until the
+    // first `synapseSetGraph` call, after which all primaryCategoryCode
+    // lookups resolve via this map.
+    let CAT_COLOR = {};
     const NODE_FALLBACK = getCss('--node');
     const NODE_INSIGHT = getCss('--accent-2');
     const EDGE_BASE = getCss('--border-strong');
@@ -108,6 +100,9 @@
       } catch (e) {
         setStatus('데이터 파싱 실패: ' + e.message);
         return;
+      }
+      if (data.theme && data.theme.categoryColors) {
+        CAT_COLOR = data.theme.categoryColors;
       }
       render(data);
     };

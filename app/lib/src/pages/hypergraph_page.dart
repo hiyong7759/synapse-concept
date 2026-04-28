@@ -86,7 +86,7 @@ class _FilterPanelPlaceholder extends StatelessWidget {
       color: SynapseTokens.bg2,
       padding: const EdgeInsets.all(SynapseTokens.s4),
       child: Text(
-        '─── FILTERS ───\n\nF8\'-4 에서 추가\n· 검색\n· 칩 (전체/허브/✦/고립)\n· BFS 깊이\n· 카테고리 7\n· 통계',
+        '─── FILTERS ───\n\nF8\'-4 에서 추가\n· 검색\n· 칩 (전체/허브/✦/고립)\n· BFS 깊이\n· 카테고리 19 (8 그룹)\n· 통계',
         style: SynapseTokens.monoStyle(
           size: SynapseTokens.tXs,
           color: SynapseTokens.text4,

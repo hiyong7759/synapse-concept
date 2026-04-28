@@ -50,6 +50,40 @@ class SynapseTokens {
   static const Color hyperedge = Color(0xFF3A3D4A);
   static const Color hyperedgeSoft = Color(0x803A3D4A); // ~0.50 alpha
 
+  /// Seed-19 category colors (8 groups by adjacent domain hue).
+  /// Single source for `primaryCategoryCode` → color mapping. WebView
+  /// receives this map through the graph payload — no inline hex in
+  /// `assets/graph/index.html`.
+  static const Map<String, Color> categoryColors19 = {
+    // 사람·관계·사회 (빨강)
+    'PER': Color(0xFFC85D5D),
+    'REL': Color(0xFFD87878),
+    'SOC': Color(0xFFB85D5D),
+    // 신체·심리 (보라)
+    'BOD': Color(0xFFB68AC8),
+    'MND': Color(0xFF9870B0),
+    // 음식·생활 (주황·노랑)
+    'FOD': Color(0xFFD9A55D),
+    'LIV': Color(0xFFD9C58D),
+    // 일·돈·법 (파랑)
+    'WRK': Color(0xFF6E9DC8),
+    'MON': Color(0xFF5D7DB0),
+    'LAW': Color(0xFF4E68A8),
+    // 기술·학습 (청자·녹)
+    'TEC': Color(0xFF6E8DA8),
+    'EDU': Color(0xFF5DAB8A),
+    // 자연·이동·여행 (청록)
+    'NAT': Color(0xFF8AC8B6),
+    'TRV': Color(0xFF7AB89A),
+    // 문화·취미 (자홍)
+    'CUL': Color(0xFFC88AB8),
+    'HOB': Color(0xFFC870A0),
+    // 종교·시간·행동 (보·회)
+    'REG': Color(0xFF8B7DA8),
+    'TIM': Color(0xFF7A7B82),
+    'ACT': Color(0xFF5D5E62),
+  };
+
   // ── Spacing ─────────────────────────────────────────────
   static const double s1 = 4;
   static const double s2 = 8;
