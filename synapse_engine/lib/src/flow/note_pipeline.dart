@@ -299,6 +299,13 @@ class NotePipeline {
       ''',
       [postId],
     );
+    if (rows.isEmpty) return;
+    final total = rows.length;
+    if (total >= 20) {
+      // ignore: avoid_print
+      print('[categorize] post=$postId — $total nodes pending');
+    }
+    var done = 0;
     for (final row in rows) {
       final nodeId = row['id']! as int;
       final nodeName = row['name']! as String;
@@ -334,6 +341,11 @@ class NotePipeline {
           categoryId: leafId,
           origin: 'ai',
         );
+      }
+      done++;
+      if (total >= 20 && (done % 50 == 0 || done == total)) {
+        // ignore: avoid_print
+        print('[categorize] $done/$total');
       }
     }
   }
