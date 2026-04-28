@@ -51,6 +51,7 @@ void main() {
       graph: engine.graph!,
       kiwi: kiwi,
       llm: engine.llm,
+      categorizeQueue: engine.categorizeQueue,
       clock: () => reference,
     );
     return (engine: engine, pipeline: pipeline, postId: postId);
@@ -386,6 +387,7 @@ void main() {
       );
       try {
         await s.pipeline.process(postId: s.postId, source: '허리 아픔');
+        await s.engine.categorizeQueue?.drain();
         final rows = await s.engine.db.rawQuery(
           '''
           SELECT n.name, c.name AS sub, p.name AS root, ncm.origin
@@ -419,6 +421,7 @@ void main() {
       );
       try {
         await s.pipeline.process(postId: s.postId, source: '허리 아픔');
+        await s.engine.categorizeQueue?.drain();
         final c = Sqflite.firstIntValue(
           await s.engine.db.rawQuery(
             'SELECT COUNT(*) FROM node_category_mentions',

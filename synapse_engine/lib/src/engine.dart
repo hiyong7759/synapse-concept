@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import 'config.dart';
 import 'db/migrations.dart';
 import 'db/schema.dart';
+import 'flow/categorize_queue.dart';
 import 'flow/synapse_flow.dart';
 import 'graph/ops.dart';
 import 'kiwi/kiwi_wasm.dart';
@@ -33,6 +34,7 @@ class SynapseEngine {
     required this.llm,
     required this.graph,
     required this.flow,
+    required this.categorizeQueue,
     required InferenceBackend? backend,
     required KiwiBackend? kiwi,
   })  : _backend = backend,
@@ -53,6 +55,12 @@ class SynapseEngine {
   /// Synapse-app high-level flow. `null` for reuse apps that don't activate
   /// the synapse/insight kinds.
   final SynapseFlow? flow;
+
+  /// Background queue that classifies nodes into seed-19 categories. `null`
+  /// when LLM or GraphOps are missing. The autosave path enqueues this; the
+  /// app boot path calls [startBackgroundBackfill] once to pick up nodes
+  /// added before the queue existed.
+  final CategorizeQueue? categorizeQueue;
 
   final InferenceBackend? _backend;
   final KiwiBackend? _kiwi;
@@ -143,18 +151,38 @@ class SynapseEngine {
       );
     }
 
+    // ── Categorize queue ───────────────────────────────
+    // Background classifier — needs both an LLM and graph ops. The queue
+    // is created here but never started automatically; app boot calls
+    // [startBackgroundBackfill] once it's ready to process old nodes.
+    CategorizeQueue? categorizeQueue;
+    if (tasks != null && graph != null) {
+      categorizeQueue =
+          CategorizeQueue(db: db, graph: graph, llm: tasks);
+    }
+
     return SynapseEngine._(
       config: config,
       db: db,
       llm: tasks,
       graph: graph,
       flow: flow,
+      categorizeQueue: categorizeQueue,
       backend: backend,
       kiwi: kiwi,
     );
   }
 
+  /// Enqueues every node lacking an `origin='ai'` category mention. App
+  /// boot calls this once after the engine is ready so nodes added before
+  /// F-bundle 7 (or before the queue existed) get classified in the
+  /// background. Safe to call repeatedly — dedup keeps the queue clean.
+  Future<void> startBackgroundBackfill() async {
+    await categorizeQueue?.enqueueAll();
+  }
+
   Future<void> dispose() async {
+    categorizeQueue?.stop();
     await _backend?.dispose();
     await _kiwi?.dispose();
     await db.close();

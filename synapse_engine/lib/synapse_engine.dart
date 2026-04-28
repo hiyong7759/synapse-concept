@@ -36,6 +36,7 @@ export 'src/models/graph_models.dart'
         GraphNodeCategory, GraphSentenceCategory;
 
 // F5 — synapse flow (note + retrieve + insight).
+export 'src/flow/categorize_queue.dart' show CategorizeQueue;
 export 'src/flow/results.dart'
     show NoteProcessResult, SynapseTurnResult, InsightResult;
 export 'src/flow/synapse_flow.dart'

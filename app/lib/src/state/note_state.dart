@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:io' show File, Platform;
 
 import 'package:flutter/foundation.dart'
@@ -40,6 +41,13 @@ final engineProvider = FutureProvider<SynapseEngine>((ref) async {
     ),
     kiwiOverride: kiwi,
   );
+
+  // Boot backfill — picks up nodes saved before F-bundle 7 (and any
+  // earlier dropped by classifier failures). Fire-and-forget: the queue
+  // runs in the background while the UI is already usable. Without this
+  // the existing 938 nodes would stay grey until the user touches each
+  // post (PLAN F-bundle 7 §부팅 backfill).
+  unawaited(engine.startBackgroundBackfill());
 
   ref.onDispose(engine.dispose);
   return engine;
