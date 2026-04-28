@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../theme/tokens.dart';
@@ -56,12 +58,21 @@ class _ResizableSplitState extends State<ResizableSplit> {
       builder: (context, constraints) {
         final total = constraints.maxWidth;
         // Re-clamp on resize — if the window shrinks, side panels shouldn't
-        // squeeze the centre below its floor.
-        final maxStart =
-            (total - widget.minCenter - widget.minEnd).clamp(0.0, widget.maxStart);
-        final maxEnd =
-            (total - widget.minCenter - _startWidth).clamp(0.0, widget.maxEnd);
+        // squeeze the centre below its floor. When the window is narrower
+        // than (minStart + minCenter + minEnd) the available space goes
+        // negative; we floor each upper bound to its corresponding minimum
+        // so clamp(min, max) never sees max<min (would throw).
+        final rawMaxStart = total - widget.minCenter - widget.minEnd;
+        final maxStart = math.max(
+          widget.minStart,
+          math.min(widget.maxStart, rawMaxStart),
+        );
         final start = _startWidth.clamp(widget.minStart, maxStart);
+        final rawMaxEnd = total - widget.minCenter - start;
+        final maxEnd = math.max(
+          widget.minEnd,
+          math.min(widget.maxEnd, rawMaxEnd),
+        );
         final end = _endWidth.clamp(widget.minEnd, maxEnd);
 
         return Row(
