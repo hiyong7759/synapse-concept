@@ -81,7 +81,28 @@
     // ── Bridge ────────────────────────────────────────────────
     // Flutter calls window.synapseSetGraph(jsonString) after the WebView
     // boots. The shape mirrors `GraphData` from synapse_engine.
+    //
+    // Reuse DataSets across pushes so already-stabilized nodes keep
+    // their positions instead of flickering on every save.
     let network = null;
+    let nodesData = null;
+    let edgesData = null;
+
+    // Replace whatever's in `ds` with `items`, computing the remove set
+    // ourselves — vis-network's DataSet has update() (insert/upsert) and
+    // remove() but no built-in "diff against full new collection".
+    function reconcile(ds, items) {
+      const oldIds = new Set(ds.getIds());
+      const newIds = new Set(items.map(x => x.id));
+      let added = 0;
+      for (const id of newIds) {
+        if (!oldIds.has(id)) added++;
+      }
+      const removed = [...oldIds].filter(id => !newIds.has(id));
+      ds.update(items);
+      if (removed.length > 0) ds.remove(removed);
+      return { added, removed: removed.length };
+    }
 
     function setStatus(text) {
       const el = document.getElementById('status');
@@ -113,7 +134,10 @@
       const sentCount = g.sentences ? g.sentences.length : 0;
       if (nodeCount === 0) {
         setStatus('노드 없음 — 노트를 작성하고 ⌘S 로 의미 처리하세요.');
-        if (network) { network.destroy(); network = null; }
+        if (network) {
+          network.destroy();
+          network = null;
+        }
         return;
       }
 
@@ -236,6 +260,10 @@
       const visEdges = (g.mentions || []).map(m => {
         const toInsight = insightSentenceIds.has(m.sentenceId);
         return {
+          // Stable id so DataSet.update / remove can reconcile across
+          // subsequent pushes instead of clear-and-readd (which would
+          // momentarily strip the springs from the layout).
+          id: 'e:' + m.nodeId + '-' + m.sentenceId,
           from: 'n:' + m.nodeId,
           to: 's:' + m.sentenceId,
           color: toInsight
@@ -275,27 +303,52 @@
         nodes: { borderWidthSelected: 0 },
         edges: { selectionWidth: 0 },
       };
-      if (network) network.destroy();
-      network = new vis.Network(container, { nodes: visNodes, edges: visEdges }, options);
-      network.once('stabilizationIterationsDone', () => {
-        network.setOptions({ physics: { enabled: false } });
-      });
-      // Click bridge — node clicks send `nodeId` (int) to Flutter; clicks on
-      // sentence baskets or empty canvas send `null` so the host can clear
-      // the selection. Vis-network ids are prefixed (`n:` / `s:`) — strip.
-      network.on('click', (params) => {
-        let nodeId = null;
-        if (params && Array.isArray(params.nodes) && params.nodes.length > 0) {
-          const raw = String(params.nodes[0]);
-          if (raw.startsWith('n:')) {
-            nodeId = parseInt(raw.slice(2), 10);
-            if (Number.isNaN(nodeId)) nodeId = null;
+      if (network === null) {
+        nodesData = new vis.DataSet(visNodes);
+        edgesData = new vis.DataSet(visEdges);
+        network = new vis.Network(
+          container,
+          { nodes: nodesData, edges: edgesData },
+          options,
+        );
+        // Single handler for the lifetime of the network — fires after
+        // the initial 1500-iter stabilization and after every subsequent
+        // stabilize(300). Each run leaves physics disabled so already
+        // settled nodes don't drift.
+        network.on('stabilizationIterationsDone', () => {
+          network.setOptions({ physics: { enabled: false } });
+        });
+        // Click bridge — node clicks send `nodeId` (int) to Flutter;
+        // clicks on sentence baskets or empty canvas send `null` so the
+        // host can clear the selection. Vis-network ids are prefixed
+        // (`n:` / `s:`) — strip.
+        network.on('click', (params) => {
+          let nodeId = null;
+          if (params && Array.isArray(params.nodes) && params.nodes.length > 0) {
+            const raw = String(params.nodes[0]);
+            if (raw.startsWith('n:')) {
+              nodeId = parseInt(raw.slice(2), 10);
+              if (Number.isNaN(nodeId)) nodeId = null;
+            }
           }
+          if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+            window.flutter_inappwebview.callHandler('synapseNodeClicked', nodeId);
+          }
+        });
+      } else {
+        const nodeDelta = reconcile(nodesData, visNodes);
+        const edgeDelta = reconcile(edgesData, visEdges);
+        // Only kick physics back on when topology actually changed.
+        // Color-only updates (categorize queue draining) shouldn't
+        // disturb already-placed nodes.
+        const topologyChanged =
+            nodeDelta.added > 0 || nodeDelta.removed > 0 ||
+            edgeDelta.added > 0 || edgeDelta.removed > 0;
+        if (topologyChanged) {
+          network.setOptions({ physics: { enabled: true } });
+          network.stabilize(300);
         }
-        if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-          window.flutter_inappwebview.callHandler('synapseNodeClicked', nodeId);
-        }
-      });
+      }
       setStatus('노드 ' + nodeCount + ' · 바구니 ' + sentCount);
     }
 
