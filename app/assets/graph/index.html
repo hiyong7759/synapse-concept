@@ -241,13 +241,15 @@
           enabled: true,
           // Bipartite force-layout: mentions are springs that pull a node
           // and its sentence basket together; barnesHut repels everything
-          // else. avoidOverlap=1 keeps node dots from intersecting.
-          stabilization: { iterations: 400, fit: true },
+          // else. avoidOverlap=1 keeps node dots from intersecting. Values
+          // tuned for ~1000 node graphs — weaker repulsion (or fewer
+          // iterations) leaves visible overlap at this density.
+          stabilization: { iterations: 1500, fit: true },
           barnesHut: {
-            gravitationalConstant: -3500,
-            centralGravity: 0.2,
-            springLength: 80,
-            springConstant: 0.04,
+            gravitationalConstant: -12000,
+            centralGravity: 0.15,
+            springLength: 140,
+            springConstant: 0.03,
             damping: 0.9,
             avoidOverlap: 1.0,
           },
