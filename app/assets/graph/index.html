@@ -16,6 +16,7 @@
       --bg-2: #0E1014;
       --border: #252730;
       --border-strong: #3A3D4A;
+      --text: #E8E4D9;
       --text-2: #B8B4A9;
       --text-3: #7A7B82;
       --text-4: #555761;
@@ -194,46 +195,56 @@
         }
       }
 
-      // Sentence basket dots — small diamonds. Insight sentences glow
-      // amber (가치 B 통찰 중력). Otherwise color by user-heading root,
-      // or fall back to gray when no heading is mapped.
+      // Sentence basket dots. Only `origin='insight'` sentences are drawn
+      // (amber diamond + glow — 가치 B 통찰 중력). Regular sentences stay
+      // in the dataset as size-0 invisible anchors so the bipartite force
+      // layout still pulls co-occurring nodes together — they just don't
+      // add visual noise. The "what's in this basket" answer lives in the
+      // node-click detail panel (F8'-3) instead of on the canvas.
       const sentencePost = new Map();
+      const insightSentenceIds = new Set();
       for (const s of (g.sentences || [])) {
         sentencePost.set(s.id, s.postId);
         const isInsight = s.origin === 'insight';
-        let fill;
+        if (isInsight) insightSentenceIds.add(s.id);
         if (isInsight) {
-          fill = NODE_INSIGHT;
+          visNodes.push({
+            id: 's:' + s.id,
+            label: ' ',
+            color: { background: NODE_INSIGHT, border: NODE_INSIGHT },
+            size: 6,
+            shape: 'diamond',
+            shadow: { enabled: true, color: 'rgba(217,188,131,0.6)', size: 10, x: 0, y: 0 },
+          });
         } else {
-          const catId = sentenceCatId.get(s.id);
-          const root = catId == null ? null : rootOf(catId);
-          if (root && root.code == null) {
-            // user-heading root
-            fill = colorForUserRoot(root.id);
-          } else {
-            fill = getCss('--text-4');
-          }
+          // Hidden anchor — invisible to the user, alive to the physics.
+          visNodes.push({
+            id: 's:' + s.id,
+            label: ' ',
+            color: { background: 'rgba(0,0,0,0)', border: 'rgba(0,0,0,0)' },
+            size: 0.1,
+            shape: 'dot',
+          });
         }
-        visNodes.push({
-          id: 's:' + s.id,
-          label: ' ',
-          color: { background: fill, border: fill },
-          size: isInsight ? 6 : 3,
-          shape: 'diamond',
-          shadow: isInsight
-              ? { enabled: true, color: 'rgba(217,188,131,0.6)', size: 10, x: 0, y: 0 }
-              : { enabled: false },
-        });
       }
 
-      // Edges = mentions, 1:1. (node ↔ sentence basket).
-      const visEdges = (g.mentions || []).map(m => ({
-        from: 'n:' + m.nodeId,
-        to: 's:' + m.sentenceId,
-        color: { color: getCss('--border-strong'), opacity: 0.35 },
-        width: 0.5,
-        smooth: false,
-      }));
+      // Edges = mentions, 1:1 (node ↔ sentence basket). Edges to insight
+      // sentences get a faint amber line (helps the eye trace which nodes
+      // contributed to a 통찰); edges to regular sentences are fully
+      // transparent — the force layout uses them as springs without
+      // drawing the cobweb that 4500+ mentions would otherwise produce.
+      const visEdges = (g.mentions || []).map(m => {
+        const toInsight = insightSentenceIds.has(m.sentenceId);
+        return {
+          from: 'n:' + m.nodeId,
+          to: 's:' + m.sentenceId,
+          color: toInsight
+              ? { color: getCss('--accent-line'), opacity: 0.4 }
+              : { color: 'rgba(0,0,0,0)', opacity: 0 },
+          width: toInsight ? 0.6 : 0.4,
+          smooth: false,
+        };
+      });
 
       const container = document.getElementById('graph');
       const options = {
