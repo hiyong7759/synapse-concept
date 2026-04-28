@@ -202,6 +202,39 @@ void main() {
       expect(byId[userCatId]!.code, isNull);
     });
 
+    test('primaryCategoryCode walks leaf → root for sub-category mentions',
+        () async {
+      // LLM categorize attaches to a leaf (BOD.disease), not the root.
+      // Color attribution still needs the root code, so getGraph must
+      // walk parent_id up before reading cat.code.
+      final pid = await engine.db.insert('posts', {'kind': 'note'});
+      final huri = await engine.graph!.upsertNode('허리');
+      final sid = await engine.graph!
+          .addSentence(postId: pid, text: '허리 아픔');
+      await engine.graph!.addMention(nodeId: huri, sentenceId: sid);
+
+      final bodRoot = (await engine.db.query(
+        'categories',
+        columns: ['id'],
+        where: 'name = ? AND parent_id IS NULL',
+        whereArgs: ['BOD'],
+      )).single['id']! as int;
+      final disease = (await engine.db.query(
+        'categories',
+        columns: ['id'],
+        where: 'name = ? AND parent_id = ?',
+        whereArgs: ['disease', bodRoot],
+      )).single['id']! as int;
+      await engine.graph!.addCategoryMention(
+        nodeId: huri,
+        categoryId: disease,
+        origin: 'ai',
+      );
+
+      final g = await flow.getGraph();
+      expect(g.nodes.single.primaryCategoryCode, 'BOD');
+    });
+
     test('postId + nodeIds together → ArgumentError', () async {
       expect(
         () => flow.getGraph(postId: 1, nodeIds: const [1]),

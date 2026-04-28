@@ -581,12 +581,21 @@ class SynapseFlow {
     // primaryCategoryCode per node — first seed-root code among that
     // node's categories, ordered by category_id ascending so the result
     // is deterministic.
+    //
+    // LLM categorize attaches to a leaf (`BOD.disease` → disease row),
+    // not to the seed root, so we walk parent_id up to the root before
+    // reading `cat.code` — leaves have `code == null`. The category
+    // ancestor chain was already fetched above into [categories].
     final categoryById = {for (final c in categories) c.id: c};
     final primaryByNode = <int, String>{};
     for (final nc in nodeCategories) {
-      final cat = categoryById[nc.categoryId];
-      if (cat == null || cat.code == null) continue;
-      primaryByNode.putIfAbsent(nc.nodeId, () => cat.code!);
+      var cat = categoryById[nc.categoryId];
+      while (cat != null && cat.code == null && cat.parentId != null) {
+        cat = categoryById[cat.parentId!];
+      }
+      final code = cat?.code;
+      if (code == null) continue;
+      primaryByNode.putIfAbsent(nc.nodeId, () => code);
     }
 
     final nodes = nodeRows.map((r) {
