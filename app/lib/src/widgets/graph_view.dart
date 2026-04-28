@@ -84,6 +84,10 @@ class _VisNetworkGraphViewState extends State<VisNetworkGraphView> {
             'code': c.code,
           },
       ],
+      'nodeCategories': [
+        for (final nc in data.nodeCategories)
+          {'nodeId': nc.nodeId, 'categoryId': nc.categoryId},
+      ],
       'sentenceCategories': [
         for (final sc in data.sentenceCategories)
           {'sentenceId': sc.sentenceId, 'categoryId': sc.categoryId},

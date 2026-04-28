@@ -152,32 +152,6 @@
       // (origin='insight') 만 sentence 자체가 앰버로 강조됨 — 가치 B
       // (Hebbian 통찰 허브) 는 본체 sentence 가 그 자체로 시각의 무게
       // 중심.
-      const LABEL_MIN_DEGREE = 4;
-      const visNodes = g.nodes.map(n => {
-        const r = nodeRadius(n);
-        const fill = nodeColor(n);
-        const showLabel = n.isInsight || (n.degree || 0) >= LABEL_MIN_DEGREE;
-        return {
-          id: 'n:' + n.id,
-          label: showLabel ? (n.isInsight ? '✦ ' + n.name : n.name) : ' ',
-          color: { background: fill, border: fill },
-          size: r,
-          font: {
-            color: n.isInsight
-              ? NODE_INSIGHT
-              : (n.degree || 0) >= 8
-                  ? getCss('--text')
-                  : getCss('--text-2'),
-            face: 'JetBrains Mono, ui-monospace, monospace',
-            size: n.isInsight ? 12 : (n.degree >= 8 ? 11 : 10),
-            strokeWidth: 0,
-          },
-          borderWidth: n.isInsight ? 2 : 0,
-          shadow: shadowFor(n, fill),
-          shape: 'dot',
-        };
-      });
-
       // Build a category lookup so we can walk a sentence's heading
       // category up to its root (parent_id IS NULL). The root tells us
       // whether it's a seed-19 root or a user-heading root → drives color.
@@ -190,6 +164,47 @@
         }
         return cur;
       }
+
+      // Per-node multi-category palette: every seed-root color the node
+      // maps to (deduped, in category_id order). Drives the segmented
+      // border ring drawn by ctxRenderer below — N>=2 categories → ring
+      // gets N equal arcs, N==1 → single-color outline, N==0 → no border.
+      const nodeRingColors = new Map();
+      for (const nc of (g.nodeCategories || [])) {
+        const root = rootOf(nc.categoryId);
+        if (!root || !root.code || !CAT_COLOR[root.code]) continue;
+        const color = CAT_COLOR[root.code];
+        const list = nodeRingColors.get(nc.nodeId) || [];
+        if (!list.includes(color)) list.push(color);
+        nodeRingColors.set(nc.nodeId, list);
+      }
+
+      const LABEL_MIN_DEGREE = 4;
+      const visNodes = g.nodes.map(n => {
+        const r = nodeRadius(n);
+        const fill = nodeColor(n);
+        const ring = nodeRingColors.get(n.id) || [];
+        const showLabel = n.isInsight || (n.degree || 0) >= LABEL_MIN_DEGREE;
+        return {
+          id: 'n:' + n.id,
+          label: showLabel ? (n.isInsight ? '✦ ' + n.name : n.name) : ' ',
+          font: {
+            color: n.isInsight
+              ? NODE_INSIGHT
+              : (n.degree || 0) >= 8
+                  ? getCss('--text')
+                  : getCss('--text-2'),
+            face: 'JetBrains Mono, ui-monospace, monospace',
+            size: n.isInsight ? 12 : (n.degree >= 8 ? 11 : 10),
+            strokeWidth: 0,
+          },
+          shape: 'custom',
+          // vis dot rebuilt manually so multi-category nodes can show every
+          // seed-root color in the border. Label + font are still drawn by
+          // vis externally via the nodeDimensions return.
+          ctxRenderer: makeNodeRenderer({ r, fill, ring, n }),
+        };
+      });
 
       // Distinct user-heading roots (parent_id IS NULL && code IS NULL)
       // get assigned a distinct hue from a small palette. Seed-19 roots
@@ -367,15 +382,71 @@
       return NODE_FALLBACK;
     }
 
-    function shadowFor(n, fill) {
-      if (n.isInsight) {
-        return { enabled: true, color: 'rgba(217,188,131,0.7)', size: 14, x: 0, y: 0 };
-      }
-      const isHub = (n.degree || 0) >= 8;
-      if (isHub) {
-        return { enabled: true, color: fill + '88', size: 8, x: 0, y: 0 };
-      }
-      return { enabled: false };
+    // Returns a ctxRenderer that draws a vis "dot" by hand so multi-
+    // category nodes can show every seed-root color in the border ring.
+    // Label/font are still drawn by vis externally from the node's
+    // `font` config — we only return nodeDimensions for text placement.
+    function makeNodeRenderer({ r, fill, ring, n }) {
+      return ({ ctx, x, y }) => ({
+        drawNode: () => {
+          // Glow — insight: amber halo. Hub (degree ≥ 8): tinted halo of
+          // primary fill. Plain nodes: none.
+          if (n.isInsight) {
+            ctx.shadowColor = 'rgba(217,188,131,0.7)';
+            ctx.shadowBlur = 14;
+          } else if ((n.degree || 0) >= 8) {
+            ctx.shadowColor = fill + '88';
+            ctx.shadowBlur = 8;
+          } else {
+            ctx.shadowColor = 'transparent';
+            ctx.shadowBlur = 0;
+          }
+
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, Math.PI * 2);
+          ctx.fillStyle = fill;
+          ctx.fill();
+
+          // Drop the shadow before stroking — otherwise the halo doubles
+          // onto the border.
+          ctx.shadowColor = 'transparent';
+          ctx.shadowBlur = 0;
+
+          // Border: insight overrides categories with a 2 px accent-2
+          // outline (visual signal trumps category set). Otherwise the
+          // seed-root colors form an equal-arc ring; one color → solid
+          // outline, none → no border.
+          if (n.isInsight) {
+            ctx.strokeStyle = NODE_INSIGHT;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.stroke();
+            return;
+          }
+          if (ring.length === 0) return;
+          ctx.lineWidth = 1.5;
+          if (ring.length === 1) {
+            ctx.strokeStyle = ring[0];
+            ctx.beginPath();
+            ctx.arc(x, y, r, 0, Math.PI * 2);
+            ctx.stroke();
+            return;
+          }
+          const seg = (Math.PI * 2) / ring.length;
+          for (let i = 0; i < ring.length; i++) {
+            ctx.strokeStyle = ring[i];
+            ctx.beginPath();
+            ctx.arc(
+              x, y, r,
+              -Math.PI / 2 + i * seg,
+              -Math.PI / 2 + (i + 1) * seg,
+            );
+            ctx.stroke();
+          }
+        },
+        nodeDimensions: { width: r * 2, height: r * 2 },
+      });
     }
 
     // Boot: tell Flutter we're ready so it can push the graph data. The
