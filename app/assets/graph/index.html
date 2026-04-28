@@ -269,6 +269,22 @@
       network.once('stabilizationIterationsDone', () => {
         network.setOptions({ physics: { enabled: false } });
       });
+      // Click bridge — node clicks send `nodeId` (int) to Flutter; clicks on
+      // sentence baskets or empty canvas send `null` so the host can clear
+      // the selection. Vis-network ids are prefixed (`n:` / `s:`) — strip.
+      network.on('click', (params) => {
+        let nodeId = null;
+        if (params && Array.isArray(params.nodes) && params.nodes.length > 0) {
+          const raw = String(params.nodes[0]);
+          if (raw.startsWith('n:')) {
+            nodeId = parseInt(raw.slice(2), 10);
+            if (Number.isNaN(nodeId)) nodeId = null;
+          }
+        }
+        if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+          window.flutter_inappwebview.callHandler('synapseNodeClicked', nodeId);
+        }
+      });
       setStatus('노드 ' + nodeCount + ' · 바구니 ' + sentCount);
     }
 

@@ -16,8 +16,13 @@ import '../theme/tokens.dart';
 /// This milestone (F8'-2) only pushes data into JS — click / search /
 /// filter live in F8'-3 and F8'-4.
 class VisNetworkGraphView extends StatefulWidget {
-  const VisNetworkGraphView({super.key, required this.data});
+  const VisNetworkGraphView({super.key, required this.data, this.onNodeTap});
   final GraphData? data;
+
+  /// Fires when the user clicks a node in the WebView. `null` payload means
+  /// the click landed on empty canvas or a sentence basket — host should
+  /// clear its selection.
+  final void Function(int? nodeId)? onNodeTap;
 
   @override
   State<VisNetworkGraphView> createState() => _VisNetworkGraphViewState();
@@ -129,6 +134,16 @@ class _VisNetworkGraphViewState extends State<VisNetworkGraphView> {
             callback: (args) {
               _ready = true;
               _maybePush();
+              return null;
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: 'synapseNodeClicked',
+            callback: (args) {
+              final cb = widget.onNodeTap;
+              if (cb == null) return null;
+              final raw = args.isEmpty ? null : args.first;
+              cb(raw is int ? raw : null);
               return null;
             },
           );

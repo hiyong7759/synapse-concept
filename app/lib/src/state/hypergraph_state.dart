@@ -23,3 +23,25 @@ final hypergraphGraphProvider =
   }
   return flow.getGraph();
 });
+
+/// Currently-selected node in `/hypergraph`. `null` = nothing selected
+/// (detail panel shows the empty hint). Set by VisNetworkGraphView's
+/// click bridge.
+final selectedNodeIdProvider = StateProvider<int?>((ref) => null);
+
+/// Aliases for [nodeId]. Lives outside [hypergraphGraphProvider]'s
+/// `GraphData` because aliases would inflate the snapshot for thousands
+/// of nodes most users never click. Fetched on demand when the detail
+/// panel opens for a node.
+final nodeAliasesProvider =
+    FutureProvider.autoDispose.family<List<String>, int>((ref, nodeId) async {
+  final engine = await ref.watch(engineProvider.future);
+  final rows = await engine.db.query(
+    'aliases',
+    columns: ['alias'],
+    where: 'node_id = ?',
+    whereArgs: [nodeId],
+    orderBy: 'alias',
+  );
+  return [for (final r in rows) r['alias']! as String];
+});
