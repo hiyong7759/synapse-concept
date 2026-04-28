@@ -6,8 +6,14 @@ import 'note_state.dart';
 /// Full-snapshot graph for `/hypergraph`. F7d / F9 will add their own
 /// providers (postId / nodeIds filtered) using the same `flow.getGraph`
 /// entry point.
+///
+/// Not auto-disposed — the StatefulShellRoute keeps `/hypergraph` mounted
+/// across tab switches anyway, but explicitly cacheing the snapshot also
+/// guards reuse apps that might mount the page outside the shell. The
+/// provider is invalidated on ⌘S meaning-pass completion (F8'-3c) so new
+/// nodes flow in without a full refetch on every tab visit.
 final hypergraphGraphProvider =
-    FutureProvider.autoDispose<GraphData>((ref) async {
+    FutureProvider<GraphData>((ref) async {
   final engine = await ref.watch(engineProvider.future);
   final flow = engine.flow;
   if (flow == null) {

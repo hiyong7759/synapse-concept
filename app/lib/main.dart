@@ -28,20 +28,32 @@ class SynapseApp extends StatelessWidget {
   }
 }
 
+/// All three routes live inside a [StatefulShellRoute.indexedStack] so that
+/// switching tabs keeps each branch's widget tree alive. Without this the
+/// `/hypergraph` WebView would be disposed every time the user visits
+/// `/note`, forcing a full vis-network stabilization (1500 iterations) on
+/// every return — visible as a 1~2 second freeze. With the shell, the
+/// WebView, its DataSet, and the hypergraph FutureProvider all stay
+/// resident, so re-entering the route is instant.
 final GoRouter _router = GoRouter(
   initialLocation: '/note',
   routes: [
-    GoRoute(
-      path: '/note',
-      builder: (context, state) => const NotePage(),
-    ),
-    GoRoute(
-      path: '/synapse',
-      builder: (context, state) => const SynapsePage(),
-    ),
-    GoRoute(
-      path: '/hypergraph',
-      builder: (context, state) => const HypergraphPage(),
+    StatefulShellRoute.indexedStack(
+      builder: (context, state, navigationShell) => navigationShell,
+      branches: [
+        StatefulShellBranch(routes: [
+          GoRoute(path: '/note', builder: (_, __) => const NotePage()),
+        ]),
+        StatefulShellBranch(routes: [
+          GoRoute(path: '/synapse', builder: (_, __) => const SynapsePage()),
+        ]),
+        StatefulShellBranch(routes: [
+          GoRoute(
+            path: '/hypergraph',
+            builder: (_, __) => const HypergraphPage(),
+          ),
+        ]),
+      ],
     ),
   ],
 );
