@@ -103,7 +103,7 @@ class _VisNetworkGraphViewState extends State<VisNetworkGraphView> {
   };
 
   static String _hex(Color c) =>
-      '#${c.value.toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
+      '#${c.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}';
 
   @override
   void didUpdateWidget(covariant VisNetworkGraphView oldWidget) {
