@@ -40,4 +40,4 @@ export 'src/flow/categorize_queue.dart' show CategorizeQueue;
 export 'src/flow/results.dart'
     show NoteProcessResult, SynapseTurnResult, InsightResult;
 export 'src/flow/synapse_flow.dart'
-    show SynapseFlow, PostMeta, PostDetail, SentenceRow;
+    show SynapseFlow, PostMeta, PostDetail, SentenceRow, RecentNode;

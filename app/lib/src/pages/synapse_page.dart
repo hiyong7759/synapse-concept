@@ -2,16 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../layout/responsive.dart';
 import '../theme/tokens.dart';
-import '../widgets/components.dart';
 import '../widgets/graph_panel_placeholder.dart';
 import '../widgets/post_sidebar.dart';
 import '../widgets/resizable_split.dart';
+import '../widgets/synapse_thread.dart';
 import '../widgets/top_bar.dart';
 
-/// `/synapse` placeholder. F9 will replace the centre column with the Q/A
-/// thread, the `[⬆ 통찰로 승격]` modal, and the per-session retrieve-cache
-/// graph (right rail). The 3-pane chrome here is the final layout — only
-/// the centre is stubbed.
+/// `/synapse` route. The 3-pane chrome (post sidebar · Q/A thread ·
+/// session graph panel) matches DESIGN_UI §/synapse. The graph panel
+/// (right rail) lands in 마일스톤 D — for now it stays as a placeholder
+/// so the layout doesn't shift when the panel ships.
 class SynapsePage extends StatelessWidget {
   const SynapsePage({super.key});
 
@@ -37,7 +37,7 @@ class _DesktopLayout extends StatelessWidget {
           Expanded(
             child: ResizableSplit(
               start: PostSidebar(),
-              center: _SynapseStub(showGraphHint: true),
+              center: SynapseThread(),
               end: GraphPanelPlaceholder(),
             ),
           ),
@@ -71,58 +71,8 @@ class _MobileLayout extends StatelessWidget {
               ),
             ),
           ),
-          const Expanded(child: _SynapseStub(showGraphHint: false)),
+          const Expanded(child: SynapseThread()),
         ],
-      ),
-    );
-  }
-}
-
-class _SynapseStub extends StatelessWidget {
-  const _SynapseStub({required this.showGraphHint});
-  final bool showGraphHint;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: SynapseTokens.bg,
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(SynapseTokens.s6),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SBrandMark(size: 56, glow: true),
-              const SizedBox(height: SynapseTokens.s5),
-              Text(
-                '/synapse',
-                style: SynapseTokens.displayStyle(
-                  size: SynapseTokens.t3xl,
-                  color: SynapseTokens.text,
-                ),
-              ),
-              const SizedBox(height: SynapseTokens.s3),
-              Text(
-                'F9 에서 구현 — Q/A 스레드, 통찰 승격 모달, 세션 그래프 패널.',
-                style: SynapseTokens.bodyStyle(
-                  size: SynapseTokens.tBase,
-                  color: SynapseTokens.text2,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              if (showGraphHint) ...[
-                const SizedBox(height: SynapseTokens.s2),
-                Text(
-                  '(데스크톱 레이아웃 — 그래프 패널 자리)',
-                  style: SynapseTokens.bodyStyle(
-                    size: SynapseTokens.tSm,
-                    color: SynapseTokens.text3,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
       ),
     );
   }

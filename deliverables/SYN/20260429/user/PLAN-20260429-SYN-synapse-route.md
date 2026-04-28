@@ -16,42 +16,41 @@
 | 통찰 승격 | `SynapseFlow.promoteToInsight({body, snapshotNodeIds, title?}) → InsightResult` | [synapse_engine/lib/src/flow/synapse_flow.dart:197](../../../../synapse_engine/lib/src/flow/synapse_flow.dart#L197) |
 | 사이드바 그룹화 | `kind='synapse'` / `kind='insight'` | [app/lib/src/widgets/post_sidebar.dart:217,299](../../../../app/lib/src/widgets/post_sidebar.dart#L217) |
 
-→ 앱 측 = **상태 어댑터 + UI 위젯만 신규**. 엔진 변경 없음.
+→ 앱 측 = **상태 어댑터 + UI 위젯**. 엔진은 빈 상태 추천 칩용 helper 1개(`recentTopNodes`) 추가만.
 
 ## 3. 사용자 결정 사항 (사전 합의)
 
 - 통찰 승격 후 **즉시** 시각화에 ✦ 표시 (사이드바 + retrieve 캐시 그래프)
 - BFS 탐색 시각화는 **별 마일스톤 (F)** 으로 분리, 본 PLAN 외
-- 마일스톤 진행 순서: **A → B → C → E**
+- **더미 stub 단계 폐지** — 마일스톤 A 와 B 를 통합해 처음부터 `synapseTurn()` 실 호출로 동작
+- **빈 상태 = 동적 추천 칩** — 0 메시지일 때 사용자 자기 데이터 기반으로 칩 자동 생성. 결정론적 SQL (최근 7일 mention top 노드) → 4 패턴에 1:1 매핑. LLM 호출 없음(즉시 표시). 노드 0 일 땐 가이드 카드. 클릭 시 입력창에 자동 채움 (즉시 전송 아님)
+- **칩 패턴 4 종**: `{X} 어떻게 진행돼?` / `{X} 최근 정리해줘` / `{X} 와 {Y} 가 어떻게 연결돼?` / `{X} 에 대해 내가 한 결정은?`
+- 마일스톤 진행 순서: **AB(통합) → C → E**
 
 ## 4. 마일스톤
 
-### 마일스톤 A — Q/A 스레드 UI 스켈레톤 (인출 stub)
+### 마일스톤 AB — Q/A 스레드 + 인출 파이프라인 wiring
 
-- **목적**: 중앙 컬럼에 입력창·메시지 리스트·Q/A 카드 렌더 (엔진 호출 없이 더미 답변)
-- **변경 파일**:
-  - 신규: `app/lib/src/widgets/synapse_thread.dart` — 메시지 리스트 + 입력 바 (입력 바는 [note_editor.dart](../../../../app/lib/src/widgets/note_editor.dart) 의 `TextEditingController` 패턴 차용)
-  - 신규: `app/lib/src/widgets/q_card.dart`, `a_card.dart` — Q/A 카드. [correction_card.dart](../../../../app/lib/src/widgets/correction_card.dart) 의 Container + padding/border + 액션 패턴 차용. 액션 버튼은 기존 `SButton`, 배지는 `SBadge` 직접 사용
-  - 수정: `app/lib/src/pages/synapse_page.dart` — `_SynapseStub` → `SynapseThread` 로 교체
-- **B 와의 경계**: A 의 위젯은 B 에서 **그대로 유지**되며 state hook 만 추가/교체. 더미 답변 분기만 폐기 → 낭비 코드 없음
-- **검증**: 데스크톱·모바일 양쪽에서 입력 → 더미 Q/A 카드 표시 (스크린샷 dogfood)
-- **회귀 리스크**: 없음 (synapse_page 단독 수정, 다른 라우트 무관)
-- **롤백**: 1 커밋 revert
-
-### 마일스톤 B — 인출 파이프라인 wiring
-
-- **목적**: 입력 → `synapseTurn()` 호출 → 답변 카드 갱신, `postId` 유지로 follow-up 가능
+- **목적**: 중앙 컬럼에 입력창·메시지 리스트·Q/A 카드 렌더 + 입력 → `synapseTurn()` 실 호출 → 답변 카드 갱신. 더미 단계 없이 처음부터 실 동작
 - **변경 파일**:
   - 신규: `app/lib/src/state/synapse_state.dart` — 활성 postId·메시지 리스트·loading 상태. [note_state.dart](../../../../app/lib/src/state/note_state.dart) + [note_process.dart](../../../../app/lib/src/state/note_process.dart) 패턴 추종 (Riverpod, copyWith). 새 post/insight 발생 시 `postListProvider.invalidate()` 표준 패턴 사용
-  - 수정: 마일스톤 A 의 입력 바 → state 호출
-- **응답성**: `synapseTurn()` 5~10초 블록. UI 는 `loading` 상태로 입력 비활성화 + 진행 indicator 표시, await 비동기 처리(Dart Future 기본)로 main isolate 멈춤 없음. BFS 탐색 시각화는 F 마일스톤
+  - 신규: `app/lib/src/widgets/synapse_thread.dart` — 메시지 리스트 + 하단 입력 바 + 빈 상태 추천 칩. 입력 바는 [note_editor.dart](../../../../app/lib/src/widgets/note_editor.dart) 의 `TextEditingController` 패턴 차용
+  - 신규: `app/lib/src/widgets/q_card.dart`, `a_card.dart` — Q/A 카드. [correction_card.dart](../../../../app/lib/src/widgets/correction_card.dart) 의 Container + padding/border + 액션 패턴 차용. 액션 버튼은 기존 `SButton`, 배지는 `SBadge` 직접 사용. 답변 카드의 `[⬆ 통찰로 승격]`/`[재질문]`/`[복사]` 자리는 슬롯만, wire 는 마일스톤 C
+  - 신규: `app/lib/src/widgets/suggestion_chips.dart` — 빈 상태 동적 추천 칩. `recentTopNodes` 호출 → 4 패턴 매핑. 노드 0 시 가이드 카드 fallback. 클릭 시 입력창 controller 에 텍스트 채움
+  - 수정: `synapse_engine/lib/src/flow/synapse_flow.dart` — `recentTopNodes({limit, daysBack})` helper 추가 (결정론적 SQL, LLM 의존 0)
+  - 수정: `app/lib/src/pages/synapse_page.dart` — `_SynapseStub` → `SynapseThread` 로 교체
+- **응답성**: `synapseTurn()` 5~10초 블록. UI 는 `loading` 상태로 입력 비활성화 + 진행 indicator 표시. await 비동기 처리(Dart Future 기본)로 main isolate 멈춤 없음. BFS 탐색 시각화는 F 마일스톤
 - **검증**:
-  - 빈 DB 에서 1 턴 → DB `posts` 에 `kind='synapse'` 행 + Q/A sentence 2 개 확인
-  - 같은 세션 follow-up 2 턴 → 동일 postId 에 sentence 누적
+  - 빈 DB → 추천 칩 표시. 칩 클릭 → 입력창 채움 (자동 전송 X)
+  - 입력 → 전송 → DB `posts.kind='synapse'` 행 + Q/A sentence 2 개 확인
+  - 같은 세션 follow-up → 동일 postId 에 sentence 누적
   - LLM 미주입 환경 → fallback 답변 정상 표시
-  - 호출 중 입력창 lockout + indicator 노출, 다른 UI(스크롤·사이드바 클릭) 동작 유지 확인
-- **회귀 리스크**: 약함. 엔진은 검증 완료. state 신규라 다른 라우트 영향 없음
-- **롤백**: state·page 양쪽 revert
+  - 호출 중 입력창 lockout + indicator 노출, 사이드바·스크롤은 동작 유지
+  - 데스크톱·모바일 양쪽 dogfood (스크린샷)
+  - 기존 `/note`, `/hypergraph` 라우트 회귀 없음
+  - `flutter analyze` 클린
+- **회귀 리스크**: 약함 (synapse_page 외부 영향 없음, 신규 state)
+- **롤백**: 신규 파일 삭제 + page revert
 
 ### 마일스톤 C — 통찰 즉시 승격
 

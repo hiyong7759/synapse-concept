@@ -627,6 +627,41 @@ class SynapseFlow {
     nodeCategories: [],
   );
 
+  // ── suggestion data ─────────────────────────────────────
+
+  /// Top nodes mentioned in sentences from the last [daysBack] days,
+  /// ordered by mention count (desc) then most-recent appearance. Used
+  /// by `/synapse` empty-state suggestion chips to seed question
+  /// templates from the user's own recent activity. Returns an empty
+  /// list when the window holds no mentions — UI falls back to a
+  /// guidance card.
+  Future<List<RecentNode>> recentTopNodes({
+    int limit = 5,
+    int daysBack = 7,
+  }) async {
+    if (limit <= 0) return const [];
+    final rows = await db.rawQuery(
+      '''
+      SELECT n.id AS id, n.name AS name, COUNT(*) AS cnt
+      FROM node_sentence_mentions m
+      JOIN nodes n ON n.id = m.node_id
+      JOIN sentences s ON s.id = m.sentence_id
+      WHERE s.created_at > datetime('now', ?)
+      GROUP BY n.id
+      ORDER BY cnt DESC, MAX(s.created_at) DESC
+      LIMIT ?
+      ''',
+      ['-$daysBack days', limit],
+    );
+    return rows
+        .map((r) => RecentNode(
+              id: r['id']! as int,
+              name: r['name']! as String,
+              mentionCount: r['cnt']! as int,
+            ))
+        .toList(growable: false);
+  }
+
   /// Returns the seed-root code for a category row when it's a top-level
   /// seed (parent_id IS NULL AND name is one of the 19 known codes).
   String? _seedRootCode({required String name, int? parentId}) {
@@ -748,4 +783,18 @@ class SentenceRow {
   final String text;
   final String role;
   final String? origin;
+}
+
+/// Single row of [SynapseFlow.recentTopNodes]. The mention count
+/// scopes the recency window the caller asked for, not the all-time
+/// degree.
+class RecentNode {
+  const RecentNode({
+    required this.id,
+    required this.name,
+    required this.mentionCount,
+  });
+  final int id;
+  final String name;
+  final int mentionCount;
 }
