@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:synapse_engine/synapse_engine.dart';
 
+import 'hypergraph_state.dart';
 import 'note_state.dart';
 
 /// Lifecycle phases for the user-triggered ⌘S meaning pass.
@@ -57,9 +58,12 @@ class NoteProcessController extends StateNotifier<NoteProcessState> {
         throw StateError('SynapseFlow not enabled');
       }
       final result = await flow.noteProcess(postId: postId, source: source);
-      // Sentence rows changed; the sidebar's updated_at and the per-note
-      // graph (F7d) want the fresh data.
+      // The sidebar's updated_at and any cached graph snapshot need the
+      // fresh data. The hypergraph snapshot also misses the new nodes /
+      // mentions until invalidated — categorize colors fill in later as
+      // the async queue drains.
       _ref.invalidate(postListProvider);
+      _ref.invalidate(hypergraphGraphProvider);
       state = NoteProcessState(
         status: NoteProcessStatus.done,
         lastProcessedAt: DateTime.now(),
