@@ -192,6 +192,39 @@ void main() {
     }
   });
 
+  test('processedNotifier increments per node finished', () async {
+    final s = await setup(canned: {
+      '::노드: 허리\n맥락 문장:\n- 허리 아픔':
+          '{"categories": ["BOD.disease"]}',
+      '::노드: 김밥\n맥락 문장:\n- 김밥 먹음':
+          '{"categories": ["FOD.ingredient"]}',
+    });
+    try {
+      final postId = await insertPost(s.engine);
+      final huri = await seedNode(
+        s.engine,
+        name: '허리',
+        sentence: '허리 아픔',
+        postId: postId,
+      );
+      final gimbap = await seedNode(
+        s.engine,
+        name: '김밥',
+        sentence: '김밥 먹음',
+        postId: postId,
+        position: 1,
+      );
+
+      expect(s.queue.processedNotifier.value, 0);
+      s.queue.enqueueNode(huri);
+      s.queue.enqueueNode(gimbap);
+      await s.queue.drain();
+      expect(s.queue.processedNotifier.value, 2);
+    } finally {
+      await s.engine.dispose();
+    }
+  });
+
   test('enqueueAll picks every uncategorized node across posts', () async {
     final s = await setup(canned: {
       '::노드: 허리\n맥락 문장:\n- 허리 아픔':

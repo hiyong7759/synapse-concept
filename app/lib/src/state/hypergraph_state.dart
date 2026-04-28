@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:synapse_engine/synapse_engine.dart';
 
@@ -15,6 +17,37 @@ import 'note_state.dart';
 final hypergraphGraphProvider =
     FutureProvider<GraphData>((ref) async {
   final engine = await ref.watch(engineProvider.future);
+
+  // Categorize queue makes async progress (backfill drains node-by-node).
+  // Watch its progress notifier so colors flow in as mentions land.
+  // Trailing-edge debounce coalesces bursts; max-wait still lets colors
+  // land progressively during a long uninterrupted drain (without it the
+  // trailing timer keeps resetting and the user sees no update until the
+  // entire backfill finishes).
+  final queue = engine.categorizeQueue;
+  if (queue != null) {
+    Timer? trailing;
+    Timer? maxWait;
+    void invalidate() {
+      trailing?.cancel();
+      trailing = null;
+      maxWait?.cancel();
+      maxWait = null;
+      ref.invalidateSelf();
+    }
+    void onProgress() {
+      trailing?.cancel();
+      trailing = Timer(const Duration(milliseconds: 500), invalidate);
+      maxWait ??= Timer(const Duration(seconds: 5), invalidate);
+    }
+    queue.processedNotifier.addListener(onProgress);
+    ref.onDispose(() {
+      queue.processedNotifier.removeListener(onProgress);
+      trailing?.cancel();
+      maxWait?.cancel();
+    });
+  }
+
   final flow = engine.flow;
   if (flow == null) {
     // Reuse-app config without SynapseFlow — show empty graph instead of

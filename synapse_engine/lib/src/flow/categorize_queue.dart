@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:sqflite/sqflite.dart';
 
 import '../graph/ops.dart';
@@ -39,6 +40,11 @@ class CategorizeQueue {
 
   /// Pending + in-flight count. Drives the autosave-chip progress label.
   int get pendingCount => _queued.length + _processing.length;
+
+  /// Increments every time a node finishes processing (success or skip).
+  /// Listeners (e.g. the `/hypergraph` provider) debounce on this so the
+  /// graph color updates as the backfill drains, without N round-trips.
+  final ValueNotifier<int> processedNotifier = ValueNotifier<int>(0);
 
   /// Adds a single node. Already-queued or in-flight nodes are ignored.
   void enqueueNode(int nodeId) {
@@ -86,6 +92,9 @@ class CategorizeQueue {
   }
 
   /// Stops accepting new work. The worker drains its current node and exits.
+  /// We don't dispose [processedNotifier] here — the in-flight node's
+  /// finally block bumps it after we return, and listeners (e.g. the
+  /// hypergraph provider) tear down via their own onDispose hooks.
   void stop() {
     _stopped = true;
   }
@@ -116,6 +125,7 @@ class CategorizeQueue {
         // Swallow — node stays uncategorized, next backfill re-picks it.
       } finally {
         _processing.remove(nodeId);
+        processedNotifier.value = processedNotifier.value + 1;
       }
     }
   }
