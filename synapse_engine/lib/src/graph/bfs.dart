@@ -160,20 +160,34 @@ Future<List<Mention>> _applyFilter(
     mentionsToFilter.add(m);
   }
 
-  final out = <Mention>[...passthrough];
+  final chunks = <List<Mention>>[];
   for (var i = 0; i < mentionsToFilter.length; i += _filterBatchSize) {
-    final chunk = mentionsToFilter
-        .skip(i)
-        .take(_filterBatchSize)
-        .toList(growable: false);
+    chunks.add(
+      mentionsToFilter.skip(i).take(_filterBatchSize).toList(growable: false),
+    );
+  }
+
+  // Chunk-level parallelism. The synapse app's filter callback ultimately
+  // funnels into a single llamadart instance (which serialises generate
+  // calls to keep its KV cache consistent), so wall-clock gain here is
+  // modest — but Future.wait still removes the await-loop overhead and
+  // lets reuse apps that wire a thread-safe backend reap real concurrency.
+  final results = await Future.wait(chunks.map((chunk) async {
     final texts = chunk.map((m) => m.sentenceText!).toList(growable: false);
     final keeps = await filter(texts);
+    final kept = <Mention>[];
     for (var j = 0; j < chunk.length; j++) {
       // Defensive: if the filter returned a shorter list than asked (parser
       // tolerance + LLM cutoff), treat missing slots as keep.
       final keep = j < keeps.length ? keeps[j] : true;
-      if (keep) out.add(chunk[j]);
+      if (keep) kept.add(chunk[j]);
     }
+    return kept;
+  }));
+
+  final out = <Mention>[...passthrough];
+  for (final kept in results) {
+    out.addAll(kept);
   }
   return out;
 }
