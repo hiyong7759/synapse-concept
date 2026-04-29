@@ -30,6 +30,10 @@ void main() {
         Platform.environment['SYNAPSE_TEST_MAX_SENT'] ?? '',
       ) ??
       50;
+  final gpuLayers = int.tryParse(
+        Platform.environment['SYNAPSE_TEST_GPU_LAYERS'] ?? '',
+      ) ??
+      99;
 
   String? resolveSkipReason() {
     if (modelPath == null) {
@@ -90,6 +94,7 @@ void main() {
           modelPath: modelPath,
           promptOverrides: overrides,
           retrieveMaxSentences: maxSentences,
+          gpuLayers: gpuLayers,
         ),
         kiwiOverride: kiwi,
       );

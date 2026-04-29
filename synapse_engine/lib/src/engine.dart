@@ -127,7 +127,11 @@ class SynapseEngine {
         prompts: PromptLoader(overrides: config.promptOverrides),
       );
     } else if (modelPath != null) {
-      backend = LlamadartInferenceBackend();
+      backend = LlamadartInferenceBackend(
+        gpuLayers: config.gpuLayers,
+        contextSize: config.contextSize,
+        batchSize: config.inferenceBatchSize,
+      );
       await backend.loadModel(modelPath);
       for (final adapter in config.adapters) {
         await backend.registerAdapter(adapter.name, adapter.path);

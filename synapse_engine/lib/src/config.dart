@@ -16,8 +16,11 @@ class EngineConfig {
     this.adapters = const [],
     this.kiwiAssetPath,
     this.promptOverrides,
-    this.retrieveMaxSentences = 50,
+    this.retrieveMaxSentences = 500,
     this.retrieveStopwordThreshold = 50,
+    this.gpuLayers = 99,
+    this.contextSize = 8192,
+    this.inferenceBatchSize = 4096,
   });
 
   /// 'synapse_app' / 'gabjil_app' / etc. Used for logging and DB filename hints.
@@ -61,6 +64,28 @@ class EngineConfig {
   /// or more sentences are dropped from BFS expansion (still surfaced if
   /// they're the start node themselves). Set to `0` to disable.
   final int retrieveStopwordThreshold;
+
+  /// llamadart GPU offload layer count. 99 = "all that fit" (default —
+  /// matches `LlamadartInferenceBackend` default). Set to `0` to force
+  /// CPU-only inference; useful for measurement environments where the
+  /// Metal context isn't available (e.g. `flutter test` runs the
+  /// `flutter_tester` with `--enable-software-rendering`, blocking GPU
+  /// access — see PLAN-20260429-SYN-synapse-perf §B Metal isolation).
+  final int gpuLayers;
+
+  /// llama.cpp context window (`n_ctx`). 8K is enough margin for the
+  /// retrieve-filter prompt — Korean sentences run ~140 tokens apiece,
+  /// so a single 50-sentence batch + system prompt + response stays
+  /// inside the window without the OOM that happens when `contextSize`
+  /// is pushed to 32K and batch buffers blow up the Metal allocator.
+  final int contextSize;
+
+  /// llama.cpp logical max batch (`n_batch`). Default 0 in `ModelParams`
+  /// promotes to `contextSize`, which makes large windows allocate
+  /// matching batch buffers and push GPU memory off a cliff. Pinning at
+  /// 4096 keeps batch memory bounded while letting the KV cache scale
+  /// with `contextSize`.
+  final int inferenceBatchSize;
 
   /// True iff this config has both reserved kinds for the synapse flow
   /// activated (`'synapse'` and `'insight'`).

@@ -10,9 +10,27 @@ import 'inference_backend.dart';
 /// v15 `adapterDir + ${name}.gguf` convention. EngineConfig.adapters drives
 /// this map at engine creation time (see SynapseEngine.create).
 class LlamadartInferenceBackend implements InferenceBackend {
-  LlamadartInferenceBackend({this.contextSize = 4096, this.gpuLayers = 99});
+  /// Default tuning matches synapse v22 needs:
+  ///
+  ///  - `contextSize=8192` — Korean sentences average ~140 token apiece,
+  ///    so a single retrieve-filter call (system prompt + ~30 sentences
+  ///    + response) was overflowing the 4096 default and throwing
+  ///    `Initial decode failed` from `llama_decode`. 8K covers a healthy
+  ///    margin without the GPU memory blowup that 32K showed in
+  ///    integration testing.
+  ///  - `batchSize=4096` — kept at the llama.cpp default. ModelParams
+  ///    auto-promotes `batchSize=0` to whatever `contextSize` is, which
+  ///    is what made 32K runs OOM the Metal allocator: KV cache *and*
+  ///    batch buffers both demanded 32K worth of memory. Pinning batch
+  ///    here decouples KV-cache size from per-decode batch.
+  LlamadartInferenceBackend({
+    this.contextSize = 8192,
+    this.batchSize = 4096,
+    this.gpuLayers = 99,
+  });
 
   final int contextSize;
+  final int batchSize;
 
   /// Layer count to offload to GPU. -1 / 99 = "all that fit".
   final int gpuLayers;
@@ -30,6 +48,8 @@ class LlamadartInferenceBackend implements InferenceBackend {
       modelParams: ModelParams(
         contextSize: contextSize,
         gpuLayers: gpuLayers,
+        batchSize: batchSize,
+        microBatchSize: batchSize,
       ),
     );
     _engine = engine;
