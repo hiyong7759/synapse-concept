@@ -148,7 +148,8 @@ void main() {
 
       final mentions = await ops.bfsRetrieve(
         startNodes: {hsk},
-        filter: (text) async => !text.startsWith('drop'),
+        filter: (texts) async =>
+            texts.map((t) => !t.startsWith('drop')).toList(),
       );
       expect(mentions.map((m) => m.sentenceText).toSet(), {'keep this'});
     });

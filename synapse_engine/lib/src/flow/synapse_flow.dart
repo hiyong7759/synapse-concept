@@ -119,12 +119,12 @@ class SynapseFlow {
     final llm = _llm;
     final filter = llm == null
         ? null
-        : (String sentenceText) async {
+        : (List<String> sentences) async {
             try {
-              return await llm.retrieveFilter(question, sentenceText);
+              return await llm.retrieveFilter(question, sentences);
             } catch (_) {
-              // Filter failures must not silently drop content — keep it.
-              return true;
+              // Filter failures must not silently drop content — keep all.
+              return List<bool>.filled(sentences.length, true);
             }
           };
     final mentions = await bfs_impl.bfsRetrieve(

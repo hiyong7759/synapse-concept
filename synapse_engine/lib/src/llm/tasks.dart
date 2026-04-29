@@ -81,17 +81,51 @@ class LlmTasks {
 
   // ── retrieveFilter ───────────────────────────────────────
 
-  /// Decides whether [sentence] is relevant to [question]. Bias toward
-  /// pass — uncertain answers stay in (recall over precision).
-  Future<bool> retrieveFilter(String question, String sentence) async {
+  /// Decides whether each of [sentences] is relevant to [question]. The
+  /// LLM evaluates the whole batch in one call so it can compare
+  /// sentences against each other (better consistency than 1-by-1) and
+  /// the call count drops by an order of magnitude (~50 → ~5 for a
+  /// typical synapseTurn).
+  ///
+  /// Response format: one `[o]` or `[x]` line per input sentence, in
+  /// input order, optionally echoing the sentence text. Parser is
+  /// tolerant — any line that doesn't start with `[x]` is treated as
+  /// keep, missing lines are also keep (recall over precision —
+  /// matches the bias of the previous single-sentence filter).
+  ///
+  /// Caller is expected to chunk inputs to a sane batch size (the BFS
+  /// `_applyFilter` does this with `batchSize=10`) so the prompt stays
+  /// inside the model's context window.
+  Future<List<bool>> retrieveFilter(
+    String question,
+    List<String> sentences,
+  ) async {
+    if (sentences.isEmpty) return const [];
     await _switchTo(null);
     final system = await prompts.load(PromptKey.retrieveFilter);
+    final block = sentences.map((s) => '- $s').join('\n');
     final raw = stripThinking(await backend.generate(
       systemPrompt: system,
-      userPrompt: '질문: $question\n문장: $sentence',
-      maxTokens: 8,
+      userPrompt: '질문: $question\n문장:\n$block',
+      // Per sentence we need ~1 line of mark-only output (`[o]` or `[x]`
+      // possibly with echo). 16 tokens × N covers worst case incl. echo.
+      maxTokens: 16 * sentences.length,
     ));
-    return raw.trim().toLowerCase() != 'reject';
+    return _parseFilterMarks(raw, sentences.length);
+  }
+
+  static List<bool> _parseFilterMarks(String raw, int expected) {
+    final lines = raw
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
+    final out = List<bool>.filled(expected, true);
+    for (var i = 0; i < expected && i < lines.length; i++) {
+      final line = lines[i].toLowerCase();
+      if (line.startsWith('[x]')) out[i] = false;
+    }
+    return out;
   }
 
   // ── synapseAnswer ────────────────────────────────────────

@@ -40,15 +40,27 @@ void main() {
       expect(result, ['허리', '어때?']);
     });
 
-    test('retrieveFilter returns false only when the model says reject',
+    test('retrieveFilter batch — [x] drops, [o] keeps, anything else keeps',
         () async {
-      backend.canned['::질문: q\n문장: rel'] = 'pass';
-      backend.canned['::질문: q\n문장: irr'] = 'reject';
-      backend.canned['::질문: q\n문장: weird'] = '...';
-      expect(await tasks.retrieveFilter('q', 'rel'), isTrue);
-      expect(await tasks.retrieveFilter('q', 'irr'), isFalse);
-      expect(await tasks.retrieveFilter('q', 'weird'), isTrue,
-          reason: 'unknown answers default to pass (recall over precision)');
+      backend.canned['::질문: q\n문장:\n- a\n- b\n- c'] =
+          '[o] a\n[x] b\n??? c';
+      final result = await tasks.retrieveFilter('q', ['a', 'b', 'c']);
+      expect(result, [true, false, true],
+          reason: 'unknown answers default to keep (recall over precision)');
+    });
+
+    test('retrieveFilter batch — short response keeps the missing tail',
+        () async {
+      backend.canned['::질문: q\n문장:\n- a\n- b\n- c'] = '[x] a';
+      final result = await tasks.retrieveFilter('q', ['a', 'b', 'c']);
+      expect(result, [false, true, true]);
+    });
+
+    test('retrieveFilter batch — empty input short-circuits without LLM call',
+        () async {
+      final result = await tasks.retrieveFilter('q', const []);
+      expect(result, isEmpty);
+      expect(backend.generateCalls, 0);
     });
 
     test('metaFilter calls generate once per input and parses booleans',

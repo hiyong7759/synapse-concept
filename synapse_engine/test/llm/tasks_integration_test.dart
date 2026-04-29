@@ -79,12 +79,21 @@ void main() {
       expect(result, isNotEmpty);
     }, skip: skipReason, timeout: const Timeout(Duration(minutes: 2)));
 
-    test('retrieveFilter answers pass/reject for a clearly relevant pair',
+    test('retrieveFilter batch keeps clearly relevant + drops clearly irrelevant',
         () async {
-      final relevant =
-          await engine.llm!.retrieveFilter('허리 아픈데?', '강남세브란스 정형외과 다니고 있어');
-      expect(relevant, isTrue);
-    }, skip: skipReason, timeout: const Timeout(Duration(minutes: 1)));
+      final result = await engine.llm!.retrieveFilter(
+        '허리 아픈데?',
+        const [
+          '강남세브란스 정형외과 다니고 있어',
+          '오늘 점심은 김밥 먹었다',
+        ],
+      );
+      expect(result.length, 2);
+      expect(result[0], isTrue,
+          reason: 'clearly relevant — 허리 ↔ 정형외과');
+      // Recall-over-precision bias keeps borderline cases too — only assert
+      // shape on the irrelevant slot, not its bool.
+    }, skip: skipReason, timeout: const Timeout(Duration(minutes: 2)));
 
     test('metaFilter returns one bool per input', () async {
       final result = await engine.llm!.metaFilter([

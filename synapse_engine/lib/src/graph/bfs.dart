@@ -2,16 +2,21 @@ import 'package:sqflite/sqflite.dart';
 
 import '../models/graph_models.dart';
 
-/// Optional sentence-level filter callback. Injected by callers that want
+/// Optional sentence-level batch filter. Injected by callers that want
 /// LLM-driven relevance pruning (synapse app passes a closure that calls
 /// `LlmTasks.retrieveFilter`); reuse apps that don't have an LLM simply
-/// don't pass it. Returning `false` drops the candidate sentence from the
-/// next layer.
+/// don't pass it. Returns one bool per input — `false` drops the
+/// matching candidate sentence from the next layer.
+///
+/// Batch shape (instead of one-call-per-sentence) lets the LLM compare
+/// sentences against each other in a single round trip — cuts call
+/// count by an order of magnitude and improves cross-sentence
+/// consistency. The BFS chunks candidates so prompt size stays bounded.
 ///
 /// Keeping this as a callback — rather than an `LlmTasks` import — is what
 /// lets `bfs.dart` honour the dependency-injection split spelled out in
 /// DESIGN_PRINCIPLES §1 원칙 11.
-typedef MentionFilter = Future<bool> Function(String sentenceText);
+typedef MentionFilter = Future<List<bool>> Function(List<String> sentenceTexts);
 
 /// BFS over the hypergraph, mirroring `engine/retrieve.py`.
 ///
@@ -129,26 +134,46 @@ Future<List<Mention>> bfsRetrieve(
   return mentions;
 }
 
+/// Chunk size when passing candidate sentences to the batch filter.
+/// Tuned for an 8K-context Korean LLM (Gemma 4 E2B) — ~50 tokens per
+/// sentence × 10 = ~500 tokens of evidence + system prompt + response.
+/// Comfortably inside context, while big enough that a typical
+/// synapseTurn (≤ 50 sentences) collapses to ≤ 5 LLM calls.
+const int _filterBatchSize = 10;
+
 Future<List<Mention>> _applyFilter(
   List<Mention> candidates,
   MentionFilter? filter,
 ) async {
   if (filter == null) return candidates;
-  // Sentence-level dedup so we don't ask the LLM the same question twice.
-  final decided = <int, bool>{};
-  final out = <Mention>[];
+  // Sentence-level dedup — the same sentence can surface through multiple
+  // co-mention paths and we don't want the LLM seeing it twice.
+  final seenSentence = <int>{};
+  final mentionsToFilter = <Mention>[];
+  final passthrough = <Mention>[];
   for (final m in candidates) {
-    final cached = decided[m.sentenceId];
-    if (cached == false) continue;
-    if (cached == true) {
-      out.add(m);
+    if (m.sentenceText == null) {
+      passthrough.add(m);
       continue;
     }
-    final keep = m.sentenceText == null
-        ? true
-        : await filter(m.sentenceText!);
-    decided[m.sentenceId] = keep;
-    if (keep) out.add(m);
+    if (!seenSentence.add(m.sentenceId)) continue;
+    mentionsToFilter.add(m);
+  }
+
+  final out = <Mention>[...passthrough];
+  for (var i = 0; i < mentionsToFilter.length; i += _filterBatchSize) {
+    final chunk = mentionsToFilter
+        .skip(i)
+        .take(_filterBatchSize)
+        .toList(growable: false);
+    final texts = chunk.map((m) => m.sentenceText!).toList(growable: false);
+    final keeps = await filter(texts);
+    for (var j = 0; j < chunk.length; j++) {
+      // Defensive: if the filter returned a shorter list than asked (parser
+      // tolerance + LLM cutoff), treat missing slots as keep.
+      final keep = j < keeps.length ? keeps[j] : true;
+      if (keep) out.add(chunk[j]);
+    }
   }
   return out;
 }
