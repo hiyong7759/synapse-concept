@@ -135,13 +135,16 @@ Future<List<Mention>> bfsRetrieve(
 }
 
 /// Chunk size when passing candidate sentences to the batch filter.
-/// Smaller batches let small Korean LLMs (Gemma 4 E2B) keep the
-/// per-sentence `o`/`x` marks consistent — earlier 10-batch runs drifted
-/// into prose / mismatched mark counts on cluttered prompts and the
-/// filter ended up keeping everything via the fallback. 5 still cuts
-/// LLM calls 10× from the per-sentence baseline (50 → ≤10) while staying
-/// well inside the model's response-quality envelope.
-const int _filterBatchSize = 5;
+/// Tuned for an 8K-context Korean LLM (Gemma 4 E2B). Earlier echo-style
+/// prompts (`[o] {sentence}` per line) hit a quality cliff at 10 — the
+/// model dropped marks or drifted into prose, and the fallback kept
+/// everything. Switching to bare `o`/`x` output (one mark per line, no
+/// echo) makes 10 work cleanly: same call count as before (50 → ≤5)
+/// AND the model surfaces *more* relevant sentences than the smaller
+/// batch=5 variant did. Bigger isn't always lower precision — what
+/// matters is whether the prompt shape stays inside the model's
+/// formatting comfort zone.
+const int _filterBatchSize = 10;
 
 Future<List<Mention>> _applyFilter(
   List<Mention> candidates,
