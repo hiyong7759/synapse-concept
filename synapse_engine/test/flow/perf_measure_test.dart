@@ -97,19 +97,23 @@ void main() {
 
     test('turn 1 — 취업규칙 휴가 질문 (사용자 dogfood 재현)', () async {
       final flow = engine.flow!;
-      final result = await flow.synapseTurn(
-        question: '취업규칙에서 휴가 며칠 주게 되어 있어?',
-      );
+      const question = '취업규칙에서 휴가 며칠 주게 되어 있어?';
+      final result = await flow.synapseTurn(question: question);
       expect(result.answer, isNotEmpty);
       expect(result.postId, isPositive);
+      // ignore: avoid_print
+      print('\n══ Q1 ══\n$question\n── A1 ──\n${result.answer}\n'
+          '── ctx=${result.contextSentenceIds.length} ══\n');
     }, skip: skipReason, timeout: const Timeout(Duration(minutes: 5)));
 
     test('turn 2 — 다른 주제 (변동 확인)', () async {
       final flow = engine.flow!;
-      final result = await flow.synapseTurn(
-        question: '최근 한 일 정리해줘',
-      );
+      const question = '최근 한 일 정리해줘';
+      final result = await flow.synapseTurn(question: question);
       expect(result.answer, isNotEmpty);
+      // ignore: avoid_print
+      print('\n══ Q2 ══\n$question\n── A2 ──\n${result.answer}\n'
+          '── ctx=${result.contextSentenceIds.length} ══\n');
     }, skip: skipReason, timeout: const Timeout(Duration(minutes: 5)));
   });
 }
