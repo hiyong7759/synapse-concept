@@ -26,6 +26,10 @@ void main() {
       Platform.environment['SYNAPSE_TEST_DB'] ?? '/tmp/synapse_perf.db';
   final promptDir =
       Platform.environment['SYNAPSE_TEST_PROMPT_DIR'] ?? '../docs';
+  final maxSentences = int.tryParse(
+        Platform.environment['SYNAPSE_TEST_MAX_SENT'] ?? '',
+      ) ??
+      50;
 
   String? resolveSkipReason() {
     if (modelPath == null) {
@@ -85,6 +89,7 @@ void main() {
           categorySeed: CategorySeed.synapse19(),
           modelPath: modelPath,
           promptOverrides: overrides,
+          retrieveMaxSentences: maxSentences,
         ),
         kiwiOverride: kiwi,
       );

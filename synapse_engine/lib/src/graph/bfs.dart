@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:sqflite/sqflite.dart';
 
 import '../models/graph_models.dart';
@@ -87,7 +88,8 @@ Future<List<Mention>> bfsRetrieve(
     );
     if (layerCandidates.isEmpty) break;
 
-    final accepted = await _applyFilter(layerCandidates, filter);
+    final accepted =
+        await _applyFilter(layerCandidates, filter, batchSize: maxSentences);
     if (accepted.isEmpty) break;
 
     for (final m in accepted) {
@@ -120,7 +122,8 @@ Future<List<Mention>> bfsRetrieve(
         supplement,
         visitedSentences,
       );
-      final accepted = await _applyFilter(extra, filter);
+      final accepted =
+          await _applyFilter(extra, filter, batchSize: maxSentences);
       for (final m in accepted) {
         if (mentions.length >= maxSentences) break;
         if (visitedSentences.add(m.sentenceId)) {
@@ -134,28 +137,20 @@ Future<List<Mention>> bfsRetrieve(
   return mentions;
 }
 
-/// Chunk size when passing candidate sentences to the batch filter.
-/// Model is Gemma 4 E2B Q4_K_M with a **32K context** window
-/// (DESIGN_PIPELINE.md §모델 — quantized 32K / original 128K), so the
-/// previous-iteration prompt-length worry was unfounded. The real
-/// constraint is formatting consistency: echo-style prompts (`[o]
-/// {sentence}` per line) hit a quality cliff even at 10 — the model
-/// dropped marks or drifted into prose, fallback kept everything.
-/// Switching to bare `o`/`x` (one mark per line, no echo) keeps the
-/// prompt simple enough that the model can hold the full max-sentences
-/// batch in one call without losing alignment.
-///
-/// Setting this equal to `_maxSentences` (50) collapses retrieve-filter
-/// to a single LLM call per BFS layer. Even 50 sentences ride well
-/// inside 32K — there's room to push `_maxSentences` higher in a future
-/// pass if dogfood ever wants more recall, the binding constraint then
-/// becomes synapse-answer's `maxTokens` budget rather than context size.
-const int _filterBatchSize = 50;
-
+/// Filter chunk size is taken from the caller's [maxSentences] cap —
+/// `_applyFilter` receives `batchSize: maxSentences`, so a typical
+/// synapseTurn collapses retrieve-filter to a single LLM call per BFS
+/// layer regardless of how big the layer is. Model is Gemma 4 E2B
+/// Q4_K_M with a **32K context** window (DESIGN_PIPELINE.md §모델 —
+/// quantized 32K / original 128K). Bare `o`/`x` output (no echo) keeps
+/// formatting consistent at large batch sizes; the real binding
+/// constraint is synapse-answer's `maxTokens=4096` budget rather than
+/// context length.
 Future<List<Mention>> _applyFilter(
   List<Mention> candidates,
-  MentionFilter? filter,
-) async {
+  MentionFilter? filter, {
+  required int batchSize,
+}) async {
   if (filter == null) return candidates;
   // Sentence-level dedup — the same sentence can surface through multiple
   // co-mention paths and we don't want the LLM seeing it twice.
@@ -172,9 +167,9 @@ Future<List<Mention>> _applyFilter(
   }
 
   final chunks = <List<Mention>>[];
-  for (var i = 0; i < mentionsToFilter.length; i += _filterBatchSize) {
+  for (var i = 0; i < mentionsToFilter.length; i += batchSize) {
     chunks.add(
-      mentionsToFilter.skip(i).take(_filterBatchSize).toList(growable: false),
+      mentionsToFilter.skip(i).take(batchSize).toList(growable: false),
     );
   }
 
@@ -199,6 +194,13 @@ Future<List<Mention>> _applyFilter(
   final out = <Mention>[...passthrough];
   for (final kept in results) {
     out.addAll(kept);
+  }
+  if (kDebugMode) {
+    final inN = mentionsToFilter.length;
+    final outN = out.length - passthrough.length;
+    // ignore: avoid_print
+    print('[retrieveFilter] in=$inN out=$outN drop=${inN - outN} '
+        '(${inN == 0 ? 0 : (100 * (inN - outN) / inN).toStringAsFixed(0)}%)');
   }
   return out;
 }

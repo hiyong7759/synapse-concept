@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
+
 import '../internal/thinking_strip.dart';
 import '../prompts/loader.dart';
 import 'inference_backend.dart';
@@ -121,6 +123,10 @@ class LlmTasks {
       // prose.
       maxTokens: 4 * n,
     ));
+    if (kDebugMode) {
+      // ignore: avoid_print
+      print('[retrieveFilter RAW n=$n]\n${raw.substring(0, raw.length.clamp(0, 200))}\n---');
+    }
     return _parseFilterMarks(raw, n);
   }
 

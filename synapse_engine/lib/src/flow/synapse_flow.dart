@@ -126,7 +126,11 @@ class SynapseFlow {
         : (List<String> sentences) async {
             try {
               return await llm.retrieveFilter(question, sentences);
-            } catch (_) {
+            } catch (e) {
+              if (kDebugMode) {
+                // ignore: avoid_print
+                print('[retrieveFilter ERROR] $e');
+              }
               // Filter failures must not silently drop content — keep all.
               return List<bool>.filled(sentences.length, true);
             }
