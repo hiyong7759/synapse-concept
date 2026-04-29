@@ -38,6 +38,11 @@ export 'src/models/graph_models.dart'
 // F5 — synapse flow (note + retrieve + insight).
 export 'src/flow/categorize_queue.dart' show CategorizeQueue;
 export 'src/flow/results.dart'
-    show NoteProcessResult, SynapseTurnResult, InsightResult;
+    show
+        NoteProcessResult,
+        SynapseTurnResult,
+        InsightResult,
+        SynapseProgressStage,
+        SynapseProgressCallback;
 export 'src/flow/synapse_flow.dart'
     show SynapseFlow, PostMeta, PostDetail, SentenceRow, RecentNode;

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:synapse_engine/synapse_engine.dart';
 
 import '../state/synapse_state.dart';
 import '../theme/tokens.dart';
@@ -188,11 +189,13 @@ class _MessageList extends StatelessWidget {
   }
 }
 
-class _LoadingIndicator extends StatelessWidget {
+class _LoadingIndicator extends ConsumerWidget {
   const _LoadingIndicator();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final stage = ref.watch(synapseProgressProvider);
+    final text = _stageLabel(stage);
     return Padding(
       padding: const EdgeInsets.symmetric(
         vertical: SynapseTokens.s3,
@@ -209,16 +212,39 @@ class _LoadingIndicator extends StatelessWidget {
             ),
           ),
           const SizedBox(width: SynapseTokens.s3),
-          Text(
-            '탐색 중...',
-            style: SynapseTokens.bodyStyle(
-              size: SynapseTokens.tSm,
-              color: SynapseTokens.text3,
+          AnimatedSwitcher(
+            duration: SynapseTokens.durBase,
+            child: Text(
+              text,
+              key: ValueKey(text),
+              style: SynapseTokens.bodyStyle(
+                size: SynapseTokens.tSm,
+                color: SynapseTokens.text3,
+              ),
             ),
           ),
         ],
       ),
     );
+  }
+}
+
+/// Maps the engine's progress stage to the Korean label shown next to
+/// the spinner. `null` and `done` collapse to a generic placeholder so
+/// the indicator doesn't flash a stale label between turns.
+String _stageLabel(SynapseProgressStage? stage) {
+  switch (stage) {
+    case null:
+    case SynapseProgressStage.done:
+      return '준비 중...';
+    case SynapseProgressStage.expanding:
+      return '🔑 키워드 추출';
+    case SynapseProgressStage.matching:
+      return '🎯 노드 매칭';
+    case SynapseProgressStage.retrieving:
+      return '🕸️ 관련 문장 찾기';
+    case SynapseProgressStage.answering:
+      return '✍️ 답변 생성';
   }
 }
 

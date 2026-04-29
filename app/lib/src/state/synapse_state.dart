@@ -36,10 +36,21 @@ final synapseActivePostIdProvider = StateProvider<int?>((ref) => null);
 final synapseMessagesProvider =
     StateProvider<List<SynapseMessage>>((ref) => const []);
 
-/// True while a `synapseTurn` is in flight. The input bar disables itself
-/// + a small indicator renders so the user knows the 5–10 s LLM round
-/// trip is alive.
-final synapseLoadingProvider = StateProvider<bool>((ref) => false);
+/// Current stage of the in-flight `synapseTurn`. `null` means idle. The
+/// UI maps any non-null value (other than `done`) to "loading" — the
+/// input bar disables itself and the loading indicator labels the active
+/// stage (`🔑 키워드 추출`, `🎯 노드 매칭`, `🕸️ 관련 문장 찾기`,
+/// `✍️ 답변 생성`).
+final synapseProgressProvider =
+    StateProvider<SynapseProgressStage?>((ref) => null);
+
+/// Convenience derived signal: true while a turn is in flight (any
+/// non-idle, non-done stage). Kept so the input bar / send button can
+/// stay declarative without each callsite computing the predicate.
+final synapseLoadingProvider = Provider<bool>((ref) {
+  final stage = ref.watch(synapseProgressProvider);
+  return stage != null && stage != SynapseProgressStage.done;
+});
 
 /// Single chip surfaced in the empty-state. `text` is what gets dropped
 /// into the input controller; `label` is the short button face. A
@@ -114,13 +125,15 @@ Future<void> sendQuestion(WidgetRef ref, String question) async {
     ...messagesNotifier.state,
     SynapseQuestion(text: trimmed),
   ];
-  ref.read(synapseLoadingProvider.notifier).state = true;
+  final progressNotifier = ref.read(synapseProgressProvider.notifier);
+  progressNotifier.state = SynapseProgressStage.expanding;
 
   final priorPostId = ref.read(synapseActivePostIdProvider);
   try {
     final result = await flow.synapseTurn(
       question: trimmed,
       postId: priorPostId,
+      onProgress: (stage) => progressNotifier.state = stage,
     );
     ref.read(synapseActivePostIdProvider.notifier).state = result.postId;
     messagesNotifier.state = [
@@ -138,7 +151,7 @@ Future<void> sendQuestion(WidgetRef ref, String question) async {
       ref.invalidate(postListProvider);
     }
   } finally {
-    ref.read(synapseLoadingProvider.notifier).state = false;
+    progressNotifier.state = null;
   }
 }
 

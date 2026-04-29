@@ -61,6 +61,27 @@ class SynapseTurnResult {
   final List<int> contextSentenceIds;
 }
 
+/// Stages a [SynapseFlow.synapseTurn] passes through. Wired up so the UI
+/// can swap a single "loading..." indicator for stage-specific labels —
+/// `🔑 키워드 추출` etc. — that explain what the engine is doing during
+/// the 0.5~few-seconds round trip.
+///
+/// `persist` is intentionally absent because the surrounding DB inserts
+/// run in well under 10 ms and would only flash. The UI maps any
+/// non-`done` stage to "loading" semantics.
+enum SynapseProgressStage {
+  expanding,
+  matching,
+  retrieving,
+  answering,
+  done,
+}
+
+/// Reports the active stage to the UI. Synchronous on purpose — callers
+/// usually just write to a state provider. Optional on [SynapseFlow.
+/// synapseTurn]; reuse apps that don't need progress can omit it.
+typedef SynapseProgressCallback = void Function(SynapseProgressStage stage);
+
 /// Outcome of [SynapseFlow.promoteToInsight].
 class InsightResult {
   const InsightResult({

@@ -77,6 +77,7 @@ class SynapseFlow {
   Future<SynapseTurnResult> synapseTurn({
     required String question,
     int? postId,
+    SynapseProgressCallback? onProgress,
   }) async {
     // Per-stage timing (debug builds only). Decides which stage to
     // optimise next — see PLAN-20260429-SYN-synapse-perf.
@@ -96,10 +97,12 @@ class SynapseFlow {
     });
     persist.stop();
 
+    onProgress?.call(SynapseProgressStage.expanding);
     stage..reset()..start();
     final keywords = await _expandKeywords(question);
     final tExpand = stage.elapsedMilliseconds;
 
+    onProgress?.call(SynapseProgressStage.matching);
     stage..reset()..start();
     final startNodeMap = await matchStartNodes(
       db,
@@ -115,6 +118,7 @@ class SynapseFlow {
     );
     final tMatch = stage.elapsedMilliseconds;
 
+    onProgress?.call(SynapseProgressStage.retrieving);
     stage..reset()..start();
     final llm = _llm;
     final filter = llm == null
@@ -156,6 +160,7 @@ class SynapseFlow {
       contextSentenceIds.add(m.sentenceId);
     }
 
+    onProgress?.call(SynapseProgressStage.answering);
     stage..reset()..start();
     String answer;
     if (llm != null) {
@@ -181,6 +186,8 @@ class SynapseFlow {
       'position': aPosition,
     });
     persist.stop();
+
+    onProgress?.call(SynapseProgressStage.done);
 
     if (kDebugMode) {
       // ignore: avoid_print
