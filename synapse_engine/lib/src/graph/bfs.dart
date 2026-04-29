@@ -135,20 +135,21 @@ Future<List<Mention>> bfsRetrieve(
 }
 
 /// Chunk size when passing candidate sentences to the batch filter.
-/// Tuned for an 8K-context Korean LLM (Gemma 4 E2B). Earlier echo-style
-/// prompts (`[o] {sentence}` per line) hit a quality cliff even at 10 —
-/// the model dropped marks or drifted into prose, fallback kept
-/// everything. Switching to bare `o`/`x` (one mark per line, no echo)
-/// kept the prompt simple enough that the model can hold the full
-/// max-sentences batch in one call without losing alignment.
+/// Model is Gemma 4 E2B Q4_K_M with a **32K context** window
+/// (DESIGN_PIPELINE.md §모델 — quantized 32K / original 128K), so the
+/// previous-iteration prompt-length worry was unfounded. The real
+/// constraint is formatting consistency: echo-style prompts (`[o]
+/// {sentence}` per line) hit a quality cliff even at 10 — the model
+/// dropped marks or drifted into prose, fallback kept everything.
+/// Switching to bare `o`/`x` (one mark per line, no echo) keeps the
+/// prompt simple enough that the model can hold the full max-sentences
+/// batch in one call without losing alignment.
 ///
-/// Setting this equal to `_maxSentences` (50) means a typical
-/// synapseTurn collapses retrieve-filter to a single LLM call per BFS
-/// layer. Prompt fits comfortably inside 8K (~3.5K tokens of evidence
-/// + system prompt + few-shot examples), response is ~50 tokens, and
-/// the model weighs every candidate against every other one —
-/// measurably better recall on relevant facts than smaller batches
-/// (15+ → 20+ relevant sentences in dogfood DB).
+/// Setting this equal to `_maxSentences` (50) collapses retrieve-filter
+/// to a single LLM call per BFS layer. Even 50 sentences ride well
+/// inside 32K — there's room to push `_maxSentences` higher in a future
+/// pass if dogfood ever wants more recall, the binding constraint then
+/// becomes synapse-answer's `maxTokens` budget rather than context size.
 const int _filterBatchSize = 50;
 
 Future<List<Mention>> _applyFilter(
