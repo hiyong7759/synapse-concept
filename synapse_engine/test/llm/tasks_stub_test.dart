@@ -40,18 +40,24 @@ void main() {
       expect(result, ['허리', '어때?']);
     });
 
-    test('retrieveFilter batch — [x] drops, [o] keeps, anything else keeps',
+    test('retrieveFilter batch — bare o/x marks; x drops, anything else keeps',
         () async {
-      backend.canned['::질문: q\n문장:\n- a\n- b\n- c'] =
-          '[o] a\n[x] b\n??? c';
+      backend.canned['::질문: q\n문장 3개:\n1. a\n2. b\n3. c'] = 'o\nx\n???';
       final result = await tasks.retrieveFilter('q', ['a', 'b', 'c']);
       expect(result, [true, false, true],
           reason: 'unknown answers default to keep (recall over precision)');
     });
 
+    test('retrieveFilter batch — legacy [o]/[x] echo still parses', () async {
+      backend.canned['::질문: q\n문장 3개:\n1. a\n2. b\n3. c'] =
+          '[o] a\n[x] b\n[o] c';
+      final result = await tasks.retrieveFilter('q', ['a', 'b', 'c']);
+      expect(result, [true, false, true]);
+    });
+
     test('retrieveFilter batch — short response keeps the missing tail',
         () async {
-      backend.canned['::질문: q\n문장:\n- a\n- b\n- c'] = '[x] a';
+      backend.canned['::질문: q\n문장 3개:\n1. a\n2. b\n3. c'] = 'x';
       final result = await tasks.retrieveFilter('q', ['a', 'b', 'c']);
       expect(result, [false, true, true]);
     });

@@ -135,11 +135,13 @@ Future<List<Mention>> bfsRetrieve(
 }
 
 /// Chunk size when passing candidate sentences to the batch filter.
-/// Tuned for an 8K-context Korean LLM (Gemma 4 E2B) — ~50 tokens per
-/// sentence × 10 = ~500 tokens of evidence + system prompt + response.
-/// Comfortably inside context, while big enough that a typical
-/// synapseTurn (≤ 50 sentences) collapses to ≤ 5 LLM calls.
-const int _filterBatchSize = 10;
+/// Smaller batches let small Korean LLMs (Gemma 4 E2B) keep the
+/// per-sentence `o`/`x` marks consistent — earlier 10-batch runs drifted
+/// into prose / mismatched mark counts on cluttered prompts and the
+/// filter ended up keeping everything via the fallback. 5 still cuts
+/// LLM calls 10× from the per-sentence baseline (50 → ≤10) while staying
+/// well inside the model's response-quality envelope.
+const int _filterBatchSize = 5;
 
 Future<List<Mention>> _applyFilter(
   List<Mention> candidates,

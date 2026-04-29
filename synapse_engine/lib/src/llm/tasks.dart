@@ -87,15 +87,20 @@ class LlmTasks {
   /// the call count drops by an order of magnitude (~50 → ~5 for a
   /// typical synapseTurn).
   ///
-  /// Response format: one `[o]` or `[x]` line per input sentence, in
-  /// input order, optionally echoing the sentence text. Parser is
-  /// tolerant — any line that doesn't start with `[x]` is treated as
-  /// keep, missing lines are also keep (recall over precision —
-  /// matches the bias of the previous single-sentence filter).
+  /// Response format: one bare `o` or `x` per line, in input order. The
+  /// short form (no echo) is what small models like Gemma 4 E2B keep
+  /// formatting consistent with — earlier `[o] {sentence}` echo prompts
+  /// drifted into prose / inconsistent marks and tripped the fallback.
+  /// Parser stays permissive (still accepts legacy `[o]`/`[x]` echo) so
+  /// future prompt iterations don't break the filter.
   ///
-  /// Caller is expected to chunk inputs to a sane batch size (the BFS
-  /// `_applyFilter` does this with `batchSize=10`) so the prompt stays
-  /// inside the model's context window.
+  /// Anything that isn't a clear `x` keeps the sentence (recall over
+  /// precision — matches the prompt's "애매하면 o" rule and the bias of
+  /// the previous single-sentence filter).
+  ///
+  /// Caller chunks inputs (BFS `_applyFilter` uses `batchSize=5`) so
+  /// the prompt stays inside the model's context window and the model
+  /// keeps the marks consistent across the chunk.
   Future<List<bool>> retrieveFilter(
     String question,
     List<String> sentences,
@@ -103,15 +108,20 @@ class LlmTasks {
     if (sentences.isEmpty) return const [];
     await _switchTo(null);
     final system = await prompts.load(PromptKey.retrieveFilter);
-    final block = sentences.map((s) => '- $s').join('\n');
+    final n = sentences.length;
+    final numbered = <String>[];
+    for (var i = 0; i < n; i++) {
+      numbered.add('${i + 1}. ${sentences[i]}');
+    }
     final raw = stripThinking(await backend.generate(
       systemPrompt: system,
-      userPrompt: '질문: $question\n문장:\n$block',
-      // Per sentence we need ~1 line of mark-only output (`[o]` or `[x]`
-      // possibly with echo). 16 tokens × N covers worst case incl. echo.
-      maxTokens: 16 * sentences.length,
+      userPrompt: '질문: $question\n문장 $n개:\n${numbered.join('\n')}',
+      // Output is one bare mark + newline per sentence. 4 tokens × N
+      // covers stray whitespace without letting the model drift into
+      // prose.
+      maxTokens: 4 * n,
     ));
-    return _parseFilterMarks(raw, sentences.length);
+    return _parseFilterMarks(raw, n);
   }
 
   static List<bool> _parseFilterMarks(String raw, int expected) {
@@ -123,7 +133,10 @@ class LlmTasks {
     final out = List<bool>.filled(expected, true);
     for (var i = 0; i < expected && i < lines.length; i++) {
       final line = lines[i].toLowerCase();
-      if (line.startsWith('[x]')) out[i] = false;
+      // Accept both bare `o`/`x` (current prompt) and legacy `[o]`/`[x]`
+      // echo lines so prompt iterations don't require a parser flip.
+      final mark = line.startsWith('[') ? line.substring(1) : line;
+      if (mark.startsWith('x')) out[i] = false;
     }
     return out;
   }
