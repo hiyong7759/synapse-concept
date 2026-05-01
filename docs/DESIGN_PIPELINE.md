@@ -462,16 +462,14 @@ sentence_id
 | 환경 | 런타임 | 베이스 모델 | 호출 방식 |
 |---|---|---|---|
 | **모바일·데스크톱** (프로덕션) | `llamadart` (llama.cpp 바인딩) — `synapse_engine` 패키지 내부 | Gemma 4 E2B-it Q4_K_M GGUF (~3.1GB, 앱 번들) | **인프로세스 직접 호출** (HTTP 없음, 레이턴시 0) |
-| **Python frozen** (서버·dogfood·학습 검증) | MLX 서버 (`api/mlx_server.py`, OpenAI 호환) | `unsloth/gemma-4-E2B-it-UD-MLX-4bit` (~3.6GB) | HTTP `localhost:8765` |
 
-베이스 모델은 동일한 Google Gemma 4 2B (Early Access). 양자화·런타임만 환경별로 갈라진다. 컨텍스트 윈도우: 양자화 32K / 원본 128K.
+베이스 모델은 Google Gemma 4 2B (Early Access). 컨텍스트 윈도우: 양자화 32K / 원본 128K.
 
 ```
 모바일·데스크톱: 앱 → llamadart (인프로세스) → gemma-4-E2B-it 4bit GGUF (± 태스크 어댑터)
-Python frozen:   앱 → HTTP → MLX 서버 (localhost:8765) → gemma-4-E2B-it MLX 4bit (± 태스크 어댑터)
 ```
 
-런타임이 갈라져도 **시스템 프롬프트·태스크 분담·output 포맷은 동일** — 같은 `docs/*_SYSTEMPROMPT.md` 가 양 환경 공통.
+> 과거의 Python frozen / MLX 서버 환경은 `archive/api/`, `archive/scripts-python/` 로 이관됨 (2026-05-02). 신규 코드·문서는 Dart/llamadart 기준으로 작성한다.
 
 ---
 
@@ -480,9 +478,7 @@ Python frozen:   앱 → HTTP → MLX 서버 (localhost:8765) → gemma-4-E2B-it
 모든 LLM 호출은 `tokenizer.apply_chat_template(..., enable_thinking=False)` 로 thinking 블록을 차단한다.
 
 - **이유**: 학습 데이터 system 메시지에 `<|think|>` 토큰이 없어 thinking 없이 학습됐고, ON 상태에서는 추론 시간이 약 10배 길어지며 한 단어 출력 태스크에서 오답률이 급증한다.
-- **적용 위치**:
-  - Python frozen: `api/mlx_server.py` 의 `apply_chat_template` 호출, `scripts/mlx/eval_*.py`
-  - 모바일·데스크톱: `synapse_engine` 의 `LlamadartBackend.chat()` 내부 — 챗 템플릿 빌드 시 thinking 블록 차단 동등 구현
+- **적용 위치**: `synapse_engine` 의 `LlamadartBackend.chat()` 내부 — 챗 템플릿 빌드 시 thinking 블록 차단
 - **주의**: Gemma 4 4bit (E2B/E4B) 변종은 OFF 설정 시 빈 thought 블록도 출력하지 않음.
 
 ---

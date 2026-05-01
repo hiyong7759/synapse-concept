@@ -30,25 +30,25 @@
 
 개인/조직 모드, /review 검토, 카테고리, UI, 데이터 정책 원칙 → `docs/DESIGN_PRINCIPLES.md §2~§6` 참고.
 
-## CLI
+## 현역 코드
 
-```bash
-python3 -m engine.cli           # 대화형 (MLX 서버 필요: python api/mlx_server.py)
-python3 -m engine.cli --no-llm  # LLM 없이 BFS 구조만 (독립 동작 보장)
-python3 -m engine.cli --stats   # DB 통계
-python3 -m engine.cli --reset   # DB 초기화
-python3 -m engine.cli --typos   # 오타 의심 노드 쌍 스캔
-```
-
-DB 위치: `~/.synapse/synapse.db` (SYNAPSE_DATA_DIR 환경변수로 변경 가능)
+- **`synapse_engine/`** — Dart 그래프 코어 (모바일·데스크톱 공용)
+- **`app/`** — Flutter 앱 (모바일·데스크톱)
 
 ## 환경
 
 시냅스 v22 본체는 **어댑터 0 개** 로 동작 — 모든 LLM 태스크가 베이스 모델 + 시스템 프롬프트. 파인튜닝·학습은 시냅스의 책임이 아님 (재사용 앱 — 갑질 등 — 이 자기 도메인 어댑터를 별도로 학습).
 
-- **추론 (Flutter 본체)**: 모바일·데스크톱 모두 `synapse_engine` 패키지의 `llamadart` 인프로세스 직접 호출. HTTP 없음
-- **추론 (Python frozen, 회귀·dogfood 검증용)**: MLX 서버 (`api/mlx_server.py`) — 베이스 모델 단독, 어댑터 안 씀
+- **추론**: `synapse_engine` 패키지의 `llamadart` 인프로세스 직접 호출. HTTP 없음
 - **DB 위치**: `~/.synapse/synapse.db` (`SYNAPSE_DATA_DIR` 환경변수로 변경 가능)
+
+## Archive
+
+`archive/` 아래는 **현역 아님 — 참고용**. 에이전트는 수정·현행화 대상으로 보지 말 것.
+
+- `archive/engine/`, `archive/api/` — Python 그래프 코어 + MLX 서버 (frozen, 2026-04-25)
+- `archive/tests-python/`, `archive/scripts-python/` — Python 의존 테스트·스크립트
+- `archive/docs/` — 옛 설계 문서·UI 데모
 
 ## 상세 설계 (`docs/`)
 
