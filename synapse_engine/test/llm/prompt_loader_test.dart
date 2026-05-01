@@ -35,7 +35,7 @@ void main() {
         'CATEGORY_SYSTEMPROMPT.md',
         'META_FILTER_SYSTEMPROMPT.md',
         'RETRIEVE_EXPAND_SYSTEMPROMPT.md',
-        'RETRIEVE_FILTER_SYSTEMPROMPT.md',
+        'KEYWORD_FILTER_SYSTEMPROMPT.md',
         'SYNAPSE_ANSWER_SYSTEMPROMPT.md',
       ]);
       for (final key in PromptKey.values) {

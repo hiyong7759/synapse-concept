@@ -50,7 +50,7 @@ void main() {
           'category': 'CATEGORY_SYSTEMPROMPT.md',
           'metaFilter': 'META_FILTER_SYSTEMPROMPT.md',
           'retrieveExpand': 'RETRIEVE_EXPAND_SYSTEMPROMPT.md',
-          'retrieveFilter': 'RETRIEVE_FILTER_SYSTEMPROMPT.md',
+          'keywordFilter': 'KEYWORD_FILTER_SYSTEMPROMPT.md',
           'synapseAnswer': 'SYNAPSE_ANSWER_SYSTEMPROMPT.md',
         }.entries)
           entry.key: await File('$promptDir/${entry.value}').readAsString(),
@@ -79,20 +79,15 @@ void main() {
       expect(result, isNotEmpty);
     }, skip: skipReason, timeout: const Timeout(Duration(minutes: 2)));
 
-    test('retrieveFilter batch keeps clearly relevant + drops clearly irrelevant',
-        () async {
-      final result = await engine.llm!.retrieveFilter(
-        '허리 아픈데?',
-        const [
-          '강남세브란스 정형외과 다니고 있어',
-          '오늘 점심은 김밥 먹었다',
-        ],
+    test('filterKeywords drops noise keywords', () async {
+      final result = await engine.llm!.filterKeywords(
+        '슬램덩크 몇권?',
+        const ['슬램덩크', '몇', '권', '있'],
       );
-      expect(result.length, 2);
-      expect(result[0], isTrue,
-          reason: 'clearly relevant — 허리 ↔ 정형외과');
-      // Recall-over-precision bias keeps borderline cases too — only assert
-      // shape on the irrelevant slot, not its bool.
+      expect(result.length, 4);
+      expect(result[0], isTrue, reason: '고유명사 — 반드시 keep');
+      // Recall-over-precision keeps borderline cases too — only assert
+      // shape on the obviously-noise slots, not their bool.
     }, skip: skipReason, timeout: const Timeout(Duration(minutes: 2)));
 
     test('metaFilter returns one bool per input', () async {

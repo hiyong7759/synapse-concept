@@ -66,7 +66,7 @@ void main() {
           'category': 'CATEGORY_SYSTEMPROMPT.md',
           'metaFilter': 'META_FILTER_SYSTEMPROMPT.md',
           'retrieveExpand': 'RETRIEVE_EXPAND_SYSTEMPROMPT.md',
-          'retrieveFilter': 'RETRIEVE_FILTER_SYSTEMPROMPT.md',
+          'keywordFilter': 'KEYWORD_FILTER_SYSTEMPROMPT.md',
           'synapseAnswer': 'SYNAPSE_ANSWER_SYSTEMPROMPT.md',
         }.entries)
           entry.key: await File('$promptDir/${entry.value}').readAsString(),

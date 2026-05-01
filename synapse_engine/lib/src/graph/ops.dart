@@ -3,7 +3,7 @@ import 'package:sqflite/sqflite.dart';
 import '../kiwi/kiwi_wasm.dart';
 import '../kiwi/tokens.dart';
 import '../models/graph_models.dart';
-import 'bfs.dart' as bfs_impl;
+import 'lookup.dart' as lookup;
 import 'typo.dart' as typo_impl;
 
 /// Atomic graph operations. The lower half of the two-layer API
@@ -142,21 +142,23 @@ class GraphOps {
 
   // ── 카테고리 바구니 ────────────────────────────────────
 
-  /// Walks `headingPath` ('/'-separated) and ensures every segment is
-  /// present in `categories`, creating missing rows as children of the
-  /// previous segment. Returns the leaf id, or null when [headingPath]
-  /// is null/empty.
-  Future<int?> upsertCategoryPath(String? headingPath) async {
-    if (headingPath == null) return null;
-    final segments = headingPath
-        .split('/')
+  /// Walks [segments] (each one a single category name, in root→leaf order)
+  /// and ensures every segment is present in `categories`, creating missing
+  /// rows as children of the previous segment. Returns the leaf id, or null
+  /// when [segments] is null/empty.
+  ///
+  /// Takes `List<String>` so the parser can pass `headingPath` directly —
+  /// no string join/split round-trip, no separator collision risk.
+  Future<int?> upsertCategoryPath(List<String>? segments) async {
+    if (segments == null) return null;
+    final cleaned = segments
         .map((s) => s.trim())
         .where((s) => s.isNotEmpty)
-        .toList();
-    if (segments.isEmpty) return null;
+        .toList(growable: false);
+    if (cleaned.isEmpty) return null;
 
     int? parentId;
-    for (final segment in segments) {
+    for (final segment in cleaned) {
       final whereClause = parentId == null
           ? 'name = ? AND parent_id IS NULL'
           : 'name = ? AND parent_id = ?';
@@ -232,27 +234,21 @@ class GraphOps {
 
   // ── 인출 ──────────────────────────────────────────────
 
-  /// Thin pass-through to [bfs_impl.bfsRetrieve]. Reuse apps that have no
-  /// LLM and no heading tree call this with just [startNodes] and get a
-  /// pure path-1 BFS — every other knob is optional.
-  Future<List<Mention>> bfsRetrieve({
-    required Set<int> startNodes,
-    List<Mention> seedMentions = const [],
-    Set<int> supplementNodes = const {},
-    Set<int> startCategoryIds = const {},
-    bfs_impl.MentionFilter? filter,
-    int maxSentences = 50,
-    int stopwordThreshold = 50,
+  /// Thin pass-through for path ① — sentences directly mentioning any of
+  /// the start nodes. Reuse apps that don't need the orchestrated retrieve
+  /// flow (no LLM filter, no category-share expansion) call this for a
+  /// pure node→sentence lookup. The full pipeline lives in
+  /// [SynapseFlow.synapseTurn] / `flow/retrieve.dart`.
+  Future<List<Mention>> mentionsForNodes({
+    required Set<int> nodeIds,
+    Set<int> excludeSentenceIds = const {},
+    int? limit,
   }) =>
-      bfs_impl.bfsRetrieve(
+      lookup.collectMentionsForNodes(
         db,
-        startNodes: startNodes,
-        seedMentions: seedMentions,
-        supplementNodes: supplementNodes,
-        startCategoryIds: startCategoryIds,
-        filter: filter,
-        maxSentences: maxSentences,
-        stopwordThreshold: stopwordThreshold,
+        nodeIds: nodeIds,
+        excludeSentenceIds: excludeSentenceIds,
+        limit: limit,
       );
 
   Future<List<TypoCandidate>> findSuspectedTypos({

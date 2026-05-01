@@ -43,42 +43,131 @@ final RegExp _keyValueRe = RegExp(r'^-\s+(.+?)\s*::\s+(.+)$');
 final RegExp _listUnorderedRe = RegExp(r'^[-*]\s+(.+)$');
 final RegExp _listOrderedRe = RegExp(r'^\d+\.\s+(.+)$');
 
+/// Heading-name characters whose intent is "separate concepts." We replace
+/// them with a single space so they cannot collide with the `.` step
+/// separator or smear into a single category name.
+///
+/// Reserved (kept verbatim because they are commonly part of a category
+/// name itself): `-` `_` `()` `[]` `{}` `"` `'` `:` `?` `!`
+final RegExp _headingSeparatorChars = RegExp(r'[/|\\·,;&+~→]');
+final RegExp _multiSpace = RegExp(r'\s+');
+
+/// Trim, collapse separator-intent chars to space, then collapse runs of
+/// whitespace. Returns empty string if nothing meaningful is left.
+String _normalizeHeadingSegment(String raw) {
+  return raw
+      .replaceAll(_headingSeparatorChars, ' ')
+      .replaceAll(_multiSpace, ' ')
+      .trim();
+}
+
 /// Parses [source] into a list of lines with inherited heading context.
 ///
 /// Blank lines are dropped. Headings are emitted (so callers can register
 /// the path with `categories`) but should NOT be saved as `sentences` —
 /// only `keyValue`, `list`, and `free` produce sentence rows.
+///
+/// **Table mode** — when a heading line contains tab characters, it's not a
+/// category but a column header for a tab-separated table block. Subsequent
+/// `- val\tval\t...` rows are zipped with the column names and emitted as
+/// a single multi-pair `keyValue` sentence (`"col1:: val1 col2:: val2 ..."`).
+/// Useful for pasting Excel exports verbatim. Table mode resets when a
+/// non-tab heading is encountered.
 List<ParsedLine> parseMarkdown(String source) {
   final out = <ParsedLine>[];
   final stack = <_HeadingFrame>[];
+  List<String>? tableColumns;
 
   List<String> currentPath() =>
       List<String>.unmodifiable(stack.map((f) => f.name));
 
   for (final raw in source.split('\n')) {
-    final line = raw.trim();
-    if (line.isEmpty) continue;
+    // Don't trim before checking — table cells often have surrounding
+    // spaces (Excel paste). Strip the trailing newline only.
+    final line = raw.trimRight();
+    if (line.trim().isEmpty) continue;
 
     // ── heading ───────────────────────────────────────
-    final hm = _headingRe.firstMatch(line);
+    final hm = _headingRe.firstMatch(line.trimLeft());
     if (hm != null) {
       final depth = hm.group(1)!.length;
-      final name = hm.group(2)!.trim();
-      // Pop frames at this depth or deeper, then push.
-      while (stack.isNotEmpty && stack.last.depth >= depth) {
-        stack.removeLast();
+      final rawName = hm.group(2)!;
+
+      // Table-mode marker: heading with tabs = column header. No category
+      // emitted; subsequent tabbed list rows zip into multi-pair sentences.
+      if (rawName.contains('\t')) {
+        tableColumns = rawName
+            .split('\t')
+            .map((c) => c.trim())
+            .where((c) => c.isNotEmpty)
+            .toList(growable: false);
+        continue;
       }
-      stack.add(_HeadingFrame(depth: depth, name: name));
+
+      // Plain heading exits table mode.
+      tableColumns = null;
+
+      // `.` is the multi-step path separator: `# A.B.C` → ["A","B","C"].
+      // Each segment is then normalized (separator-intent chars → space).
+      final segments = rawName
+          .split('.')
+          .map(_normalizeHeadingSegment)
+          .where((s) => s.isNotEmpty)
+          .toList(growable: false);
+      if (segments.isEmpty) continue; // empty/whitespace-only heading
+
+      if (segments.length > 1) {
+        // Multi-step path resets the stack — `#` count is ignored.
+        stack
+          ..clear()
+          ..addAll([
+            for (var i = 0; i < segments.length; i++)
+              _HeadingFrame(depth: i + 1, name: segments[i]),
+          ]);
+      } else {
+        // Single segment: standard depth-based pop + push.
+        while (stack.isNotEmpty && stack.last.depth >= depth) {
+          stack.removeLast();
+        }
+        stack.add(_HeadingFrame(depth: depth, name: segments.first));
+      }
       out.add(ParsedLine(
         kind: ParsedKind.heading,
-        text: name,
+        text: segments.last,
         headingPath: currentPath(),
       ));
       continue;
     }
 
+    // ── table row (only inside table mode) ───────────
+    if (tableColumns != null) {
+      final stripped = _listUnorderedRe.firstMatch(line.trim());
+      if (stripped != null && stripped.group(1)!.contains('\t')) {
+        final values = stripped.group(1)!.split('\t');
+        final pairs = <String>[];
+        for (var i = 0;
+            i < tableColumns.length && i < values.length;
+            i++) {
+          final v = values[i].trim();
+          if (v.isEmpty) continue;
+          pairs.add('${tableColumns[i]}:: $v');
+        }
+        if (pairs.isNotEmpty) {
+          out.add(ParsedLine(
+            kind: ParsedKind.keyValue,
+            text: pairs.join(' '),
+            headingPath: currentPath(),
+          ));
+        }
+        continue;
+      }
+      // Non-tabbed line inside table mode → fall through to normal handling.
+    }
+
+    final trimmed = line.trim();
+
     // ── key:: value (must run before plain list) ──────
-    final kvm = _keyValueRe.firstMatch(line);
+    final kvm = _keyValueRe.firstMatch(trimmed);
     if (kvm != null) {
       final key = kvm.group(1)!.trim();
       final value = kvm.group(2)!.trim();
@@ -96,7 +185,7 @@ List<ParsedLine> parseMarkdown(String source) {
     }
 
     // ── list ─────────────────────────────────────────
-    final um = _listUnorderedRe.firstMatch(line);
+    final um = _listUnorderedRe.firstMatch(trimmed);
     if (um != null) {
       out.add(ParsedLine(
         kind: ParsedKind.list,
@@ -105,7 +194,7 @@ List<ParsedLine> parseMarkdown(String source) {
       ));
       continue;
     }
-    final om = _listOrderedRe.firstMatch(line);
+    final om = _listOrderedRe.firstMatch(trimmed);
     if (om != null) {
       out.add(ParsedLine(
         kind: ParsedKind.list,
@@ -118,7 +207,7 @@ List<ParsedLine> parseMarkdown(String source) {
     // ── free ─────────────────────────────────────────
     out.add(ParsedLine(
       kind: ParsedKind.free,
-      text: line,
+      text: trimmed,
       headingPath: currentPath(),
     ));
   }

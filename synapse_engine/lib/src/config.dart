@@ -17,7 +17,6 @@ class EngineConfig {
     this.kiwiAssetPath,
     this.promptOverrides,
     this.retrieveMaxSentences = 500,
-    this.retrieveStopwordThreshold = 50,
     this.gpuLayers = 99,
     this.contextSize = 8192,
     this.inferenceBatchSize = 4096,
@@ -54,16 +53,10 @@ class EngineConfig {
   /// (e.g. 'save_pronoun', 'retrieve_expand'). Values are full prompt text.
   final Map<String, String>? promptOverrides;
 
-  /// Hard cap on sentences a single `synapseTurn` may collect. The BFS
-  /// terminates once it reaches this number, which is more predictable than
-  /// "depth N" because graph shape varies wildly across users.
+  /// Hard cap on sentences a single `synapseTurn` may collect across the
+  /// three retrieval paths. Used as both the per-path limit and the final
+  /// truncation budget before retrieve-filter runs.
   final int retrieveMaxSentences;
-
-  /// Mention-count threshold for the BFS frequency stopword filter
-  /// (DESIGN_PIPELINE §인출 — 노드 폭증 억제). Nodes appearing in this many
-  /// or more sentences are dropped from BFS expansion (still surfaced if
-  /// they're the start node themselves). Set to `0` to disable.
-  final int retrieveStopwordThreshold;
 
   /// llamadart GPU offload layer count. 99 = "all that fit" (default —
   /// matches `LlamadartInferenceBackend` default). Set to `0` to force

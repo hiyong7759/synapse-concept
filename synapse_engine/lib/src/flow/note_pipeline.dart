@@ -171,7 +171,7 @@ class NotePipeline {
 
       // Headings produce no sentence row, but their path is registered.
       if (line.kind == ParsedKind.heading) {
-        await graph.upsertCategoryPath(line.headingPath.join('/'));
+        await graph.upsertCategoryPath(line.headingPath);
         continue;
       }
 
@@ -227,7 +227,7 @@ class NotePipeline {
       // 4f. heading path → sentence_categories.
       if (line.headingPath.isNotEmpty) {
         final catId =
-            await graph.upsertCategoryPath(line.headingPath.join('/'));
+            await graph.upsertCategoryPath(line.headingPath);
         if (catId != null) {
           await graph.addSentenceCategory(
             sentenceId: sid,

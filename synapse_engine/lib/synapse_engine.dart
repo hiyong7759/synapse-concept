@@ -22,11 +22,15 @@ export 'src/llm/tasks.dart' show LlmTasks, ContextSentence, Correction;
 export 'src/prompts/loader.dart' show PromptKey;
 
 // F4 — graph + Kiwi surfaces.
-export 'src/graph/bfs.dart' show MentionFilter;
 export 'src/graph/ops.dart' show GraphOps;
-export 'src/graph/seed_matching.dart'
-    show matchStartNodes, headingSubtreeSeeds, sameCategoryNodes,
-        HeadingSubtreeSeeds;
+export 'src/graph/seed_matching.dart' show matchStartNodes;
+export 'src/graph/lookup.dart'
+    show
+        matchStartCategories,
+        collectMentionsForNodes,
+        collectMentionsByCategorySharing,
+        collectMentionsByHeadingSubtree,
+        categoriesForNodes;
 export 'src/kiwi/kiwi_wasm.dart'
     show KiwiBackend, FlutterKiwiBackend, InMemoryKiwiBackend;
 export 'src/kiwi/tokens.dart' show KiwiToken;
@@ -46,3 +50,5 @@ export 'src/flow/results.dart'
         SynapseProgressCallback;
 export 'src/flow/synapse_flow.dart'
     show SynapseFlow, PostMeta, PostDetail, SentenceRow, RecentNode;
+export 'src/flow/retrieve.dart'
+    show retrieveForQuestion, RetrieveResult, RetrieveTimings;

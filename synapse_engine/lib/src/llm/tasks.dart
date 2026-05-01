@@ -81,51 +81,38 @@ class LlmTasks {
     }
   }
 
-  // ── retrieveFilter ───────────────────────────────────────
+  // ── filterKeywords ───────────────────────────────────────
 
-  /// Decides whether each of [sentences] is relevant to [question]. The
-  /// LLM evaluates the whole batch in one call so it can compare
-  /// sentences against each other (better consistency than 1-by-1) and
-  /// the call count drops by an order of magnitude (~50 → ~5 for a
-  /// typical synapseTurn).
+  /// Filters noise out of the keyword candidate list before the lookup
+  /// stage. Replaces the per-sentence retrieve-filter (2026-04-30) — keyword
+  /// noise creates the wrong matches in the first place, so cleaning the
+  /// inputs is cheaper and preserves real co-mentions in the output.
   ///
   /// Response format: one bare `o` or `x` per line, in input order. The
-  /// short form (no echo) is what small models like Gemma 4 E2B keep
-  /// formatting consistent with — earlier `[o] {sentence}` echo prompts
-  /// drifted into prose / inconsistent marks and tripped the fallback.
-  /// Parser stays permissive (still accepts legacy `[o]`/`[x]` echo) so
-  /// future prompt iterations don't break the filter.
-  ///
-  /// Anything that isn't a clear `x` keeps the sentence (recall over
-  /// precision — matches the prompt's "애매하면 o" rule and the bias of
-  /// the previous single-sentence filter).
-  ///
-  /// Caller chunks inputs (BFS `_applyFilter` uses `batchSize=5`) so
-  /// the prompt stays inside the model's context window and the model
-  /// keeps the marks consistent across the chunk.
-  Future<List<bool>> retrieveFilter(
+  /// parser stays permissive (still accepts legacy `[o]`/`[x]` echo).
+  /// Anything that isn't a clear `x` keeps the keyword (recall over
+  /// precision — matches the prompt's "애매하면 o" rule).
+  Future<List<bool>> filterKeywords(
     String question,
-    List<String> sentences,
+    List<String> keywords,
   ) async {
-    if (sentences.isEmpty) return const [];
+    if (keywords.isEmpty) return const [];
     await _switchTo(null);
-    final system = await prompts.load(PromptKey.retrieveFilter);
-    final n = sentences.length;
+    final system = await prompts.load(PromptKey.keywordFilter);
+    final n = keywords.length;
     final numbered = <String>[];
     for (var i = 0; i < n; i++) {
-      numbered.add('${i + 1}. ${sentences[i]}');
+      numbered.add('${i + 1}. ${keywords[i]}');
     }
     final raw = stripThinking(await backend.generate(
       systemPrompt: system,
-      userPrompt: '질문: $question\n문장 $n개:\n${numbered.join('\n')}',
-      // Output is one bare mark + newline per sentence. 4 tokens × N
-      // covers stray whitespace without letting the model drift into
-      // prose.
+      userPrompt: '질문: $question\n키워드 $n개:\n${numbered.join('\n')}',
+      // One bare mark + newline per keyword.
       maxTokens: 4 * n,
     ));
     if (kDebugMode) {
       // ignore: avoid_print
-      print('[retrieveFilter RAW n=$n]\n${raw.substring(0, raw.length.clamp(0, 200))}\n---');
+      print('[filterKeywords RAW n=$n]\n${raw.substring(0, raw.length.clamp(0, 200))}\n---');
     }
     return _parseFilterMarks(raw, n);
   }
@@ -161,18 +148,21 @@ class LlmTasks {
     required String question,
     required List<ContextSentence> contexts,
   }) async {
+    // Bypass the LLM entirely for empty contexts — small models tend to
+    // paraphrase the system prompt instead of saying "기록 없어요" when
+    // they have nothing to ground on. Deterministic fallback is both
+    // cheaper and more honest.
+    if (contexts.isEmpty) return '기록 없어요.';
+
     await _switchTo(null);
     final system = await prompts.load(PromptKey.synapseAnswer);
     final sorted = [...contexts]
       ..sort((a, b) => (a.createdAt ?? '').compareTo(b.createdAt ?? ''));
-    final factsBlock = sorted.isEmpty
-        ? '(관련 사실 없음)'
-        : sorted.map((c) {
-            final hint = c.dateHint;
-            return hint == null ? '- ${c.text}' : '- [$hint] ${c.text}';
-          }).join('\n');
-    final header = sorted.isEmpty ? '알려진 사실' : '알려진 사실 (시간 순)';
-    final userPrompt = '$header:\n$factsBlock\n\n질문: $question';
+    final factsBlock = sorted.map((c) {
+      final hint = c.dateHint;
+      return hint == null ? '- ${c.text}' : '- [$hint] ${c.text}';
+    }).join('\n');
+    final userPrompt = '[사실]\n$factsBlock\n\n질문: $question';
     final raw = await backend.generate(
       systemPrompt: system,
       userPrompt: userPrompt,

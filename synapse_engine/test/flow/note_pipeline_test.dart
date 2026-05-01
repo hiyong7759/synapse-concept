@@ -37,7 +37,7 @@ void main() {
           'category': '<sys:category>',
           'metaFilter': '<sys:metaFilter>',
           'retrieveExpand': '<sys:retrieveExpand>',
-          'retrieveFilter': '<sys:retrieveFilter>',
+          'keywordFilter': '<sys:keywordFilter>',
           'synapseAnswer': '<sys:synapseAnswer>',
         },
       ),

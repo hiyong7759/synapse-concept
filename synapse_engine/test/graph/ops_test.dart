@@ -49,7 +49,8 @@ void main() {
       expect(id2, id);
     });
 
-    test('addSentence + addMention + bfsRetrieve hydrate names', () async {
+    test('addSentence + addMention + mentionsForNodes hydrate names',
+        () async {
       final node = await ops.upsertNode('허리디스크');
       final sid = await ops.addSentence(
         postId: postId,
@@ -60,7 +61,7 @@ void main() {
       // Duplicate insert is a no-op.
       expect(await ops.addMention(nodeId: node, sentenceId: sid), isFalse);
 
-      final mentions = await ops.bfsRetrieve(startNodes: {node});
+      final mentions = await ops.mentionsForNodes(nodeIds: {node});
       expect(mentions, hasLength(1));
       expect(mentions.first.nodeName, '허리디스크');
       expect(mentions.first.sentenceText, '허리디스크 진단받았어');
@@ -88,16 +89,17 @@ void main() {
     });
 
     test('upsertCategoryPath builds the chain incrementally', () async {
-      final firstId = await ops.upsertCategoryPath('더나은/개발팀');
+      final firstId = await ops.upsertCategoryPath(['더나은', '개발팀']);
       expect(firstId, isNotNull);
       // Re-upserting the same path returns the same leaf.
-      final secondId = await ops.upsertCategoryPath('더나은/개발팀');
+      final secondId = await ops.upsertCategoryPath(['더나은', '개발팀']);
       expect(secondId, firstId);
       // Extending the path adds one row but keeps the parent.
-      final deeperId = await ops.upsertCategoryPath('더나은/개발팀/민지');
+      final deeperId = await ops.upsertCategoryPath(['더나은', '개발팀', '민지']);
       expect(deeperId, isNot(firstId));
       // Whitespace and empty segments are ignored.
-      expect(await ops.upsertCategoryPath('  '), isNull);
+      expect(await ops.upsertCategoryPath(['  ']), isNull);
+      expect(await ops.upsertCategoryPath(const []), isNull);
       expect(await ops.upsertCategoryPath(null), isNull);
     });
 
@@ -113,7 +115,7 @@ void main() {
         () async {
       final node = await ops.upsertNode('민지');
       final sid = await ops.addSentence(postId: postId, text: '민지가 맡음');
-      final catId = await ops.upsertCategoryPath('더나은/개발팀');
+      final catId = await ops.upsertCategoryPath(['더나은', '개발팀']);
       await ops.addSentenceCategory(sentenceId: sid, categoryId: catId!);
       await ops.addSentenceCategory(sentenceId: sid, categoryId: catId);
       await ops.addCategoryMention(nodeId: node, categoryId: catId);

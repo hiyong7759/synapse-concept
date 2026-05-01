@@ -2,15 +2,14 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:sqflite/sqflite.dart';
 
 import '../db/category_seed.dart';
-import '../graph/bfs.dart' as bfs_impl;
 import '../graph/ops.dart';
-import '../graph/seed_matching.dart';
 import '../kiwi/kiwi_wasm.dart';
 import '../llm/tasks.dart';
 import '../markdown/parser.dart';
 import '../models/graph_models.dart';
 import 'note_pipeline.dart';
 import 'results.dart';
+import 'retrieve.dart';
 
 /// SynapseFlow — full F5 surface.
 ///
@@ -25,12 +24,10 @@ class SynapseFlow {
     required this.graph,
     required KiwiBackend kiwi,
     LlmTasks? llm,
-    int retrieveMaxSentences = 50,
-    int retrieveStopwordThreshold = 50,
+    int retrieveMaxSentences = 500,
   })  : _kiwi = kiwi,
         _llm = llm,
         _maxSentences = retrieveMaxSentences,
-        _stopwordThreshold = retrieveStopwordThreshold,
         _pipeline = NotePipeline(
           db: db,
           graph: graph,
@@ -44,7 +41,6 @@ class SynapseFlow {
   final KiwiBackend _kiwi;
   final LlmTasks? _llm;
   final int _maxSentences;
-  final int _stopwordThreshold;
 
   // ── /note 4 paths ────────────────────────────────────────
 
@@ -83,7 +79,6 @@ class SynapseFlow {
     // optimise next — see PLAN-20260429-SYN-synapse-perf.
     final total = Stopwatch()..start();
     final persist = Stopwatch();
-    final stage = Stopwatch();
 
     persist.start();
     final pid = postId ?? await db.insert('posts', {'kind': 'synapse'});
@@ -98,88 +93,33 @@ class SynapseFlow {
     persist.stop();
 
     onProgress?.call(SynapseProgressStage.expanding);
-    stage..reset()..start();
-    final keywords = await _expandKeywords(question);
-    final tExpand = stage.elapsedMilliseconds;
-
     onProgress?.call(SynapseProgressStage.matching);
-    stage..reset()..start();
-    final startNodeMap = await matchStartNodes(
-      db,
-      keywords: keywords,
-      question: question,
-    );
-    final startNodeIds = startNodeMap.keys.toSet();
-    final subtree = await headingSubtreeSeeds(db, startNodeIds: startNodeIds);
-    final supplement = await sameCategoryNodes(
-      db,
-      startNodeIds: startNodeIds,
-      visitedNodeIds: startNodeIds,
-    );
-    final tMatch = stage.elapsedMilliseconds;
-
     onProgress?.call(SynapseProgressStage.retrieving);
-    stage..reset()..start();
-    final llm = _llm;
-    final filter = llm == null
-        ? null
-        : (List<String> sentences) async {
-            try {
-              return await llm.retrieveFilter(question, sentences);
-            } catch (e) {
-              if (kDebugMode) {
-                // ignore: avoid_print
-                print('[retrieveFilter ERROR] $e');
-              }
-              // Filter failures must not silently drop content — keep all.
-              return List<bool>.filled(sentences.length, true);
-            }
-          };
-    final mentions = await bfs_impl.bfsRetrieve(
+    final retrieved = await retrieveForQuestion(
       db,
-      startNodes: startNodeIds,
-      seedMentions: subtree.mentions,
-      supplementNodes: supplement,
-      startCategoryIds: subtree.categoryIds,
-      filter: filter,
+      question: question,
+      kiwi: _kiwi,
+      llm: _llm,
       maxSentences: _maxSentences,
-      stopwordThreshold: _stopwordThreshold,
     );
-    final tBfs = stage.elapsedMilliseconds;
-
-    final seenSids = <int>{};
-    final contexts = <ContextSentence>[];
-    final contextSentenceIds = <int>[];
-    final retrievedNodeIds = <int>{...startNodeIds};
-    for (final m in mentions) {
-      if (m.nodeId > 0) retrievedNodeIds.add(m.nodeId);
-      if (!seenSids.add(m.sentenceId)) continue;
-      final text = m.sentenceText;
-      if (text == null) continue;
-      contexts.add(ContextSentence(
-        text: text,
-        role: 'user',
-        createdAt: m.sentenceCreatedAt,
-      ));
-      contextSentenceIds.add(m.sentenceId);
-    }
 
     onProgress?.call(SynapseProgressStage.answering);
-    stage..reset()..start();
+    final answerSw = Stopwatch()..start();
+    final llm = _llm;
     String answer;
     if (llm != null) {
       try {
         answer = await llm.synapseAnswer(
           question: question,
-          contexts: contexts,
+          contexts: retrieved.contexts,
         );
       } catch (_) {
-        answer = _fallbackAnswer(contexts);
+        answer = _fallbackAnswer(retrieved.contexts);
       }
     } else {
-      answer = _fallbackAnswer(contexts);
+      answer = _fallbackAnswer(retrieved.contexts);
     }
-    final tAnswer = stage.elapsedMilliseconds;
+    final tAnswer = answerSw.elapsedMilliseconds;
 
     persist.start();
     final aPosition = qPosition + 1;
@@ -194,12 +134,13 @@ class SynapseFlow {
     onProgress?.call(SynapseProgressStage.done);
 
     if (kDebugMode) {
+      final t = retrieved.timings;
       // ignore: avoid_print
-      print('[synapseTurn] expand=${tExpand}ms match=${tMatch}ms '
-          'bfs=${tBfs}ms answer=${tAnswer}ms '
-          'persist=${persist.elapsedMilliseconds}ms '
+      print('[synapseTurn] expand=${t.expandMs}ms match=${t.matchMs}ms '
+          'collect=${t.collectMs}ms filter=${t.filterMs}ms '
+          'answer=${tAnswer}ms persist=${persist.elapsedMilliseconds}ms '
           'total=${total.elapsedMilliseconds}ms '
-          '(ctx=${contexts.length})');
+          '(ctx=${retrieved.contexts.length})');
     }
 
     return SynapseTurnResult(
@@ -207,8 +148,8 @@ class SynapseFlow {
       questionSentenceId: questionSentenceId,
       answerSentenceId: answerSentenceId,
       answer: answer,
-      retrievedNodeIds: retrievedNodeIds.toList()..sort(),
-      contextSentenceIds: contextSentenceIds,
+      retrievedNodeIds: retrieved.retrievedNodeIds.toList()..sort(),
+      contextSentenceIds: retrieved.contextSentenceIds,
     );
   }
 
@@ -709,42 +650,8 @@ class SynapseFlow {
     return (rows.first['next'] as int?) ?? 0;
   }
 
-  Future<List<String>> _expandKeywords(String question) async {
-    final out = <String>[];
-    final seen = <String>{};
-    void add(String s) {
-      final trimmed = s.trim();
-      if (trimmed.isEmpty || !seen.add(trimmed)) return;
-      out.add(trimmed);
-    }
-
-    final llm = _llm;
-    if (llm != null) {
-      try {
-        final expanded = await llm.retrieveExpand(question);
-        for (final kw in expanded) {
-          add(kw);
-        }
-      } catch (_) {
-        // LLM expand failure → fall back to deterministic sources only.
-      }
-    }
-    for (final piece in question.split(RegExp(r'\s+'))) {
-      add(piece);
-    }
-    try {
-      final nouns = await _kiwi.nouns(question);
-      for (final n in nouns) {
-        add(n);
-      }
-    } catch (_) {
-      // Kiwi miss is non-fatal — `out` already has whitespace-split tokens.
-    }
-    return out;
-  }
-
   String _fallbackAnswer(List<ContextSentence> contexts) {
-    if (contexts.isEmpty) return '관련 정보를 찾을 수 없습니다.';
+    if (contexts.isEmpty) return '기록 없어요.';
     final sorted = [...contexts]
       ..sort((a, b) => (a.createdAt ?? '').compareTo(b.createdAt ?? ''));
     final lines = sorted.map((c) {

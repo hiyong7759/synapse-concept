@@ -185,7 +185,7 @@ void main() {
       await engine.graph!.addCategoryMention(nodeId: huri, categoryId: wrk);
 
       // User heading category — must NOT be chosen as primary code.
-      final userCatId = await engine.graph!.upsertCategoryPath('건강');
+      final userCatId = await engine.graph!.upsertCategoryPath(['건강']);
       await engine.graph!
           .addCategoryMention(nodeId: huri, categoryId: userCatId!);
 

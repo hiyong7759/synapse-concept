@@ -164,6 +164,12 @@ unresolved_tokens:      sentence_id, token, created_at                          
 
       [사용자 heading 계층]
       categories upsert — heading path segments 재귀 upsert (parent_id 체인)
+        파서가 heading name 안의 분리 의도 특수문자를 공백으로 치환:
+          · 치환 대상: `/` `|` `\` `·` `,` `;` `&` `+` `~` `→`
+          · 보존: `-` `_` `()` `[]` `{}` `"` `'` `:` `?` `!`
+          · `.` 은 단계 분리자로 해석 (`# A.B.C` → 3 단계 카테고리)
+          예: `## 만화/라이트노벨` → 카테고리 이름 "만화 라이트노벨"
+        헤딩 path 는 List<String> 그대로 upsert — join/split 왕복 없음
         예: ["더나은","개발팀"] → (더나은, NULL) · (개발팀, id_더나은)
       sentence_categories INSERT — 동기 origin 처리:
         · heading 말단 카테고리만 문장에 연결
@@ -197,7 +203,7 @@ unresolved_tokens:      sentence_id, token, created_at                          
 | `4월에 시작` | (변동 없음) | `4월`, `시작` |
 | `2026 매출` | (변동 없음) | `매출`만 (2026은 오탐 회피로 노드화 X) |
 
-같은 `2026년` 노드는 게시물 횟수만큼 자동으로 mention이 누적. 사용자가 한 번도 카드 승인 안 해도 시간 단위로 BFS 가능.
+같은 `2026년` 노드는 게시물 횟수만큼 자동으로 mention이 누적. 사용자가 한 번도 카드 승인 안 해도 시간 단위로 인출 가능.
 
 ### 자동 저장되지 않는 것 (승인 유지)
 
@@ -309,37 +315,42 @@ altLabel 목록 (ko, en 언어)
 
 ## 인출 파이프라인
 
+> **2026-04-29 재설계** — BFS 공출현 확장 폐기. 질의 확장 → 직접 lookup → sentence 수집 흐름.
+> **2026-04-30 정정** — sentence-단위 retrieve-filter 폐기, **키워드 단계** 에서 LLM 필터로 불순물 제거. 매칭된 sentence 는 그대로 답변 LLM 에 전달.
+
 ```
 질문
-  ↓ [retrieve-expand — 베이스 모델 + RETRIEVE_EXPAND_SYSTEMPROMPT.md]  temperature=0, max_tokens=256
-    질문 의도 해석 → 노드 후보 키워드
-    어댑터 미사용 (2026-04-26 PoC 에서 v3 시스템 프롬프트가 어댑터 동등 또는 우수 입증)
-  ↓ [Kiwi 명사·용언 추출]
-    질문 → NNG/NNP/NP 명사 + VV/VA lemma 로 후보 보강
-    "커피가 맛있었나?" → ['커피', '맛', '맛있'] 후보 추가
-    → 조사·어미 붙은 표현도 매칭 가능, 시스템 프롬프트 출력 실패 시 폴백 역할
-    keywords = retrieve-expand 결과 ∪ Kiwi 결과
-  ↓ [DB 매칭]
-    aliases 정확 매칭 우선 → name 정확 매칭 → name substring 매칭
-  ↓ [BFS 루프]  정지: 수집 sentence 수 ≥ maxSentences (기본 50) 또는 새 노드 없음
-    현재 노드·카테고리 집합마다 세 경로를 합쳐 다음 레이어 구성:
-      ① 문장 바구니 (node_sentence_mentions JOIN sentences) → 같은 sentence에 함께 언급된 노드
-      ② 카테고리 공유 (node_category_mentions JOIN node_category_mentions) → 같은 시드 카테고리 한 홉
-      ③ 사용자 heading 계층 (categories 재귀 CTE + sentence_categories)
-         → 질의 키워드가 사용자 categories 와 매칭되면 서브트리 전체를 시드 sentence 로 수집
-    [노드 폭증 억제] — 다음 레이어 후보 필터:
-      (1) 빈도 stopword: mention 횟수 ≥ stopwordThreshold (기본 50) 노드는 BFS 확장에서 제외
-      (2) 카테고리 교집합: 출발 노드의 카테고리 집합과 후보 노드의 카테고리 집합이 겹치는 경우만 통과
-                           (출발 노드에 카테고리가 없으면 자동 무효 — 필터 적용 안 함)
-      두 필터는 함께 적용. (1)·(2) 모두 EngineConfig 옵션으로 조절 가능.
-    [synapse/retrieve-filter]  temperature=0, max_tokens=8
-      ①은 sentence 단위로, ②·③은 카테고리 경로 + 대표 sentence로
-      관련성 판단 (pass/reject). 불확실하면 pass
-      구현 메모 — 현재는 sentence 한 개씩 호출. batch (o/x 마커) 전환은 후속 마일스톤.
-    통과한 항목의 새 노드·카테고리 → 다음 레이어
-    수집 sentence 수가 maxSentences 도달 또는 새 노드 없으면 종료
+  ↓ [키워드 후보 생성 — 형태소 + LLM 추론어]
+    ① Kiwi 명사·용언 추출 (NNG/NNP/NP, VV/VA lemma, MAG)
+       "슬램덩크 몇권?" → ['슬램덩크', '몇', '권']
+    ② retrieve-expand LLM (베이스 모델 + RETRIEVE_EXPAND_SYSTEMPROMPT.md)  temperature=0, max_tokens=256
+       질문 의도에서 관련 개념·동의어·상위어 추론 → 후보 키워드
+       어댑터 미사용 (2026-04-26 PoC 에서 v3 시스템 프롬프트가 어댑터 동등 입증)
+    candidates = ① ∪ ② (중복 제거)
+  ↓ [키워드 필터 LLM — 1배치]  temperature=0, max_tokens=4·N
+    프롬프트: KEYWORD_FILTER_SYSTEMPROMPT.md
+    각 후보가 "답을 찾는 데 필요한 키워드" 인지 o/x 한 번에 판정.
+    keep: 고유명사·핵심 동사·주제. drop: 조사·어미·일반동사·"몇/뭐/어떻게" 같은 의문사.
+    애매하면 o (재현 우선). LLM 미주입 / 실패 → 전체 통과 (skip).
+    안전망: 모델이 모두 x 로 떨어뜨려도 candidates 그대로 사용 (zero-match 회귀 차단).
+    keywords = candidates 중 keep 만
+  ↓ [노드·카테고리 직접 lookup]
+    각 keyword 마다 결정론적 매칭:
+      (a) aliases 정확 매칭 → node_id
+      (b) nodes.name 정확 매칭 → node_id
+      (c) categories.name 정확 매칭 → category_id
+      (d) 모두 실패 시 nodes.name LIKE '%kw%' 폴백 (LIMIT 5)
+    질문 raw 문자열에 별칭이 substring 으로 박혀 있으면 (a) 보강 (조사·구두점 옆에 붙은 별칭 회수)
+    수집: matchedNodeIds + matchedCategoryIds
+  ↓ [sentence 직접 수집 — 세 경로 합집합]
+    ① 문장 바구니: matchedNodeIds → node_sentence_mentions JOIN sentences
+    ② 카테고리 공유: matchedNodeIds → node_category_mentions 로 그 노드들이 속한 카테고리 ids
+                     → 같은 카테고리에 매핑된 다른 노드 ids → 그 노드들의 sentence
+    ③ 사용자 heading 계층: matchedCategoryIds (또는 matchedNodeIds 의 heading 카테고리)
+                     → 재귀 CTE 로 하위 카테고리 ids → sentence_categories JOIN sentences
+    합집합 (sentence_id dedup, maxSentences cap)
   ↓ [시간 순 정렬]
-    통과한 sentence 들을 sentences.created_at 오름차순으로 정렬.
+    수집한 sentence 들을 sentences.created_at 오름차순으로 정렬.
     각 줄 앞에 `[YYYY-MM-DD]` 날짜 힌트를 붙여 LLM 프롬프트 컨텍스트 구성.
   ↓ [synapse-answer]  temperature=0.3, max_tokens=4096
     인출 sentences를 컨텍스트로 자연어 답변.
@@ -348,12 +359,14 @@ altLabel 목록 (ko, en 언어)
     답변 → sentences INSERT (role='assistant')
 ```
 
+**왜 키워드 필터로 옮겼나** — sentence-단위 필터는 (1) 모델이 한꺼번에 50개 비교 시 다 떨어뜨려 빈 답으로 회귀하는 실패 모드가 잦았고, (2) 무관한 키워드가 처음부터 잘못된 노드를 매칭시키는 문제는 sentence 단계에서 풀어도 비효율. 키워드 단계에서 불순물(조사·어미·일반동사)을 미리 거르면 무관한 노드 매칭 자체가 발생 안 함. LLM 호출은 (질의 확장 1회 + 키워드 필터 1배치) 그대로 두 번.
+
 ### 세 경로의 역할 구분
 
 | 경로 | 데이터 출처 | 의미 |
 |------|-------------|------|
 | ① 문장 바구니 (`node_sentence_mentions`) | 자동 저장 (사용자가 같은 게시물·문장에 함께 언급) | "함께 등장한 사실" |
-| ② 카테고리 공유 (`node_category_mentions` + 인접 맵) | CATEGORY 워커 분류 + Kiwi heading 토큰화 + 규칙 시드 + 인접 맵 | "같은 주제군으로 묶인 개념" |
+| ② 카테고리 공유 (`node_category_mentions`) | CATEGORY 워커 분류 + Kiwi heading 토큰화 + 규칙 시드 | "같은 주제군으로 묶인 개념" |
 | ③ 사용자 heading 계층 (`categories` + `sentence_categories`) | 사용자 명시 heading path (adjacency list) | "사용자가 정한 계층 바구니" |
 
 ①은 공출현한 사실 덩어리, ②는 의미 기반 확장, ③은 사용자 계층 기반 확장(서브트리 스캔). 셋 모두 인출에 기여하며 답변 컨텍스트에서는 모두 sentence 원문으로 표시된다 ("- 허리디스크 진단"). 인과·유사·회피 같은 의미 해석은 외부 지능체가 sentence 원문을 읽고 수행한다 (원칙 11).
@@ -362,10 +375,10 @@ altLabel 목록 (ko, en 언어)
 
 날짜·시간부사·부정부사·장소 같은 토큰도 일반 명사 노드와 **같은 세 경로**(문장 바구니 + 카테고리 공유 + 사용자 heading)를 거친다.
 
-- "2026-04-17에 뭐 있었지?" → `2026-04-17` 노드 → `node_sentence_mentions` → sentences → 함께 언급된 노드
-- "안 먹은 약" → `안` 노드 → mentions → sentence → 함께 언급된 약 노드
-- "허리디스크의 원인" → `허리디스크` 노드 → ① 문장 바구니 + ② `BOD.disease` 시드 카테고리 공유 → 외부 지능체가 원문에서 인과 해석
-- "더나은 전체 보여줘" → `더나은` 이 `categories` 루트로 매칭 → 재귀 CTE 서브트리 수집 → `sentence_categories` JOIN 으로 문장 전체 조회 (③ 경로)
+- "2026-04-17에 뭐 있었지?" → `2026년`·`4월`·`17일` 노드 매칭 → `node_sentence_mentions` 로 sentence
+- "안 먹은 약" → `안` 노드 매칭 → mentions → sentence (LLM 이 부정 의미 해석)
+- "허리디스크의 원인" → `허리디스크` 노드 매칭 → ① 문장 바구니 + ② `BOD.disease` 카테고리 공유로 다른 노드들의 sentence → 외부 지능체가 원문에서 인과 해석
+- "더나은 전체 보여줘" → `더나은` 이 `categories` 행으로 매칭 → 재귀 CTE 서브트리 수집 → `sentence_categories` JOIN 으로 문장 전체 조회 (③ 경로)
 
 특수 카테고리(TIM/NEG 등)나 특수 경로 없음.
 
@@ -482,7 +495,7 @@ Python frozen:   앱 → HTTP → MLX 서버 (localhost:8765) → gemma-4-E2B-it
 |--------|-----------|------|
 | meta-filter | 베이스 모델 | `docs/META_FILTER_SYSTEMPROMPT.md` |
 | typo-normalize | 베이스 모델 | (별칭 보호 + 자모 거리 사전 필터 통과 토큰 검증 — 후속 마일스톤) |
-| retrieve-filter | 베이스 모델 | `docs/RETRIEVE_FILTER_SYSTEMPROMPT.md` |
+| filter-keywords | 베이스 모델 | `docs/KEYWORD_FILTER_SYSTEMPROMPT.md` |
 | retrieve-expand | 베이스 모델 | `docs/RETRIEVE_EXPAND_SYSTEMPROMPT.md` v3 (어댑터는 2026-04-26 PoC 후 폐기) |
 | category (백그라운드) | 베이스 모델 | `docs/CATEGORY_SYSTEMPROMPT.md` |
 | synapse-answer | 베이스 모델 | `docs/SYNAPSE_ANSWER_SYSTEMPROMPT.md` |
@@ -502,7 +515,7 @@ Python frozen:   앱 → HTTP → MLX 서버 (localhost:8765) → gemma-4-E2B-it
 | 정정 후보 (typo-normalize) | 베이스 + (후속 마일스톤) | 0 | 256 |
 | 카테고리 분류 (백그라운드) | 베이스 + CATEGORY_SYSTEMPROMPT.md | 0 | 512 |
 | 인출 확장 (retrieve-expand) | 베이스 + RETRIEVE_EXPAND_SYSTEMPROMPT.md | 0 | 256 |
-| 인출 필터 (retrieve-filter) | 베이스 + RETRIEVE_FILTER_SYSTEMPROMPT.md | 0 | 8 |
+| 키워드 필터 (filter-keywords) | 베이스 + KEYWORD_FILTER_SYSTEMPROMPT.md (배치 — 후보 N개/호출) | 0 | 4·N |
 | 시냅스 답변 (synapse-answer) | 베이스 + SYNAPSE_ANSWER_SYSTEMPROMPT.md | 0.3 | 4096 |
 
 ---
@@ -514,5 +527,5 @@ Python frozen:   앱 → HTTP → MLX 서버 (localhost:8765) → gemma-4-E2B-it
 - 자동저장: 항상 동작 (sqflite UPDATE 한 줄, LLM 호출 없음)
 - 의미 처리: DateNormalizer (결정론) + Kiwi 형태소 분석 + 규칙 기반 날짜 분할·unresolved 감지. 메타 필터·typo-normalize 는 skip. 평문 저장 자체는 완결됨 (정정 카드만 생성 안 됨)
 - 백그라운드 워커: 카테고리 분류 워커는 LLM 호출 불가로 비활성 (`origin='ai'` 카테고리 발생 안 함). Wikidata 별칭 워커는 **인터넷만 있으면 동작** (LLM과 무관)
-- 인출: `retrieve-expand`·`retrieve-filter` LLM 호출 생략하고 Kiwi 키워드 매칭 + BFS만
+- 인출: `retrieve-expand`·`filter-keywords` LLM 호출 생략하고 Kiwi 키워드 후보 그대로 → 직접 lookup 으로 sentence 수집
 - `/review`: `unresolved`, `ai_generated`(빈 결과), `external_generated`, `system_generated`, `suspected_typos`, `stale_nodes`, `insight_delete`, `daily`, `gaps` 모두 쿼리만으로 동작

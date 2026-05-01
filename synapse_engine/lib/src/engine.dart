@@ -151,7 +151,6 @@ class SynapseEngine {
         kiwi: kiwi,
         llm: tasks,
         retrieveMaxSentences: config.retrieveMaxSentences,
-        retrieveStopwordThreshold: config.retrieveStopwordThreshold,
       );
     }
 
